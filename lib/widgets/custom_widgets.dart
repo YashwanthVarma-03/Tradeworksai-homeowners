@@ -140,29 +140,21 @@ class _HoverButtonState extends State<HoverButton> {
         ),
         child: Stack(
           children: [
-            // Static Base Gradient
+            // Static Base Solid Orange Color
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(9999),
-                gradient: const LinearGradient(
-                  colors: [AppTheme.orange500, AppTheme.orange700],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
+                color: AppTheme.orange500,
               ),
             ),
-            // Hover Overlay Gradient
+            // Hover Overlay (Darkens on hover)
             AnimatedOpacity(
               duration: const Duration(milliseconds: 200),
-              opacity: _isHovered ? 1.0 : 0.0,
+              opacity: _isHovered ? 0.15 : 0.0,
               child: Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(9999),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFEA580C), Color(0xFFC2410C)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
+                  color: Colors.black,
                 ),
               ),
             ),

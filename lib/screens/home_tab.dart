@@ -25,6 +25,13 @@ class HomeTab extends StatefulWidget {
 class _HomeTabState extends State<HomeTab> {
   String _currentLocation = 'Riverview, FL 33578';
   bool _showMaintenancePrompt = true;
+  final TextEditingController _homeSearchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _homeSearchController.dispose();
+    super.dispose();
+  }
 
   void _changeLocationDialog() {
     final controller = TextEditingController(text: _currentLocation);
@@ -295,35 +302,6 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                 ],
               ),
-              GestureDetector(
-                onTap: widget.onInboxTap,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.16),
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      const Icon(Icons.mail_outline, color: Colors.white, size: 20),
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: AppTheme.orange500,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -338,41 +316,55 @@ class _HomeTabState extends State<HomeTab> {
             ),
           ),
           const SizedBox(height: 14),
-          GestureDetector(
-            onTap: widget.onBookTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(13),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF0B1A2B).withOpacity(0.18),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.search, color: AppTheme.gray),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Search a service or pro',
-                      style: TextStyle(color: Color(0xFF8A96A5), fontSize: 15),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(13),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0B1A2B).withOpacity(0.18),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: TextField(
+              controller: _homeSearchController,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (value) {
+                final query = value.trim();
+                if (query.isNotEmpty) {
+                  widget.onSearchQuery(query);
+                }
+              },
+              decoration: InputDecoration(
+                hintText: 'Search a service or pro',
+                hintStyle: const TextStyle(color: Color(0xFF8A96A5), fontSize: 15),
+                prefixIcon: const Icon(Icons.search, color: AppTheme.gray),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                suffixIcon: Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      final query = _homeSearchController.text.trim();
+                      if (query.isNotEmpty) {
+                        widget.onSearchQuery(query);
+                      }
+                    },
+                    icon: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: AppTheme.orange500,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: const Icon(Icons.arrow_forward, color: Colors.white, size: 16),
                     ),
                   ),
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppTheme.orange500,
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: const Icon(Icons.arrow_forward, color: Colors.white, size: 16),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -455,7 +447,7 @@ class _HomeTabState extends State<HomeTab> {
       {'name': 'Electrical', 'icon': Icons.flash_on, 'color': AppTheme.orange500, 'bg': AppTheme.orangeTint},
       {'name': 'Cleaning', 'icon': Icons.cleaning_services, 'color': AppTheme.navy700, 'bg': AppTheme.navyTint},
       {'name': 'Roofing', 'icon': Icons.roofing, 'color': AppTheme.orange500, 'bg': AppTheme.orangeTint},
-      {'name': 'Lawn & Garden', 'icon': Icons.nature_people, 'color': AppTheme.teal500, 'bg': AppTheme.tealTint},
+      {'name': 'Landscaping', 'icon': Icons.nature_people, 'color': AppTheme.teal500, 'bg': AppTheme.tealTint},
       {'name': 'Handyman', 'icon': Icons.build, 'color': AppTheme.orange500, 'bg': AppTheme.orangeTint},
       {'name': 'Painting', 'icon': Icons.format_paint, 'color': AppTheme.teal500, 'bg': AppTheme.tealTint},
       {'name': 'All 31', 'icon': Icons.apps, 'color': Colors.white, 'bg': AppTheme.orange500},
@@ -481,62 +473,60 @@ class _HomeTabState extends State<HomeTab> {
           ],
         ),
         const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 9,
-            mainAxisSpacing: 9,
-            childAspectRatio: 1.0,
+        SizedBox(
+          height: 100,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: cats.length,
+            itemBuilder: (context, index) {
+              final cat = cats[index];
+              final isAll = cat['name'] == 'All 31';
+              return GestureDetector(
+                onTap: () {
+                  if (isAll) {
+                    widget.onBookTap();
+                  } else {
+                    widget.onCategorySelected(cat['name']);
+                  }
+                },
+                child: Container(
+                  width: 95,
+                  margin: const EdgeInsets.only(right: 10),
+                  decoration: BoxDecoration(
+                    color: cat['bg'],
+                    borderRadius: BorderRadius.circular(13),
+                    border: isAll ? null : Border.all(color: const Color(0xFF1B3C6E).withOpacity(0.08)),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: isAll ? Colors.white.withOpacity(0.22) : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(cat['icon'], color: cat['color'], size: 20),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        cat['name'],
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isAll ? Colors.white : AppTheme.ink,
+                          height: 1.15,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
-          itemCount: cats.length,
-          itemBuilder: (context, index) {
-            final cat = cats[index];
-            final isAll = cat['name'] == 'All 31';
-            return GestureDetector(
-              onTap: () {
-                if (isAll) {
-                  widget.onBookTap();
-                } else {
-                  widget.onCategorySelected(cat['name']);
-                }
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  color: cat['bg'],
-                  borderRadius: BorderRadius.circular(13),
-                  border: isAll ? null : Border.all(color: Colors.black.withOpacity(0.03)),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: isAll ? Colors.white.withOpacity(0.22) : Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(cat['icon'], color: cat['color'], size: 20),
-                    ),
-                    const SizedBox(height: 7),
-                    Text(
-                      cat['name'],
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
-                        color: isAll ? Colors.white : AppTheme.ink,
-                        height: 1.15,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
         ),
       ],
     );

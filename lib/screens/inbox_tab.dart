@@ -345,16 +345,16 @@ class _InboxTabState extends State<InboxTab> {
                         children: [
                           Expanded(
                             child: isCredit
-                                ? Text.rich(
+                                ? const Text.rich(
                                     TextSpan(
                                       text: 'You earned ',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.ink),
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.ink),
                                       children: [
                                         TextSpan(
                                           text: '\$24',
                                           style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.orange500),
                                         ),
-                                        const TextSpan(text: ' in service credits'),
+                                        TextSpan(text: ' in service credits'),
                                       ],
                                     ),
                                   )

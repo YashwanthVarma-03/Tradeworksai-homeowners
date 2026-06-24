@@ -423,7 +423,7 @@ class _SearchTabState extends State<SearchTab> {
               margin: const EdgeInsets.only(right: 12),
               width: 80,
               decoration: BoxDecoration(
-                color: isSel ? AppTheme.navy700 : AppTheme.pageAlt,
+                color: isSel ? const Color(0xFF1B3C6E) : AppTheme.pageAlt,
                 borderRadius: BorderRadius.circular(16),
                 border: isSel ? null : Border.all(color: AppTheme.line.withOpacity(0.3)),
               ),

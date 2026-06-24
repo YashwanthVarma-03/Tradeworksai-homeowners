@@ -193,7 +193,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   child: const Icon(Icons.stars, color: AppTheme.orange500, size: 19),
                 ),
                 const SizedBox(width: 11),
-                Column(
+                const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -527,8 +527,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
                   // 14. Home Systems
                   _buildHomeSystemsList(),
 
-                  // 15. How it's used Note
-                  _buildUsageNote(),
+
                 ],
               ),
             ),
@@ -691,21 +690,6 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
             ),
           );
         }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildUsageNote() {
-    return Container(
-      margin: const EdgeInsets.all(14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.navyTint,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Text(
-        'We use your home profile to suggest timely maintenance and pre-fill your bookings. It isn\'t shared beyond the pro you book.',
-        style: TextStyle(fontSize: 12, color: AppTheme.navy700, height: 1.5),
       ),
     );
   }

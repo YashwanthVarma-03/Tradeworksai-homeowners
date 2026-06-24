@@ -12,8 +12,8 @@ class AppTheme {
   static const Color teal500 = Color(0xFF00B4D8); // --color-teal - Secondary
   static const Color tealTint = Color(0xFFE6F8FC); // Light teal tint
 
-  static const Color orange700 = Color(0xFFEA580C); // Darker orange
-  static const Color orange500 = Color(0xFFF97316); // --color-orange - Accent / CTA
+  static const Color orange700 = Color(0xFFC75D0D); // Darker orange
+  static const Color orange500 = Color(0xFFE8751A); // --color-orange - Accent / CTA
   static const Color orangeTint = Color(0xFFFFF7ED); // Light orange tint
 
   // Neutral Colors

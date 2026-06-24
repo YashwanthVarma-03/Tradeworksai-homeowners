@@ -322,26 +322,6 @@ class _DashboardShellState extends State<DashboardShell> {
   }
 
   void _showAssistModal() {
-    final List<bool> faqExpanded = List.generate(4, (_) => false);
-    final List<Map<String, String>> faqs = [
-      {
-        'q': 'How does the TradeWorks One network work?',
-        'a': 'You join for free, browse vetted and insured home service professionals across 31 categories, and see upfront pricing before you book. You book directly on their calendar, and you earn 3–7% cash back in service credits on every completed job.'
-      },
-      {
-        'q': 'What are the homeowner rewards bands?',
-        'a': 'Membership earns service credits marginal by spend: 3% on the first \$5,000 of annual spend, 5% on spend from \$5,000–\$15,000, and 7% from \$15,000–\$25,000. Credits can be redeemed toward any future services on the network.'
-      },
-      {
-        'q': 'How are contractors vetted?',
-        'a': 'Every contractor in the network is verified for active state licenses and general liability insurance before taking any job. We verify credentials so you don\'t have to chase proof of coverage.'
-      },
-      {
-        'q': 'What is GEO/AEO optimization?',
-        'a': 'Generative Engine Optimization (GEO) and Answer Engine Optimization (AEO) are strategies to optimize your contractor website so it gets cited by AI search tools like ChatGPT, Claude, Perplexity, and Google AI Overviews, ensuring your business stays visible where modern buyers search.'
-      },
-    ];
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -350,14 +330,84 @@ class _DashboardShellState extends State<DashboardShell> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
+        final Set<String> expandedQuestions = {};
+
         return DraggableScrollableSheet(
-          initialChildSize: 0.7,
+          initialChildSize: 0.75,
           minChildSize: 0.5,
           maxChildSize: 0.95,
           expand: false,
           builder: (context, scrollController) {
             return StatefulBuilder(
               builder: (context, setModalState) {
+                Widget buildFAQItem(String question, String answer) {
+                  final isExpanded = expandedQuestions.contains(question);
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.pageAlt.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.line.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          dense: true,
+                          title: Text(
+                            question,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.navy700),
+                          ),
+                          trailing: AnimatedRotation(
+                            turns: isExpanded ? 0.125 : 0.0,
+                            duration: const Duration(milliseconds: 200),
+                            child: Icon(
+                              Icons.add,
+                              color: isExpanded ? AppTheme.orange500 : AppTheme.navy700,
+                              size: 18,
+                            ),
+                          ),
+                          onTap: () {
+                            setModalState(() {
+                              if (isExpanded) {
+                                expandedQuestions.remove(question);
+                              } else {
+                                expandedQuestions.add(question);
+                              }
+                            });
+                          },
+                        ),
+                        AnimatedCrossFade(
+                          firstChild: const SizedBox.shrink(),
+                          secondChild: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                            child: Text(
+                              answer,
+                              style: const TextStyle(color: AppTheme.ink, fontSize: 12.5, height: 1.45),
+                            ),
+                          ),
+                          crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                          duration: const Duration(milliseconds: 200),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                Widget buildFAQHeader(String title) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 18.0, bottom: 8.0, left: 4.0),
+                    child: Text(
+                      title,
+                      style: AppTheme.headingStyle.copyWith(
+                        fontSize: 13.5,
+                        color: const Color(0xFF1B3C6E),
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.04,
+                      ),
+                    ),
+                  );
+                }
+
                 return SingleChildScrollView(
                   controller: scrollController,
                   padding: const EdgeInsets.all(24),
@@ -423,64 +473,51 @@ class _DashboardShellState extends State<DashboardShell> {
                       ),
                       const SizedBox(height: 24),
                       const Divider(),
-                      const SizedBox(height: 20),
-                      const Text(
+                      const SizedBox(height: 16),
+                      Text(
                         'Frequently Asked Questions',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.navy700),
+                        style: AppTheme.headingStyle.copyWith(fontSize: 16, color: AppTheme.navy700),
                       ),
-                      const SizedBox(height: 12),
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: faqs.length,
-                        itemBuilder: (context, index) {
-                          final faq = faqs[index];
-                          final isExpanded = faqExpanded[index];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              color: AppTheme.pageAlt.withOpacity(0.5),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppTheme.line.withOpacity(0.3)),
-                            ),
-                            child: Column(
-                              children: [
-                                ListTile(
-                                  title: Text(
-                                    faq['q']!,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.navy700),
-                                  ),
-                                  trailing: AnimatedRotation(
-                                    turns: isExpanded ? 0.125 : 0.0,
-                                    duration: const Duration(milliseconds: 200),
-                                    child: Icon(
-                                      Icons.add,
-                                      color: isExpanded ? AppTheme.orange500 : AppTheme.navy700,
-                                      size: 20,
-                                    ),
-                                  ),
-                                  onTap: () {
-                                    setModalState(() {
-                                      faqExpanded[index] = !isExpanded;
-                                    });
-                                  },
-                                ),
-                                AnimatedCrossFade(
-                                  firstChild: const SizedBox.shrink(),
-                                  secondChild: Padding(
-                                    padding: const EdgeInsets.all(16.0),
-                                    child: Text(
-                                      faq['a']!,
-                                      style: const TextStyle(color: AppTheme.ink, fontSize: 12, height: 1.4),
-                                    ),
-                                  ),
-                                  crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                                  duration: const Duration(milliseconds: 200),
-                                )
-                              ],
-                            ),
-                          );
-                        },
+                      const SizedBox(height: 4),
+
+                      buildFAQHeader('🏡 Home & Search Page FAQs'),
+                      buildFAQItem(
+                        'How does the TradeWorks One network work?',
+                        'You join for free, browse vetted and insured home service professionals across 31 categories, and see upfront pricing before you book. You book directly on their calendar, and you earn 3–7% cash back in service credits on every completed job.',
+                      ),
+                      buildFAQItem(
+                        'How are contractors vetted?',
+                        'Every contractor in the network is verified for active state licenses and general liability insurance before taking any job. We verify credentials so you don\'t have to chase proof of coverage.',
+                      ),
+                      buildFAQItem(
+                        'What is GEO/AEO optimization?',
+                        'Generative Engine Optimization (GEO) and Answer Engine Optimization (AEO) are strategies to optimize your contractor website so it gets cited by AI search tools like ChatGPT, Claude, Perplexity, and Google AI Overviews, ensuring your business stays visible where modern buyers search.',
+                      ),
+
+                      buildFAQHeader('📅 Bookings Page FAQs'),
+                      buildFAQItem(
+                        'Can I cancel or reschedule a booking?',
+                        'Yes, you can cancel or reschedule any future booked job before the work begins for free with no homeowner fees. Cancellations or reschedules are handled directly via the Bookings tab.',
+                      ),
+
+                      buildFAQHeader('🏆 Rewards Page FAQs'),
+                      buildFAQItem(
+                        'How do TradeWorks service credits work?',
+                        'Earn 3% → 5% → 7% back as you spend more in a year — each rate applies only to spend within its YTD band (no retroactive re-crediting). Credits are service credits that apply toward any booking (never count as new spend). They are non-cashable and non-transferable, and reset every January 1.',
+                      ),
+                      buildFAQItem(
+                        'Do my service credits expire?',
+                        'Yes, each service credit expires 24 months after you earn it. Check your Rewards Tab ledger to see credit-specific expiry logs.',
+                      ),
+                      buildFAQItem(
+                        'How do I redeem my service credits?',
+                        'Credits apply automatically to your next booking. To redeem, just reach out to support and we\'ll apply them for you. In-app redemption is coming soon as a fast-follow feature.',
+                      ),
+
+                      buildFAQHeader('👤 Profile & Home Profile FAQs'),
+                      buildFAQItem(
+                        'How is my Home Profile information used?',
+                        'We use your home profile (square footage, year built, bedrooms, bathrooms, HVAC, water heater, roof ages) to suggest timely maintenance and pre-fill your bookings. It is kept secure and isn\'t shared beyond the specific pro you book.',
                       ),
                     ],
                   ),

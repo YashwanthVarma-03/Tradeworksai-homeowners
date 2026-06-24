@@ -28,9 +28,7 @@ class RewardTab extends StatelessWidget {
                 _buildBandProgressSection(),
                 const SizedBox(height: 24),
 
-                // 3. How Rewards Work
-                _buildHowItWorksSection(),
-                const SizedBox(height: 24),
+
 
                 // 4. Credit History (Ledger)
                 _buildActivityLedgerSection(context),
@@ -308,53 +306,6 @@ class RewardTab extends StatelessWidget {
     );
   }
 
-  Widget _buildHowItWorksSection() {
-    final rules = [
-      'Earn <b>3% → 5% → 7%</b> back as you spend more in a year — each rate applies <b>only to spend within its band</b> (no retroactive re-crediting).',
-      'Credits are <b>service credits</b> — use them toward any booking. They never count as new spend.',
-      'Non-cashable and non-transferable; each credit <b>expires 24 months</b> after you earn it.',
-      'Bands <b>reset every January 1</b>; above \$25,000 in a year you keep earning <b>5% back</b>.',
-    ];
-
-    return GlassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'How rewards work',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.navy700),
-          ),
-          const SizedBox(height: 12),
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: rules.length,
-            itemBuilder: (context, index) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.check_circle_outline, color: AppTheme.teal500, size: 16),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        rules[index]
-                            .replaceAll('<b>', '')
-                            .replaceAll('</b>', ''), // simple strip for pure flutter
-                        style: const TextStyle(fontSize: 12.7, color: Color(0xFF42526A), height: 1.45),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildActivityLedgerSection(BuildContext context) {
     final List<Map<String, dynamic>> items = [
       {
@@ -485,11 +436,6 @@ class RewardTab extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.navy700),
           ),
           const SizedBox(height: 5),
-          const Text(
-            'Credits apply to your next booking. To redeem, just reach out and we\'ll apply them for you.',
-            style: TextStyle(color: Color(0xFF5A4634), fontSize: 12.7, height: 1.5),
-          ),
-          const SizedBox(height: 12),
           ElevatedButton(
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -509,13 +455,6 @@ class RewardTab extends StatelessWidget {
                 SizedBox(width: 8),
                 Text('Contact support to redeem', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               ],
-            ),
-          ),
-          const SizedBox(height: 9),
-          const Center(
-            child: Text(
-              'In-app redemption is coming soon',
-              style: TextStyle(color: AppTheme.gray, fontSize: 11),
             ),
           ),
         ],

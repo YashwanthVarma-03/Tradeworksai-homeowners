@@ -147,17 +147,7 @@ class _OnboardingSliderState extends State<OnboardingSlider> {
   }
 
   Widget _buildAnimatedPage(int index, Widget child) {
-    final isActive = _currentPage == index;
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 400),
-      opacity: isActive ? 1.0 : 0.0,
-      child: AnimatedEntrance(
-        key: ValueKey('slide_${index}_$isActive'),
-        delay: isActive ? const Duration(milliseconds: 100) : Duration.zero,
-        slideOffset: 30.0,
-        child: child,
-      ),
-    );
+    return child;
   }
 
   // --- SLIDE 1: HERO VIEW ---
