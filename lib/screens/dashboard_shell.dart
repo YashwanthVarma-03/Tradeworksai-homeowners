@@ -18,49 +18,12 @@ class DashboardShell extends StatefulWidget {
 
 class _DashboardShellState extends State<DashboardShell> {
   int _currentIndex = 0;
-
-  late final List<Widget> _tabs;
+  String? _searchQuery;
+  String? _selectedCategory;
 
   @override
   void initState() {
     super.initState();
-    _tabs = [
-      HomeTab(
-        onBookTap: () {
-          setState(() {
-            _currentIndex = 1; // Go to Search Tab
-          });
-        },
-        onJobTap: (job) {
-          // Open job booking stepper mockup or navigate
-          _showBookingModal(job);
-        },
-      ),
-      SearchTab(
-        onBookPro: (pro) {
-          _showBookingModal(pro);
-        },
-      ),
-      BookingsTab(
-        onBookNowTap: () {
-          setState(() {
-            _currentIndex = 1; // Go to Search Tab
-          });
-        },
-      ),
-      RewardTab(
-        onBookTap: () {
-          setState(() {
-            _currentIndex = 1; // Go to Search Tab
-          });
-        },
-      ),
-      ProfileTab(
-        onLogout: () {
-          Navigator.pop(context); // Go back to LandingPage
-        },
-      ),
-    ];
   }
 
   void _showBookingModal(Map<String, String> pro) {
@@ -152,6 +115,71 @@ class _DashboardShellState extends State<DashboardShell> {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> tabs = [
+      HomeTab(
+        onBookTap: () {
+          setState(() {
+            _searchQuery = null;
+            _selectedCategory = null;
+            _currentIndex = 1; // Go to Search Tab
+          });
+        },
+        onJobTap: (job) {
+          _showBookingModal(job);
+        },
+        onInboxTap: _showInboxModal,
+        onSearchQuery: (query) {
+          setState(() {
+            _searchQuery = query;
+            _selectedCategory = null;
+            _currentIndex = 1;
+          });
+        },
+        onCategorySelected: (cat) {
+          setState(() {
+            _selectedCategory = cat;
+            _searchQuery = null;
+            _currentIndex = 1;
+          });
+        },
+      ),
+      SearchTab(
+        onBookPro: (pro) {
+          _showBookingModal(pro);
+        },
+        initialSearchQuery: _searchQuery,
+        initialCategory: _selectedCategory,
+      ),
+      BookingsTab(
+        onBookNowTap: () {
+          setState(() {
+            _searchQuery = null;
+            _selectedCategory = null;
+            _currentIndex = 1; // Go to Search Tab
+          });
+        },
+      ),
+      RewardTab(
+        onBookTap: () {
+          setState(() {
+            _searchQuery = null;
+            _selectedCategory = null;
+            _currentIndex = 1; // Go to Search Tab
+          });
+        },
+      ),
+      ProfileTab(
+        onLogout: () {
+          Navigator.pop(context); // Go back to LandingPage
+        },
+        onRewardsTap: () {
+          setState(() {
+            _currentIndex = 3; // Go to Rewards Tab
+          });
+        },
+      ),
+    ];
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -232,7 +260,7 @@ class _DashboardShellState extends State<DashboardShell> {
         child: SafeArea(
           child: IndexedStack(
             index: _currentIndex,
-            children: _tabs,
+            children: tabs,
           ),
         ),
       ),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
-import '../widgets/custom_widgets.dart';
 
 class InboxTab extends StatefulWidget {
   const InboxTab({super.key});
@@ -10,119 +9,141 @@ class InboxTab extends StatefulWidget {
 }
 
 class _InboxTabState extends State<InboxTab> {
-  int _activeSegment = 0; // 0: Messages, 1: AI Stream
+  int _activeSegment = 0; // 0: Messages, 1: Activity
 
   final List<Map<String, dynamic>> _threads = [
     {
-      'id': 'thread-1',
-      'proName': 'Dave Miller',
-      'company': 'Miller Cool Air & Heating',
-      'avatarChar': 'D',
-      'lastMessage': 'I am on my way. ETA 9:42 PM (12 mins). Let me know if there are gate instructions.',
-      'time': '9:30 PM',
-      'isUnread': true,
+      'id': 'TW-4471',
+      'proName': 'Marcus T.',
+      'trade': 'HVAC · Select-certified',
+      'avatarChar': 'M',
+      'woTitle': 'HVAC Tune-Up · #TW-4471',
+      'lastMessage': 'On my way — ETA about 20 minutes.',
+      'time': '2:18 PM',
+      'unreadCount': 2,
+      'status': 'En route',
+      'statusColor': AppTheme.teal500,
       'messages': [
-        {'sender': 'pro', 'text': 'Hi, I will be arriving shortly for your AC diagnostic.', 'time': '9:25 PM'},
-        {'sender': 'homeowner', 'text': 'Great! Thank you. I have entered the gate code in the system.', 'time': '9:27 PM'},
-        {'sender': 'pro', 'text': 'I am on my way. ETA 9:42 PM (12 mins). Let me know if there are gate instructions.', 'time': '9:30 PM'},
+        {'sender': 'sys', 'text': 'Booking confirmed · Fri, Jun 27', 'time': ''},
+        {'sender': 'pro', 'text': 'Hi! Looking forward to the tune-up Friday. Anything I should know about the unit?', 'time': 'Tue 4:02 PM'},
+        {'sender': 'homeowner', 'text': 'It\'s a 2-story — the air handler is in the upstairs closet.', 'time': 'Tue 4:15 PM'},
+        {'sender': 'pro', 'text': 'Got it — thanks. I\'ll bring the right ladder.', 'time': 'Tue 4:18 PM'},
+        {'sender': 'sys', 'text': 'En route · ETA ~2:40 PM', 'time': ''},
+        {'sender': 'pro', 'text': 'On my way — ETA about 20 minutes.', 'time': '2:18 PM'},
       ]
     },
     {
-      'id': 'thread-2',
-      'proName': 'Sarah Jenkins',
-      'company': 'Jenkins Plumbing Group',
-      'avatarChar': 'S',
-      'lastMessage': 'Invoice has been sent for the pipe leak fix. Thank you!',
-      'time': 'Mar 12',
-      'isUnread': false,
+      'id': 'TW-4458',
+      'proName': 'Priya R.',
+      'trade': 'Drain Specialist',
+      'avatarChar': 'P',
+      'woTitle': 'Drain Cleaning · #TW-4458',
+      'lastMessage': 'Thanks! Receipt & warranty info attached.',
+      'time': 'Yesterday',
+      'unreadCount': 0,
+      'status': 'Completed',
+      'statusColor': AppTheme.success,
       'messages': [
-        {'sender': 'pro', 'text': 'Leak is fully repaired. I will submit the work order now.', 'time': '3:40 PM'},
-        {'sender': 'homeowner', 'text': 'Awesome work, Sarah.', 'time': '3:42 PM'},
-        {'sender': 'pro', 'text': 'Invoice has been sent for the pipe leak fix. Thank you!', 'time': '3:45 PM'},
+        {'sender': 'sys', 'text': 'Booking confirmed · Mon, Jun 23', 'time': ''},
+        {'sender': 'pro', 'text': 'Hi! Ready for the drain service today.', 'time': 'Mon 9:00 AM'},
+        {'sender': 'homeowner', 'text': 'Excellent, see you then.', 'time': 'Mon 9:05 AM'},
+        {'sender': 'sys', 'text': 'Completed · Mon, Jun 23', 'time': ''},
+        {'sender': 'pro', 'text': 'Thanks! Receipt & warranty info attached.', 'time': 'Mon 4:30 PM'},
       ]
     },
     {
-      'id': 'thread-3',
-      'proName': 'VoltSpark Handyman',
-      'company': 'VoltSpark Home Services',
-      'avatarChar': 'V',
-      'lastMessage': 'Can we schedule the fan install for 2 PM instead?',
-      'time': 'Feb 05',
-      'isUnread': false,
+      'id': 'TW-4502',
+      'proName': 'Kitchen Remodel',
+      'trade': 'Estimator Pro',
+      'avatarChar': 'K',
+      'woTitle': 'Free estimate · #TW-4502',
+      'lastMessage': 'Your quote is ready to review and approve.',
+      'time': 'Mon',
+      'unreadCount': 1,
+      'status': 'Quote ready',
+      'statusColor': AppTheme.orange500,
       'messages': [
-        {'sender': 'pro', 'text': 'Can we schedule the fan install for 2 PM instead?', 'time': '9:15 AM'},
+        {'sender': 'sys', 'text': 'Intake submitted · Mon, Jun 23', 'time': ''},
+        {'sender': 'pro', 'text': 'Hi Jordan, I have reviewed the photo uploads and built the estimate.', 'time': 'Mon 11:00 AM'},
+        {'sender': 'sys', 'text': 'Quote ready', 'time': ''},
+        {'sender': 'pro', 'text': 'Your quote is ready to review and approve.', 'time': 'Mon 11:15 AM'},
       ]
     }
   ];
 
-  final List<Map<String, dynamic>> _aiStreamEvents = [
+  final List<Map<String, dynamic>> _activityFeed = [
     {
-      'title': 'AI Dispatch: Tech Match Found',
-      'desc': 'Matched Dave Miller (Miller Cool Air) for your HVAC emergency diagnostic check. Dispatch ETA is under 12 mins.',
-      'time': '9:00 PM',
-      'type': 'dispatch',
-      'icon': Icons.smart_toy,
+      'title': 'Marcus is en route',
+      'sub': 'HVAC Tune-Up · #TW-4471 · arriving ~2:40 PM',
+      'time': '2:18 PM',
+      'icon': Icons.airport_shuttle,
       'color': AppTheme.teal500,
     },
     {
-      'title': 'Proactive Check-up Triggered',
-      'desc': 'AI Assistant detected AC system is 12 years old. Added "Summer AC Check-up" tune-up to your seasonal checklist.',
-      'time': '3:15 PM',
-      'type': 'checklist',
-      'icon': Icons.insights,
-      'color': AppTheme.orange500,
-    },
-    {
-      'title': 'Rewards Credited (5% Band)',
-      'desc': 'Earned \$7.30 service credits from completed plumbing job (WO-8910). Total reward credits balance updated to \$214.60.',
-      'time': 'Mar 12, 2026',
-      'type': 'reward',
+      'title': 'You earned \$24 in service credits',
+      'sub': 'Drain Cleaning · #TW-4458 · 3% band',
+      'time': 'Yesterday',
       'icon': Icons.stars,
-      'color': AppTheme.success,
+      'color': AppTheme.orange500,
+      'isCredit': true,
     },
     {
-      'title': 'Vetted Insurance Verification Check',
-      'desc': 'Verified active state license and \$1M general liability coverage for Jenkins Plumbing Group prior to job start.',
-      'time': 'Mar 12, 2026',
-      'type': 'security',
-      'icon': Icons.verified_user,
-      'color': AppTheme.navy700,
+      'title': 'Quote Ready to Review',
+      'sub': 'Free estimate · #TW-4502 · standard diagnostic quote cap',
+      'time': 'Mon',
+      'icon': Icons.description,
+      'color': AppTheme.orange500,
     }
   ];
 
+  void _openThread(Map<String, dynamic> thread) {
+    setState(() {
+      thread['unreadCount'] = 0;
+    });
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ConversationScreen(thread: thread),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        children: [
-          _buildSegmentedControl(),
-          const SizedBox(height: 20),
-          Expanded(
-            child: _activeSegment == 0 ? _buildThreadsList() : _buildAiStreamList(),
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        _buildSegmentedControl(),
+        Expanded(
+          child: _activeSegment == 0 ? _buildThreadsList() : _buildActivityList(),
+        ),
+      ],
     );
   }
 
   Widget _buildSegmentedControl() {
+    int totalUnread = _threads.fold<int>(0, (sum, t) => sum + (t['unreadCount'] as int));
+
     return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.pageAlt,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          _buildSegmentItem(0, 'Messages'),
-          _buildSegmentItem(1, 'AI Stream'),
-        ],
+      padding: const EdgeInsets.all(12),
+      color: Colors.white,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppTheme.pageAlt,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            _buildSegmentItem(0, 'Messages', unreadCount: totalUnread),
+            _buildSegmentItem(1, 'Activity'),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSegmentItem(int index, String label) {
+  Widget _buildSegmentItem(int index, String label, {int? unreadCount}) {
     final isSelected = _activeSegment == index;
     return Expanded(
       child: GestureDetector(
@@ -132,25 +153,48 @@ class _InboxTabState extends State<InboxTab> {
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
+            color: isSelected ? AppTheme.navy700 : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             boxShadow: isSelected
                 ? [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: AppTheme.navy700.withOpacity(0.2),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     )
                   ]
                 : null,
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: isSelected ? AppTheme.navy700 : AppTheme.gray,
-              fontSize: 13,
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : AppTheme.gray,
+                  fontSize: 13,
+                ),
+              ),
+              if (unreadCount != null && unreadCount > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: AppTheme.orange500,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    unreadCount.toString(),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
@@ -162,299 +206,477 @@ class _InboxTabState extends State<InboxTab> {
       itemCount: _threads.length,
       itemBuilder: (context, index) {
         final thread = _threads[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(
-              color: thread['isUnread'] ? AppTheme.teal500.withOpacity(0.5) : AppTheme.line.withOpacity(0.5),
-              width: thread['isUnread'] ? 1.5 : 0.5,
-            ),
+        final unread = (thread['unreadCount'] as int) > 0;
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: AppTheme.line)),
           ),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: CircleAvatar(
-              backgroundColor: thread['isUnread'] ? AppTheme.teal500 : AppTheme.navy500,
-              foregroundColor: Colors.white,
-              child: Text(thread['avatarChar']),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            leading: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 21,
+                  backgroundColor: AppTheme.navyTint,
+                  child: Text(
+                    thread['avatarChar']!,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.navy700),
+                  ),
+                ),
+                if (unread)
+                  Positioned(
+                    top: -1,
+                    right: -1,
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: AppTheme.orange500,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             title: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  thread['proName'],
-                  style: TextStyle(
-                    fontWeight: thread['isUnread'] ? FontWeight.bold : FontWeight.w600,
-                    fontSize: 14,
-                    color: AppTheme.navy700,
-                  ),
+                  thread['proName']!,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.navy700),
                 ),
                 Text(
-                  thread['time'],
+                  thread['time']!,
                   style: const TextStyle(color: AppTheme.gray, fontSize: 11),
                 ),
               ],
             ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    thread['company'],
-                    style: const TextStyle(color: AppTheme.gray, fontSize: 11, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    thread['lastMessage'],
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: thread['isUnread'] ? AppTheme.ink : AppTheme.gray,
-                      fontSize: 12.5,
-                      fontWeight: thread['isUnread'] ? FontWeight.w500 : FontWeight.normal,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            trailing: thread['isUnread']
-                ? Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.orange500,
-                      shape: BoxShape.circle,
-                    ),
-                  )
-                : null,
-            onTap: () => _openChatThread(thread),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAiStreamList() {
-    return ListView.builder(
-      itemCount: _aiStreamEvents.length,
-      itemBuilder: (context, index) {
-        final event = _aiStreamEvents[index];
-        return GlassCard(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: (event['color'] as Color).withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(event['icon'] as IconData, color: event['color'] as Color, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 3),
+                Row(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            event['title'],
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.navy700),
-                          ),
-                        ),
-                        Text(
-                          event['time'],
-                          style: const TextStyle(color: AppTheme.gray, fontSize: 10),
-                        ),
-                      ],
+                    Expanded(
+                      child: Text(
+                        thread['woTitle']!,
+                        style: const TextStyle(color: AppTheme.teal700, fontSize: 11.5, fontWeight: FontWeight.w500),
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      event['desc'],
-                      style: const TextStyle(color: AppTheme.gray, fontSize: 12, height: 1.3),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: (thread['statusColor'] as Color).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        thread['status']!,
+                        style: TextStyle(
+                          color: thread['statusColor'] as Color,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
+                      ),
                     ),
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  thread['lastMessage']!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppTheme.gray, fontSize: 12),
+                ),
+              ],
+            ),
+            trailing: unread
+                ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: AppTheme.navy700, borderRadius: BorderRadius.circular(10)),
+                    child: Text(
+                      thread['unreadCount'].toString(),
+                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  )
+                : const Icon(Icons.chevron_right, color: AppTheme.line),
+            onTap: () => _openThread(thread),
           ),
         );
       },
     );
   }
 
-  void _openChatThread(Map<String, dynamic> thread) {
-    setState(() {
-      thread['isUnread'] = false;
-    });
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        final messages = thread['messages'] as List<Map<String, String>>;
-        final chatController = TextEditingController();
-
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.8,
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-              child: Column(
-                children: [
-                  // Title bar
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                    decoration: const BoxDecoration(
-                      border: Border(bottom: BorderSide(color: AppTheme.line, width: 0.5)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              thread['proName'],
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.navy700),
-                            ),
-                            Text(
-                              thread['company'],
-                              style: const TextStyle(color: AppTheme.gray, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: AppTheme.gray),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
+  Widget _buildActivityList() {
+    return ListView.builder(
+      itemCount: _activityFeed.length,
+      itemBuilder: (context, index) {
+        final act = _activityFeed[index];
+        final isCredit = act['isCredit'] == true;
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: AppTheme.line)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: act['color'].withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-
-                  // Messages list
-                  Expanded(
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(20),
-                      itemCount: messages.length,
-                      itemBuilder: (context, idx) {
-                        final msg = messages[idx];
-                        final isOwner = msg['sender'] == 'homeowner';
-                        return Align(
-                          alignment: isOwner ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                            decoration: BoxDecoration(
-                              color: isOwner ? AppTheme.navy700 : AppTheme.pageAlt,
-                              borderRadius: BorderRadius.only(
-                                topLeft: const Radius.circular(16),
-                                topRight: const Radius.circular(16),
-                                bottomLeft: Radius.circular(isOwner ? 16 : 0),
-                                bottomRight: Radius.circular(isOwner ? 0 : 16),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: isOwner ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  msg['text']!,
-                                  style: TextStyle(
-                                    color: isOwner ? Colors.white : AppTheme.ink,
-                                    fontSize: 13,
+                  alignment: Alignment.center,
+                  child: Icon(act['icon'] as IconData, color: act['color'] as Color, size: 18),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: isCredit
+                                ? Text.rich(
+                                    TextSpan(
+                                      text: 'You earned ',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.ink),
+                                      children: [
+                                        TextSpan(
+                                          text: '\$24',
+                                          style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.orange500),
+                                        ),
+                                        const TextSpan(text: ' in service credits'),
+                                      ],
+                                    ),
+                                  )
+                                : Text(
+                                    act['title']!,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.ink),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  msg['time']!,
-                                  style: TextStyle(
-                                    color: isOwner ? Colors.white.withOpacity(0.7) : AppTheme.gray,
-                                    fontSize: 9,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
-                        );
-                      },
-                    ),
+                          Text(
+                            act['time']!,
+                            style: const TextStyle(color: AppTheme.gray, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        act['sub']!,
+                        style: const TextStyle(color: AppTheme.gray, fontSize: 11.5),
+                      ),
+                    ],
                   ),
-
-                  // Input bar
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: const BoxDecoration(
-                      border: Border(top: BorderSide(color: AppTheme.line, width: 0.5)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: chatController,
-                            decoration: InputDecoration(
-                              hintText: 'Type your message...',
-                              hintStyle: const TextStyle(color: AppTheme.gray, fontSize: 13),
-                              filled: true,
-                              fillColor: AppTheme.pageAlt,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(20),
-                                borderSide: BorderSide.none,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.send, color: AppTheme.teal500),
-                          onPressed: () {
-                            if (chatController.text.trim().isNotEmpty) {
-                              final text = chatController.text.trim();
-                              setModalState(() {
-                                messages.add({
-                                  'sender': 'homeowner',
-                                  'text': text,
-                                  'time': 'Just now',
-                                });
-                              });
-                              chatController.clear();
-
-                              // Auto reply simulation
-                              Future.delayed(const Duration(seconds: 2), () {
-                                if (context.mounted) {
-                                  setModalState(() {
-                                    messages.add({
-                                      'sender': 'pro',
-                                      'text': 'Got it! The TradeWorks AI Receptionist has updated my schedule. See you soon.',
-                                      'time': 'Just now',
-                                    });
-                                  });
-                                }
-                              });
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  )
-                ],
-              ),
-            );
-          },
+                ),
+              ],
+            ),
+          ),
         );
       },
+    );
+  }
+}
+
+class ConversationScreen extends StatefulWidget {
+  final Map<String, dynamic> thread;
+
+  const ConversationScreen({super.key, required this.thread});
+
+  @override
+  State<ConversationScreen> createState() => _ConversationScreenState();
+}
+
+class _ConversationScreenState extends State<ConversationScreen> {
+  final TextEditingController _messageController = TextEditingController();
+
+  void _sendMessage() {
+    final text = _messageController.text.trim();
+    if (text.isNotEmpty) {
+      setState(() {
+        (widget.thread['messages'] as List<Map<String, String>>).add({
+          'sender': 'homeowner',
+          'text': text,
+          'time': 'Just now',
+        });
+      });
+      _messageController.clear();
+
+      // Auto reply simulation
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            (widget.thread['messages'] as List<Map<String, String>>).add({
+              'sender': 'pro',
+              'text': 'Got it! TradeWorks dispatcher has log sync. Thanks.',
+              'time': 'Just now',
+            });
+          });
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final messages = widget.thread['messages'] as List<Map<String, dynamic>>;
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: AppTheme.navy700),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: AppTheme.navyTint,
+              child: Text(
+                widget.thread['avatarChar']!,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.navy700),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.thread['proName']!,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: AppTheme.navy700),
+                ),
+                Text(
+                  widget.thread['trade']!,
+                  style: const TextStyle(color: AppTheme.gray, fontSize: 11),
+                ),
+              ],
+            ),
+          ],
+        ),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(0.5),
+          child: Container(color: AppTheme.line, height: 0.5),
+        ),
+      ),
+      body: Column(
+        children: [
+          // 12. Pinned work order context bar
+          _buildWorkOrderContextBar(),
+          // Chat messages list
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(14),
+              itemCount: messages.length,
+              itemBuilder: (context, index) {
+                final msg = messages[index];
+                if (msg['sender'] == 'sys') {
+                  return _buildSystemLine(msg['text']);
+                }
+                final isOwner = msg['sender'] == 'homeowner';
+                return _buildMessageBubble(msg['text'], msg['time'], isOwner);
+              },
+            ),
+          ),
+          // 16. Composer bar
+          _buildComposerBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWorkOrderContextBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: const BoxDecoration(
+        color: AppTheme.navyTint,
+        border: Border(bottom: BorderSide(color: AppTheme.line)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.thread['woTitle']!,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: AppTheme.navy700),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Fri, Jun 27 · 1:00–3:00 PM · status: ${widget.thread['status']}',
+                  style: const TextStyle(color: AppTheme.gray, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Work Order Details', style: TextStyle(fontWeight: FontWeight.bold)),
+                  content: Text(
+                    'Title: ${widget.thread['woTitle']}\n\n'
+                    'Pro: ${widget.thread['proName']}\n'
+                    'Specialty: ${widget.thread['trade']}\n'
+                    'Status: ${widget.thread['status']}\n\n'
+                    'Upfront rates are pre-negotiated by TradeWorks AI dispatcher.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              );
+            },
+            child: const Text(
+              'View work order ›',
+              style: TextStyle(color: AppTheme.teal500, fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSystemLine(String text) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppTheme.navyTint,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.info_outline, color: AppTheme.navy700, size: 13),
+            const SizedBox(width: 5),
+            Text(
+              text,
+              style: const TextStyle(color: AppTheme.navy700, fontWeight: FontWeight.bold, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(String text, String time, bool isOwner) {
+    return Align(
+      alignment: isOwner ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
+        decoration: BoxDecoration(
+          color: isOwner ? AppTheme.navy700 : Colors.white,
+          border: isOwner ? null : Border.all(color: AppTheme.line),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(14),
+            topRight: const Radius.circular(14),
+            bottomLeft: Radius.circular(isOwner ? 14 : 5),
+            bottomRight: Radius.circular(isOwner ? 5 : 14),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: isOwner ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            Text(
+              text,
+              style: TextStyle(
+                color: isOwner ? Colors.white : AppTheme.ink,
+                fontSize: 12.5,
+                height: 1.38,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              time,
+              style: TextStyle(
+                color: isOwner ? const Color(0xFFB9CAE0) : AppTheme.gray,
+                fontSize: 9.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComposerBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppTheme.line)),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Camera access requested for attachments.')),
+              );
+            },
+            child: const SizedBox(
+              width: 34,
+              height: 34,
+              child: Icon(Icons.photo_camera, color: AppTheme.gray, size: 21),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              height: 38,
+              alignment: Alignment.center,
+              child: TextField(
+                controller: _messageController,
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Message ${widget.thread['proName']}…',
+                  hintStyle: const TextStyle(color: AppTheme.gray, fontSize: 12.5),
+                  filled: true,
+                  fillColor: AppTheme.pageAlt,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(999),
+                    borderSide: const BorderSide(color: AppTheme.line),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                ),
+                onSubmitted: (_) => _sendMessage(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 9),
+          GestureDetector(
+            onTap: _sendMessage,
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: const BoxDecoration(
+                color: AppTheme.orange500,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.send, color: Colors.white, size: 19),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

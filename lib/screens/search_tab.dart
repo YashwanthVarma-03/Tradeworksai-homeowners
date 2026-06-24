@@ -4,10 +4,14 @@ import '../widgets/custom_widgets.dart';
 
 class SearchTab extends StatefulWidget {
   final Function(Map<String, String>) onBookPro;
+  final String? initialSearchQuery;
+  final String? initialCategory;
 
   const SearchTab({
     super.key,
     required this.onBookPro,
+    this.initialSearchQuery,
+    this.initialCategory,
   });
 
   @override
@@ -15,9 +19,27 @@ class SearchTab extends StatefulWidget {
 }
 
 class _SearchTabState extends State<SearchTab> {
-  final TextEditingController _searchController = TextEditingController();
+  late final TextEditingController _searchController;
   final TextEditingController _zipController = TextEditingController(text: '33569');
-  String _activeCategoryFilter = 'All';
+  late String _activeCategoryFilter;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: widget.initialSearchQuery ?? '');
+    _activeCategoryFilter = widget.initialCategory ?? 'All';
+  }
+
+  @override
+  void didUpdateWidget(SearchTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialSearchQuery != oldWidget.initialSearchQuery) {
+      _searchController.text = widget.initialSearchQuery ?? '';
+    }
+    if (widget.initialCategory != oldWidget.initialCategory) {
+      _activeCategoryFilter = widget.initialCategory ?? 'All';
+    }
+  }
 
   // Category list covering all 31 official categories plus "All"
   final List<Map<String, dynamic>> _categories = [
