@@ -328,7 +328,7 @@ class _SearchTabState extends State<SearchTab> {
                   final pro = entry.value;
                   return AnimatedEntrance(
                     key: ValueKey('${pro['name']}_${_searchController.text}_$_activeCategoryFilter'),
-                    delay: Duration(milliseconds: idx * 80),
+                    delay: Duration(milliseconds: idx < 3 ? idx * 30 : 0),
                     child: _buildProCard(pro),
                   );
                 }),
