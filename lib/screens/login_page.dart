@@ -102,6 +102,37 @@ class _LoginPageState extends State<LoginPage> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              setState(() {
+                _isLoading = true;
+              });
+              await AuthService.instance.simulateGoogleSignInSuccess();
+              if (parentContext.mounted) {
+                ScaffoldMessenger.of(parentContext).showSnackBar(
+                  const SnackBar(
+                    content: Text('Demo Bypass Successful! Welcome.'),
+                    backgroundColor: AppTheme.success,
+                  ),
+                );
+                Navigator.pushAndRemoveUntil(
+                  parentContext,
+                  createPremiumRoute(const DashboardShell()),
+                  (route) => false,
+                );
+              }
+              if (mounted) {
+                setState(() {
+                  _isLoading = false;
+                });
+              }
+            },
+            child: const Text(
+              'Demo Bypass',
+              style: TextStyle(color: AppTheme.orange500, fontWeight: FontWeight.bold),
+            ),
+          ),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);

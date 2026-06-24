@@ -214,6 +214,20 @@ class AuthService extends ChangeNotifier {
     );
   }
 
+  // Simulate successful Google Sign-in for demo bypass
+  Future<void> simulateGoogleSignInSuccess() async {
+    await _saveSession(
+      userId: '999',
+      email: 'demo.homeowner@gmail.com',
+      name: 'Demo Homeowner',
+      pictureUrl: 'https://lh3.googleusercontent.com/a/default-user=s96-c',
+      roleAssigned: 'homeowner',
+      assignedPhoneNumber: '(813) 555-9999',
+      textMessage: true,
+      whatsapp: false,
+    );
+  }
+
   // Request Password Reset Link — `/wix-password-reset-request-v2-supabase`
   Future<String> requestPasswordReset(String email) async {
     final response = await _post('wix-password-reset-request-v2-supabase', {
