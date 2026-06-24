@@ -8,6 +8,8 @@ import 'inbox_tab.dart';
 import 'reward_tab.dart';
 import 'profile_tab.dart';
 import 'booking_stepper.dart';
+import 'onboarding_slider.dart';
+import '../services/auth_service.dart';
 
 class DashboardShell extends StatefulWidget {
   const DashboardShell({super.key});
@@ -169,8 +171,15 @@ class _DashboardShellState extends State<DashboardShell> {
         },
       ),
       ProfileTab(
-        onLogout: () {
-          Navigator.pop(context); // Go back to LandingPage
+        onLogout: () async {
+          await AuthService.instance.logout();
+          if (context.mounted) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              createPremiumRoute(const OnboardingSlider()),
+              (route) => false,
+            );
+          }
         },
         onRewardsTap: () {
           setState(() {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
+import '../services/auth_service.dart';
 
 class HomeTab extends StatefulWidget {
   final VoidCallback onBookTap;
@@ -269,7 +270,7 @@ class _HomeTabState extends State<HomeTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Hi, Yashwanth',
+                    'Hi, ${AuthService.instance.givenName ?? 'Homeowner'}',
                     style: AppTheme.headingStyle.copyWith(
                       color: Colors.white,
                       fontSize: 20,

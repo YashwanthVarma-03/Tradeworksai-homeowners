@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
+import '../services/auth_service.dart';
 
 class ProfileTab extends StatefulWidget {
   final VoidCallback onLogout;
@@ -51,7 +52,7 @@ class _ProfileTabState extends State<ProfileTab> {
           _buildSettingsRow(
             icon: Icons.person_outline,
             title: 'Personal info',
-            subtitle: 'Yashwanth Varma · (813) 555-0148',
+            subtitle: '${AuthService.instance.userName ?? 'Homeowner'} · ${AuthService.instance.userEmail ?? 'No email'}',
             onTap: _editPersonalInfo,
           ),
 
@@ -119,18 +120,26 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   Widget _buildAccountHeader() {
+    final userName = AuthService.instance.userName ?? 'Homeowner';
+    final userEmail = AuthService.instance.userEmail ?? 'No email';
+    final initials = userName.split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join().toUpperCase();
+    final hasPicture = AuthService.instance.pictureUrl != null && AuthService.instance.pictureUrl!.isNotEmpty;
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             radius: 25,
             backgroundColor: AppTheme.navy700,
-            child: Text(
-              'YV',
-              style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.bold),
-            ),
+            backgroundImage: hasPicture ? NetworkImage(AuthService.instance.pictureUrl!) : null,
+            child: hasPicture
+                ? null
+                : Text(
+                    initials.isNotEmpty ? initials : 'U',
+                    style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.bold),
+                  ),
           ),
           const SizedBox(width: 13),
           Expanded(
@@ -138,13 +147,13 @@ class _ProfileTabState extends State<ProfileTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Yashwanth Varma',
+                  userName,
                   style: AppTheme.headingStyle.copyWith(fontSize: 16, color: AppTheme.navy700),
                 ),
                 const SizedBox(height: 2),
-                const Text(
-                  'yashwanth.varma@example.com',
-                  style: TextStyle(fontSize: 12.5, color: AppTheme.gray),
+                Text(
+                  userEmail,
+                  style: const TextStyle(fontSize: 12.5, color: AppTheme.gray),
                 ),
                 const SizedBox(height: 7),
                 Container(
@@ -338,17 +347,23 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   void _editPersonalInfo() {
+    final userName = AuthService.instance.userName ?? 'Homeowner';
+    final userEmail = AuthService.instance.userEmail ?? 'No email';
+    final userPhone = AuthService.instance.assignedPhoneNumber ?? '(813) 555-0148';
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Personal Info', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Name: Yashwanth Varma', style: TextStyle(fontWeight: FontWeight.bold)),
-            Text('Phone: (813) 555-0148'),
-            Text('Email: yashwanth.varma@example.com'),
+            Text('Name: $userName', style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text('Phone: $userPhone'),
+            const SizedBox(height: 6),
+            Text('Email: $userEmail'),
           ],
         ),
         actions: [
