@@ -163,12 +163,210 @@ class _HoverButtonState extends State<HoverButton> {
               child: Text(
                 widget.text,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: AppTheme.navy700,
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CategoryToken {
+  final Color color;
+  final Color tint;
+  final IconData icon;
+
+  const CategoryToken({
+    required this.color,
+    required this.tint,
+    required this.icon,
+  });
+}
+
+class TradeWorksCategoryTokens {
+  static const fallback = CategoryToken(
+    color: AppTheme.navy700,
+    tint: AppTheme.navyTint,
+    icon: Icons.home_repair_service,
+  );
+
+  static const all = <String, CategoryToken>{
+    'All': CategoryToken(
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
+      icon: Icons.apps,
+    ),
+    'HVAC': CategoryToken(
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
+      icon: Icons.ac_unit,
+    ),
+    'Plumbing': CategoryToken(
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
+      icon: Icons.plumbing,
+    ),
+    'Electrical': CategoryToken(
+      color: AppTheme.orange500,
+      tint: AppTheme.orangeTint,
+      icon: Icons.flash_on,
+    ),
+    'Cleaning': CategoryToken(
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
+      icon: Icons.cleaning_services,
+    ),
+    'Roofing': CategoryToken(
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
+      icon: Icons.roofing,
+    ),
+    'Landscaping': CategoryToken(
+      color: AppTheme.orange500,
+      tint: AppTheme.orangeTint,
+      icon: Icons.nature_people,
+    ),
+    'Handyman': CategoryToken(
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
+      icon: Icons.build,
+    ),
+    'Painting': CategoryToken(
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
+      icon: Icons.format_paint,
+    ),
+    'Appliance Repair': CategoryToken(
+      color: AppTheme.orange500,
+      tint: AppTheme.orangeTint,
+      icon: Icons.kitchen,
+    ),
+    'Pool & Spa': CategoryToken(
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
+      icon: Icons.pool,
+    ),
+    'Tree Service': CategoryToken(
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
+      icon: Icons.park,
+    ),
+    'Pest Control': CategoryToken(
+      color: AppTheme.orange500,
+      tint: AppTheme.orangeTint,
+      icon: Icons.bug_report,
+    ),
+    'Flooring': CategoryToken(
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
+      icon: Icons.layers,
+    ),
+    'Windows & Doors': CategoryToken(
+      color: AppTheme.orange500,
+      tint: AppTheme.orangeTint,
+      icon: Icons.window,
+    ),
+    'Water Treatment': CategoryToken(
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
+      icon: Icons.water_drop,
+    ),
+  };
+
+  static CategoryToken forName(String name) => all[name] ?? fallback;
+}
+
+class TradeWorksCategoryTile extends StatelessWidget {
+  final String label;
+  final String? meta;
+  final bool selected;
+  final VoidCallback onTap;
+  final double? width;
+
+  const TradeWorksCategoryTile({
+    super.key,
+    required this.label,
+    this.meta,
+    this.selected = false,
+    required this.onTap,
+    this.width,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final token = TradeWorksCategoryTokens.forName(label);
+    final bg = selected ? token.color : token.tint;
+    final fg = selected ? Colors.white : AppTheme.ink;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: width,
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 10),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? token.color : token.color.withOpacity(0.12),
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: token.color.withOpacity(0.22),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: selected ? Colors.white.withOpacity(0.16) : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                token.icon,
+                size: 20,
+                color: selected ? Colors.white : token.color,
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: fg,
+                fontSize: 11,
+                height: 1.12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (meta != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                meta!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? Colors.white.withOpacity(0.86) : AppTheme.gray,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -276,5 +474,121 @@ Route createPremiumRoute(Widget page) {
     transitionDuration: const Duration(milliseconds: 400),
   );
 }
+
+class SegmentItem {
+  final String label;
+  final int? count;
+  const SegmentItem({required this.label, this.count});
+}
+
+class SlidingSegmentControl extends StatelessWidget {
+  final int currentIndex;
+  final List<SegmentItem> items;
+  final ValueChanged<int> onSegmentChanged;
+  final Color activeColor;
+
+  const SlidingSegmentControl({
+    super.key,
+    required this.currentIndex,
+    required this.items,
+    required this.onSegmentChanged,
+    this.activeColor = const Color(0xFF1B3C6E),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppTheme.pageAlt,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.line.withOpacity(0.5)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth / items.length;
+          return Stack(
+            children: [
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOutCubic,
+                left: currentIndex * width,
+                top: 0,
+                bottom: 0,
+                width: width,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: activeColor,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: activeColor.withOpacity(0.25),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      )
+                    ],
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: Row(
+                  children: List.generate(items.length, (index) {
+                    final item = items[index];
+                    final isSelected = currentIndex == index;
+                    return Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => onSegmentChanged(index),
+                        child: Container(
+                          color: Colors.transparent,
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                            AnimatedDefaultTextStyle(
+                              duration: const Duration(milliseconds: 200),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: isSelected ? Colors.white : AppTheme.gray,
+                                fontSize: 12.5,
+                              ),
+                              child: Text(item.label),
+                            ),
+                            if (item.count != null && item.count! > 0) ...[
+                              const SizedBox(width: 5),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? Colors.white.withOpacity(0.24) : AppTheme.line,
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Text(
+                                  item.count.toString(),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected ? Colors.white : AppTheme.gray,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 
 

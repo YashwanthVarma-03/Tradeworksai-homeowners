@@ -13,6 +13,19 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Fix: strip -Werror from Java compile tasks for all plugin subprojects.
+// Uses gradle.projectsEvaluated because evaluationDependsOn(:app) above
+// forces subprojects to evaluate before this file finishes, making
+// afterEvaluate unreachable.
+gradle.projectsEvaluated {
+    subprojects { proj ->
+        proj.tasks.withType(JavaCompile).configureEach { task ->
+            task.options.compilerArgs.removeAll(['-Werror', '-Xlint:all'])
+            task.options.compilerArgs += ['-Xlint:none']
+        }
+    }
+}
+
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }

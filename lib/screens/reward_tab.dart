@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 
-class RewardTab extends StatelessWidget {
+import 'package:flutter/material.dart';
+import '../theme.dart';
+import '../widgets/custom_widgets.dart';
+import '../services/homeowner_service.dart';
+
+class RewardTab extends StatefulWidget {
   final VoidCallback onBookTap;
 
   const RewardTab({
@@ -11,35 +16,117 @@ class RewardTab extends StatelessWidget {
   });
 
   @override
+  State<RewardTab> createState() => _RewardTabState();
+}
+
+class _RewardTabState extends State<RewardTab> {
+  bool _isLoading = true;
+  String? _errorMessage;
+  double _rewardsBalance = 0.0;
+  double _rewardsEarnedThisYear = 0.0;
+  double _ytdSpend = 0.0;
+  String _rewardsTier = 'bronze';
+  double _rewardsRate = 0.03;
+  List<dynamic> _ledger = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRewardsData();
+  }
+
+  Future<void> _fetchRewardsData() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final data = await HomeownerService.instance.fetchRewards();
+      if (mounted) {
+        setState(() {
+          _rewardsBalance = (data['balance'] as num?)?.toDouble() ?? 0.0;
+          _rewardsEarnedThisYear = (data['earnedThisYear'] as num?)?.toDouble() ?? 0.0;
+          _ytdSpend = (data['ytdSpend'] as num?)?.toDouble() ?? 0.0;
+          _rewardsTier = (data['tier'] as String?)?.toLowerCase() ?? 'bronze';
+          _rewardsRate = (data['rate'] as num?)?.toDouble() ?? 0.03;
+          _ledger = data['ledger'] as List? ?? [];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _formatDate(String? isoString) {
+    if (isoString == null) return 'N/A';
+    try {
+      final dt = DateTime.parse(isoString);
+      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+    } catch (_) {
+      return isoString;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. Balance Hero with Navy -> Teal gradient
-          _buildBalanceHero(context),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 2. Band Progress (Marginal Tiers)
-                _buildBandProgressSection(),
-                const SizedBox(height: 24),
-
-
-
-                // 4. Credit History (Ledger)
-                _buildActivityLedgerSection(context),
-                const SizedBox(height: 24),
-
-                // 5. Redeem (MVP)
-                _buildRedeemSection(context),
-              ],
-            ),
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppTheme.orange500),
+      );
+    }
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
+              const SizedBox(height: 12),
+              Text(_errorMessage!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14), textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _fetchRewardsData,
+                child: const Text('Try Again'),
+              ),
+            ],
           ),
-        ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _fetchRewardsData,
+      color: AppTheme.orange500,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildBalanceHero(context),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildBandProgressSection(),
+                  const SizedBox(height: 24),
+                  _buildActivityLedgerSection(context),
+                  const SizedBox(height: 24),
+                  _buildRedeemSection(context),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -78,24 +165,6 @@ class RewardTab extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              GestureDetector(
-                onTap: () {
-                  _showInfoDialog(context);
-                },
-                child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.16),
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    '?',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -105,7 +174,7 @@ class RewardTab extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            '\$420',
+            '\$${_rewardsBalance.toStringAsFixed(0)}',
             style: AppTheme.headingStyle.copyWith(
               fontSize: 42,
               color: Colors.white,
@@ -114,9 +183,9 @@ class RewardTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Earned this year: \$400',
-            style: TextStyle(color: Color(0xFFE3EFF7), fontSize: 13),
+          Text(
+            'Earned this year: \$${_rewardsEarnedThisYear.toStringAsFixed(0)}',
+            style: const TextStyle(color: Color(0xFFE3EFF7), fontSize: 13),
           ),
           const SizedBox(height: 13),
           Container(
@@ -162,74 +231,94 @@ class RewardTab extends StatelessWidget {
   }
 
   Widget _buildBandProgressSection() {
+    double band1Progress = (_ytdSpend / 5000.0).clamp(0.0, 1.0);
+    double band2Progress = ((_ytdSpend - 5000.0) / 10000.0).clamp(0.0, 1.0);
+    double band3Progress = ((_ytdSpend - 15000.0) / 10000.0).clamp(0.0, 1.0);
+
+    double band1Earned = _ytdSpend < 5000 ? _ytdSpend * 0.03 : 5000.0 * 0.03;
+    double band2Earned = _ytdSpend < 5000 ? 0.0 : (_ytdSpend < 15000 ? (_ytdSpend - 5000.0) * 0.05 : 10000.0 * 0.05);
+    double band3Earned = _ytdSpend < 15000 ? 0.0 : (_ytdSpend - 15000.0) * 0.07;
+
+    String nextBandText = '';
+    if (_ytdSpend < 5000) {
+      nextBandText = 'Spend \$${(5000.0 - _ytdSpend).toStringAsFixed(0)} more to start earning 5% back';
+    } else if (_ytdSpend < 15000) {
+      nextBandText = 'Spend \$${(15000.0 - _ytdSpend).toStringAsFixed(0)} more to start earning 7% back';
+    } else {
+      nextBandText = 'You are in the elite 7% band!';
+    }
+
     return GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              const Text(
                 'Your 2026 progress',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.navy700),
               ),
               Text(
-                '\$10,000 spent',
-                style: TextStyle(color: AppTheme.gray, fontSize: 12.5, fontWeight: FontWeight.bold),
+                '\$${_ytdSpend.toStringAsFixed(0)} spent',
+                style: const TextStyle(color: AppTheme.gray, fontSize: 12.5, fontWeight: FontWeight.bold),
               ),
             ],
           ),
           const SizedBox(height: 16),
 
-          // Band 1
           _buildBandRow(
             rate: '3%',
             rateColor: AppTheme.tealTint,
             textColor: AppTheme.teal700,
             range: 'First \$5,000',
-            progress: 1.0,
-            earned: '+\$150',
-            spentDetail: '\$5,000 spent',
-            muted: false,
+            progress: band1Progress,
+            earned: '+\$${band1Earned.toStringAsFixed(0)}',
+            spentDetail: _ytdSpend < 5000 ? '\$${_ytdSpend.toStringAsFixed(0)} spent' : '\$5,000 spent',
+            muted: _ytdSpend < 0,
           ),
           const SizedBox(height: 12),
 
-          // Band 2
           _buildBandRow(
             rate: '5%',
             rateColor: const Color(0xFFD3EDF7),
             textColor: AppTheme.teal700,
             range: '\$5,000 – \$15,000',
-            progress: 0.5,
-            earned: '+\$250',
-            spentDetail: '\$5,000 spent',
-            muted: false,
+            progress: band2Progress,
+            earned: '+\$${band2Earned.toStringAsFixed(0)}',
+            spentDetail: _ytdSpend < 5000
+                ? 'not reached'
+                : (_ytdSpend < 15000
+                    ? '\$${(_ytdSpend - 5000.0).toStringAsFixed(0)} spent'
+                    : '\$10,000 spent'),
+            muted: _ytdSpend < 5000,
           ),
           const SizedBox(height: 12),
 
-          // Band 3
           _buildBandRow(
             rate: '7%',
             rateColor: AppTheme.navyTint,
             textColor: AppTheme.navy700,
             range: '\$15,000 – \$25,000',
-            progress: 0.0,
-            earned: '\$0',
-            spentDetail: 'not reached',
-            muted: true,
+            progress: band3Progress,
+            earned: band3Earned > 0 ? '+\$${band3Earned.toStringAsFixed(0)}' : '\$0',
+            spentDetail: _ytdSpend < 15000
+                ? 'not reached'
+                : '\$${(_ytdSpend - 15000.0).toStringAsFixed(0)} spent',
+            muted: _ytdSpend < 15000,
           ),
 
           const SizedBox(height: 16),
           const Divider(),
           const SizedBox(height: 12),
-          const Row(
+          Row(
             children: [
-              Icon(Icons.bolt, color: AppTheme.orange500, size: 14),
-              SizedBox(width: 6),
+              const Icon(Icons.bolt, color: AppTheme.orange500, size: 14),
+              const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Spend \$5,000 more to start earning 7% back',
-                  style: TextStyle(fontSize: 12.5, color: AppTheme.navy700, fontWeight: FontWeight.bold),
+                  nextBandText,
+                  style: const TextStyle(fontSize: 12.5, color: AppTheme.navy700, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -307,27 +396,16 @@ class RewardTab extends StatelessWidget {
   }
 
   Widget _buildActivityLedgerSection(BuildContext context) {
-    final List<Map<String, dynamic>> items = [
-      {
-        'service': 'House cleaning',
-        'meta': 'Earned Jun 18, 2026 · expires Jun 2028',
-        'amount': '+\$9',
-        'warn': false,
-      },
-      {
-        'service': 'AC Tune-Up',
-        'meta': 'Earned Jun 12, 2026 · expires Jun 2028',
-        'amount': '+\$8',
-        'warn': false,
-      },
-      {
-        'service': 'Drain cleaning',
-        'meta': 'Earned Aug 2024 · ',
-        'amount': '+\$6',
-        'warn': true,
-        'warnText': 'expires in 2 months',
-      },
-    ];
+    if (_ledger.isEmpty) {
+      return GlassCard(
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Center(
+            child: Text('No recent activity ledger items found.', style: TextStyle(color: AppTheme.gray, fontSize: 12.5)),
+          ),
+        ),
+      );
+    }
 
     return GlassCard(
       child: Column(
@@ -347,8 +425,15 @@ class RewardTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          ...items.map((item) {
-            final isWarn = item['warn'] == true;
+          ..._ledger.map((item) {
+            final double amount = (item['amount'] as num?)?.toDouble() ?? 0.0;
+            final isEarn = amount >= 0;
+            final dateStr = _formatDate(item['createdAt']);
+            final expDateStr = _formatDate(item['expiresAt']);
+            final String desc = item['description'] ?? 'Home service credits';
+
+            final isWarn = item['expired'] == true;
+
             return Container(
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: const BoxDecoration(
@@ -360,11 +445,15 @@ class RewardTab extends StatelessWidget {
                     width: 32,
                     height: 32,
                     decoration: BoxDecoration(
-                      color: AppTheme.tealTint,
+                      color: isEarn ? AppTheme.tealTint : const Color(0xFFF7E4E4),
                       borderRadius: BorderRadius.circular(9),
                     ),
                     alignment: Alignment.center,
-                    child: const Icon(Icons.add, color: AppTheme.teal500, size: 16),
+                    child: Icon(
+                      isEarn ? Icons.add : Icons.remove,
+                      color: isEarn ? AppTheme.teal500 : const Color(0xFFB23535),
+                      size: 16,
+                    ),
                   ),
                   const SizedBox(width: 11),
                   Expanded(
@@ -372,20 +461,26 @@ class RewardTab extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          item['service']!,
+                          desc,
                           style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.ink),
                         ),
                         const SizedBox(height: 2),
                         Row(
                           children: [
-                            Text(
-                              item['meta']!,
-                              style: const TextStyle(color: AppTheme.gray, fontSize: 11.5),
+                            Expanded(
+                              child: Text(
+                                isEarn
+                                    ? 'Earned $dateStr · expires $expDateStr'
+                                    : 'Redeemed $dateStr',
+                                style: const TextStyle(color: AppTheme.gray, fontSize: 11.5),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             if (isWarn)
-                              Text(
-                                item['warnText']!,
-                                style: const TextStyle(color: AppTheme.orange500, fontWeight: FontWeight.bold, fontSize: 11.5),
+                              const Text(
+                                'Expired',
+                                style: TextStyle(color: AppTheme.error, fontWeight: FontWeight.bold, fontSize: 11.5),
                               ),
                           ],
                         ),
@@ -394,27 +489,18 @@ class RewardTab extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    item['amount']!,
-                    style: const TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.success),
+                    '${isEarn ? '+' : ''}\$${amount.abs().toStringAsFixed(0)}',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: isEarn ? AppTheme.success : const Color(0xFFB23535),
+                    ),
                   ),
                 ],
               ),
             );
           }),
-          const SizedBox(height: 11),
-          GestureDetector(
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Opening full rewards history Ledger...')),
-              );
-            },
-            child: const Center(
-              child: Text(
-                'See all activity ›',
-                style: TextStyle(color: AppTheme.teal500, fontWeight: FontWeight.bold, fontSize: 12.5),
-              ),
-            ),
-          ),
         ],
       ),
     );

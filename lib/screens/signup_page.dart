@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 import '../services/auth_service.dart';
-import 'dashboard_shell.dart';
+import 'auth/onboarding.dart';
 import 'login_page.dart';
 
 class SignupPage extends StatefulWidget {
@@ -18,6 +18,7 @@ class _SignupPageState extends State<SignupPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -48,7 +49,7 @@ class _SignupPageState extends State<SignupPage> {
           );
           Navigator.pushAndRemoveUntil(
             context,
-            createPremiumRoute(const DashboardShell()),
+            createPremiumRoute(const OnboardingScreen()),
             (route) => false,
           );
         }
@@ -71,6 +72,32 @@ class _SignupPageState extends State<SignupPage> {
     }
   }
 
+  Future<void> _signInWithGoogle() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    try {
+      await AuthService.instance.signInWithGoogleInteractive();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        createPremiumRoute(const OnboardingScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -79,7 +106,8 @@ class _SignupPageState extends State<SignupPage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        iconTheme: IconThemeData(color: isDark ? Colors.white : AppTheme.navy700),
+        iconTheme:
+            IconThemeData(color: isDark ? Colors.white : AppTheme.navy700),
       ),
       extendBodyBehindAppBar: true,
       body: SunriseBackground(
@@ -98,7 +126,8 @@ class _SignupPageState extends State<SignupPage> {
                         Image.network(
                           'https://www.tradeworksai.com/images/bot%7Bfavicon%7D.png',
                           height: 40,
-                          errorBuilder: (context, error, stackTrace) => const Icon(
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
                             Icons.smart_toy,
                             color: AppTheme.orange500,
                             size: 40,
@@ -140,7 +169,8 @@ class _SignupPageState extends State<SignupPage> {
                           const SizedBox(height: 24),
                           const Text(
                             'Full Name',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12.5),
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
@@ -149,14 +179,20 @@ class _SignupPageState extends State<SignupPage> {
                             textCapitalization: TextCapitalization.words,
                             decoration: InputDecoration(
                               hintText: 'e.g. Yashwanth Varma',
-                              hintStyle: TextStyle(color: isDark ? Colors.white38 : AppTheme.gray, fontSize: 13),
+                              hintStyle: TextStyle(
+                                  color:
+                                      isDark ? Colors.white38 : AppTheme.gray,
+                                  fontSize: 13),
                               filled: true,
-                              fillColor: isDark ? const Color(0xFF1E2E4A) : AppTheme.pageAlt,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E2E4A)
+                                  : AppTheme.pageAlt,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                                 borderSide: BorderSide.none,
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
                             ),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) {
@@ -168,7 +204,8 @@ class _SignupPageState extends State<SignupPage> {
                           const SizedBox(height: 18),
                           const Text(
                             'Email Address',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12.5),
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
@@ -177,21 +214,28 @@ class _SignupPageState extends State<SignupPage> {
                             enabled: !_isLoading,
                             decoration: InputDecoration(
                               hintText: 'e.g. yashwanth@example.com',
-                              hintStyle: TextStyle(color: isDark ? Colors.white38 : AppTheme.gray, fontSize: 13),
+                              hintStyle: TextStyle(
+                                  color:
+                                      isDark ? Colors.white38 : AppTheme.gray,
+                                  fontSize: 13),
                               filled: true,
-                              fillColor: isDark ? const Color(0xFF1E2E4A) : AppTheme.pageAlt,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E2E4A)
+                                  : AppTheme.pageAlt,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                                 borderSide: BorderSide.none,
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
                             ),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) {
                                 return 'Please enter your email';
                               }
                               // Simple email structure regex
-                              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val.trim())) {
+                              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                                  .hasMatch(val.trim())) {
                                 return 'Please enter a valid email address';
                               }
                               return null;
@@ -200,23 +244,43 @@ class _SignupPageState extends State<SignupPage> {
                           const SizedBox(height: 18),
                           const Text(
                             'Password',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12.5),
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
                             controller: _passwordController,
-                            obscureText: true,
+                            obscureText: _obscurePassword,
                             enabled: !_isLoading,
                             decoration: InputDecoration(
                               hintText: 'Min 6 characters',
-                              hintStyle: TextStyle(color: isDark ? Colors.white38 : AppTheme.gray, fontSize: 13),
+                              hintStyle: TextStyle(
+                                  color:
+                                      isDark ? Colors.white38 : AppTheme.gray,
+                                  fontSize: 13),
                               filled: true,
-                              fillColor: isDark ? const Color(0xFF1E2E4A) : AppTheme.pageAlt,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E2E4A)
+                                  : AppTheme.pageAlt,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                                 borderSide: BorderSide.none,
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: AppTheme.gray,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _obscurePassword = !_obscurePassword;
+                                  });
+                                },
+                              ),
                             ),
                             validator: (val) {
                               if (val == null || val.length < 6) {
@@ -230,13 +294,39 @@ class _SignupPageState extends State<SignupPage> {
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 8.0),
-                                child: CircularProgressIndicator(color: AppTheme.orange500),
+                                child: CircularProgressIndicator(
+                                    color: AppTheme.orange500),
                               ),
                             )
                           else
-                            HoverButton(
-                              text: 'Create Account',
-                              onPressed: _submit,
+                            Column(
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: _signInWithGoogle,
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize:
+                                        const Size(double.infinity, 48),
+                                    side:
+                                        const BorderSide(color: AppTheme.line),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10)),
+                                  ),
+                                  icon: const Icon(Icons.g_mobiledata,
+                                      size: 28, color: AppTheme.navy700),
+                                  label: const Text(
+                                    'Continue with Google',
+                                    style: TextStyle(
+                                        color: AppTheme.navy700,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                HoverButton(
+                                  text: 'Create Account',
+                                  onPressed: _submit,
+                                ),
+                              ],
                             ),
                         ],
                       ),
@@ -247,7 +337,9 @@ class _SignupPageState extends State<SignupPage> {
                       children: [
                         Text(
                           'Already have an account? ',
-                          style: TextStyle(color: isDark ? Colors.white70 : AppTheme.gray, fontSize: 13.5),
+                          style: TextStyle(
+                              color: isDark ? Colors.white70 : AppTheme.gray,
+                              fontSize: 13.5),
                         ),
                         GestureDetector(
                           onTap: () {

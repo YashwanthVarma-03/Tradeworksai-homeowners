@@ -1,14 +1,26 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'stream_service.dart';
 
 class AuthService extends ChangeNotifier {
   static final AuthService instance = AuthService._internal();
 
   AuthService._internal();
 
-  static const String baseUrl = 'https://us-central1-tradeworksai-senthil-dev-env.cloudfunctions.net/';
+  bool isTesting = false;
+
+  static const String baseUrl =
+      'https://us-central1-tradeworksai-senthil-dev-env.cloudfunctions.net/';
+  static const String googleClientId =
+      '71668222585-50stjb9s6ias4g5su87fsmdiaikh4iec.apps.googleusercontent.com';
+
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: const ['email', 'profile'],
+    serverClientId: googleClientId,
+  );
 
   SharedPreferences? _prefs;
 
@@ -45,7 +57,7 @@ class AuthService extends ChangeNotifier {
   // Initialize and load session from SharedPreferences
   Future<void> loadSession() async {
     _prefs = await SharedPreferences.getInstance();
-    
+
     _isAuthenticated = _prefs?.getBool('isAuthenticated') ?? false;
     _userId = _prefs?.getString('userId');
     _userEmail = _prefs?.getString('userEmail');
@@ -59,12 +71,13 @@ class AuthService extends ChangeNotifier {
     _assignedPhoneNumber = _prefs?.getString('assigned_phone_number');
     _textMessage = _prefs?.getBool('text_message');
     _whatsapp = _prefs?.getBool('whatsapp');
-    
+
     notifyListeners();
   }
 
   // Handle common HTTP POST requests with standard headers
-  Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> _post(
+      String path, Map<String, dynamic> body) async {
     final url = Uri.parse('$baseUrl$path');
     try {
       final response = await http.post(
@@ -72,22 +85,23 @@ class AuthService extends ChangeNotifier {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(body),
       );
-      
+
       if (response.body.isEmpty) {
         throw Exception('Received empty response from server.');
       }
-      
+
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>) {
         throw Exception('Invalid response format.');
       }
-      
+
       return data;
     } catch (e) {
       if (kDebugMode) {
         print('Auth POST Error on $path: $e');
       }
-      throw Exception('Network error. Please check your connection and try again.');
+      throw Exception(
+          'Network error. Please check your connection and try again.');
     }
   }
 
@@ -108,7 +122,7 @@ class AuthService extends ChangeNotifier {
     }
 
     String? id = response['userId']?.toString() ?? response['id']?.toString();
-    
+
     // Gotcha fallback (Section 4.1 of guide):
     // If signup success but userId is omitted, immediately perform a login call.
     if (id == null) {
@@ -140,10 +154,10 @@ class AuthService extends ChangeNotifier {
     }
 
     // Resolve userId defensively (Section 4.2 of guide)
-    final id = response['userId']?.toString() ?? 
-               response['id']?.toString() ?? 
-               response['data']?['userId']?.toString();
-               
+    final id = response['userId']?.toString() ??
+        response['id']?.toString() ??
+        response['data']?['userId']?.toString();
+
     if (id == null) {
       throw Exception('User ID could not be resolved from auth response.');
     }
@@ -191,7 +205,8 @@ class AuthService extends ChangeNotifier {
 
     final id = data['userId']?.toString() ?? data['id']?.toString();
     if (id == null) {
-      throw Exception('User ID could not be resolved from Google auth response.');
+      throw Exception(
+          'User ID could not be resolved from Google auth response.');
     }
 
     String role = 'homeowner';
@@ -207,11 +222,25 @@ class AuthService extends ChangeNotifier {
       pictureUrl: data['picture_url'],
       googleSub: data['google_sub']?.toString(),
       roleAssigned: role,
-      agentId: data['elevenlabs_agent_id']?.toString() ?? data['agentId']?.toString(),
+      agentId: data['elevenlabs_agent_id']?.toString() ??
+          data['agentId']?.toString(),
       assignedPhoneNumber: data['assigned_phone_number']?.toString(),
       textMessage: data['text_message'] == true,
       whatsapp: data['whatsapp'] == true,
     );
+  }
+
+  Future<void> signInWithGoogleInteractive() async {
+    final account = await _googleSignIn.signIn();
+    if (account == null) {
+      throw Exception('Google sign-in was cancelled.');
+    }
+    final auth = await account.authentication;
+    final idToken = auth.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw Exception('Google did not return an ID token.');
+    }
+    await googleSignIn(idToken);
   }
 
   // Simulate successful Google Sign-in for demo bypass
@@ -235,7 +264,8 @@ class AuthService extends ChangeNotifier {
     });
 
     if (response['success'] != true) {
-      throw Exception(response['message'] ?? 'Failed to send password reset link.');
+      throw Exception(
+          response['message'] ?? 'Failed to send password reset link.');
     }
 
     return response['message'] ?? 'Password reset link sent. Check your email.';
@@ -255,7 +285,8 @@ class AuthService extends ChangeNotifier {
       throw Exception(response['message'] ?? 'Password reset failed.');
     }
 
-    return response['message'] ?? 'Your password has been reset. You can now log in.';
+    return response['message'] ??
+        'Your password has been reset. You can now log in.';
   }
 
   // Logout
@@ -278,6 +309,35 @@ class AuthService extends ChangeNotifier {
       await _prefs!.clear();
     }
 
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
+
+    await StreamService.instance.disconnect();
+
+    notifyListeners();
+  }
+
+  Future<void> updateCachedProfile({
+    required String givenName,
+    required String familyName,
+    required String phone,
+    required String email,
+    required String userName,
+  }) async {
+    _givenName = givenName;
+    _familyName = familyName;
+    _assignedPhoneNumber = phone;
+    _userEmail = email;
+    _userName = userName;
+
+    if (_prefs != null) {
+      await _prefs!.setString('givenName', givenName);
+      await _prefs!.setString('familyName', familyName);
+      await _prefs!.setString('assigned_phone_number', phone);
+      await _prefs!.setString('userEmail', email);
+      await _prefs!.setString('userName', userName);
+    }
     notifyListeners();
   }
 
@@ -301,7 +361,8 @@ class AuthService extends ChangeNotifier {
     _userEmail = email;
     _userName = name;
     _givenName = givenName ?? name.split(' ').first;
-    _familyName = familyName ?? (name.split(' ').length > 1 ? name.split(' ').last : '');
+    _familyName =
+        familyName ?? (name.split(' ').length > 1 ? name.split(' ').last : '');
     _pictureUrl = pictureUrl;
     _googleSub = googleSub;
     _roleAssigned = roleAssigned;
@@ -317,14 +378,33 @@ class AuthService extends ChangeNotifier {
       await _prefs!.setString('userName', name);
       await _prefs!.setString('givenName', _givenName!);
       await _prefs!.setString('familyName', _familyName!);
-      if (pictureUrl != null) await _prefs!.setString('pictureUrl', pictureUrl);
-      if (googleSub != null) await _prefs!.setString('google_sub', googleSub);
+      if (pictureUrl != null) {
+        await _prefs!.setString('pictureUrl', pictureUrl);
+      }
+      if (googleSub != null) {
+        await _prefs!.setString('google_sub', googleSub);
+      }
       await _prefs!.setString('role_assigned', roleAssigned);
-      if (agentId != null) await _prefs!.setString('agentId', agentId);
-      if (assignedPhoneNumber != null) await _prefs!.setString('assigned_phone_number', assignedPhoneNumber);
+      if (agentId != null) {
+        await _prefs!.setString('agentId', agentId);
+      }
+      if (assignedPhoneNumber != null) {
+        await _prefs!.setString('assigned_phone_number', assignedPhoneNumber);
+      }
       await _prefs!.setBool('text_message', textMessage);
       await _prefs!.setBool('whatsapp', whatsapp);
-      await _prefs!.setString('loginTimestamp', DateTime.now().toIso8601String());
+      await _prefs!
+          .setString('loginTimestamp', DateTime.now().toIso8601String());
+    }
+
+    if (!isTesting) {
+      try {
+        await StreamService.instance.ensureConnected(forceReconnect: true);
+      } catch (e) {
+        if (kDebugMode) {
+          print('Stream Chat connect error: $e');
+        }
+      }
     }
 
     notifyListeners();

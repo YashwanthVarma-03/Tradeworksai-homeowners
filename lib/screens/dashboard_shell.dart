@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 import 'home_tab.dart';
@@ -8,6 +9,7 @@ import 'inbox_tab.dart';
 import 'reward_tab.dart';
 import 'profile_tab.dart';
 import 'booking_stepper.dart';
+import 'support_page.dart';
 import 'onboarding_slider.dart';
 import '../services/auth_service.dart';
 
@@ -22,6 +24,8 @@ class _DashboardShellState extends State<DashboardShell> {
   int _currentIndex = 0;
   String? _searchQuery;
   String? _selectedCategory;
+  int _bookingsInitialSegment = 0;
+  Key _bookingsTabKey = UniqueKey();
 
   @override
   void initState() {
@@ -38,22 +42,36 @@ class _DashboardShellState extends State<DashboardShell> {
           proDetails: pro,
           onBookingComplete: () {
             Navigator.pop(context);
-            setState(() {
-              _currentIndex = 2; // Switch to bookings tab
-            });
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Row(
+              SnackBar(
+                content: const Row(
                   children: [
                     Icon(Icons.check_circle, color: Colors.white),
                     SizedBox(width: 8),
-                    Text('Booking confirmed! Dispatcher is matching.'),
+                    Text('Booking confirmed!'),
                   ],
                 ),
                 backgroundColor: AppTheme.success,
-                duration: Duration(seconds: 4),
+                duration: const Duration(seconds: 4),
+                action: SnackBarAction(
+                  label: 'View Booking',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    setState(() {
+                      _bookingsInitialSegment = 1;
+                      _currentIndex = 2; // Switch to Bookings Tab
+                      _bookingsTabKey = UniqueKey();
+                    });
+                  },
+                ),
               ),
             );
+            // Default behavior if not explicitly clicking 'View Booking':
+            setState(() {
+              _bookingsInitialSegment = 1; // It goes to scheduled by default too if you want, or stay 0. We'll set 1 for convenience since it's the latest booking.
+              _currentIndex = 2;
+              _bookingsTabKey = UniqueKey();
+            });
           },
         );
       },
@@ -119,55 +137,89 @@ class _DashboardShellState extends State<DashboardShell> {
   Widget build(BuildContext context) {
     final List<Widget> tabs = [
       HomeTab(
-        onBookTap: () {
-          setState(() {
-            _searchQuery = null;
-            _selectedCategory = null;
-            _currentIndex = 1; // Go to Search Tab
-          });
+        onBookTap: () async {
+          final booked = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const BrowseScreen()),
+          );
+          if (booked == true) {
+            setState(() {
+              _bookingsInitialSegment = 1;
+              _currentIndex = 2; // Bookings Tab
+              _bookingsTabKey = UniqueKey();
+            });
+          }
         },
         onJobTap: (job) {
           _showBookingModal(job);
         },
-        onInboxTap: _showInboxModal,
-        onSearchQuery: (query) {
+        onInboxTap: () {
           setState(() {
-            _searchQuery = query;
-            _selectedCategory = null;
-            _currentIndex = 1;
+            _currentIndex = 1; // Go to Inbox Tab
           });
         },
-        onCategorySelected: (cat) {
-          setState(() {
-            _selectedCategory = cat;
-            _searchQuery = null;
-            _currentIndex = 1;
-          });
+        onSearchQuery: (query) async {
+          final booked = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => BrowseScreen(initialSearchQuery: query),
+            ),
+          );
+          if (booked == true) {
+            setState(() {
+              _bookingsInitialSegment = 1;
+              _currentIndex = 2; // Bookings Tab
+              _bookingsTabKey = UniqueKey();
+            });
+          }
+        },
+        onCategorySelected: (cat) async {
+          final booked = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => BrowseScreen(initialCategory: cat),
+            ),
+          );
+          if (booked == true) {
+            setState(() {
+              _bookingsInitialSegment = 1;
+              _currentIndex = 2; // Bookings Tab
+              _bookingsTabKey = UniqueKey();
+            });
+          }
         },
       ),
-      SearchTab(
-        onBookPro: (pro) {
-          _showBookingModal(pro);
-        },
-        initialSearchQuery: _searchQuery,
-        initialCategory: _selectedCategory,
-      ),
+      const InboxTab(),
       BookingsTab(
-        onBookNowTap: () {
-          setState(() {
-            _searchQuery = null;
-            _selectedCategory = null;
-            _currentIndex = 1; // Go to Search Tab
-          });
+        key: _bookingsTabKey,
+        initialSegment: _bookingsInitialSegment,
+        onBookNowTap: () async {
+          final booked = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const BrowseScreen()),
+          );
+          if (booked == true) {
+            setState(() {
+              _bookingsInitialSegment = 1;
+              _currentIndex = 2; // Refresh Bookings Tab
+              _bookingsTabKey = UniqueKey();
+            });
+          }
         },
       ),
       RewardTab(
-        onBookTap: () {
-          setState(() {
-            _searchQuery = null;
-            _selectedCategory = null;
-            _currentIndex = 1; // Go to Search Tab
-          });
+        onBookTap: () async {
+          final booked = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const BrowseScreen()),
+          );
+          if (booked == true) {
+            setState(() {
+              _bookingsInitialSegment = 1;
+              _currentIndex = 2; // Go to Bookings Tab
+              _bookingsTabKey = UniqueKey();
+            });
+          }
         },
       ),
       ProfileTab(
@@ -232,34 +284,9 @@ class _DashboardShellState extends State<DashboardShell> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.mail_outline, color: AppTheme.navy700),
-                Positioned(
-                  right: -2,
-                  top: -2,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.orange500,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            onPressed: () {
-              _showInboxModal();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.help_outline, color: AppTheme.navy700),
-            onPressed: () {
-              // Open assistance modal
-              _showAssistModal();
+          AnimatedGiftIcon(
+            onTap: () {
+              _showOffersSheet();
             },
           ),
           const SizedBox(width: 8),
@@ -304,9 +331,28 @@ class _DashboardShellState extends State<DashboardShell> {
                 label: 'Home',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.search_outlined),
-                activeIcon: Icon(Icons.search),
-                label: 'Browse',
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(Icons.mail_outline),
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: SizedBox(
+                        width: 8,
+                        height: 8,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppTheme.orange500,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                activeIcon: Icon(Icons.mail),
+                label: 'Inbox',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.calendar_today_outlined),
@@ -330,7 +376,7 @@ class _DashboardShellState extends State<DashboardShell> {
     );
   }
 
-  void _showAssistModal() {
+  void _showOffersSheet() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -339,203 +385,366 @@ class _DashboardShellState extends State<DashboardShell> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
-        final Set<String> expandedQuestions = {};
-
         return DraggableScrollableSheet(
-          initialChildSize: 0.75,
-          minChildSize: 0.5,
-          maxChildSize: 0.95,
+          initialChildSize: 0.65,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
           expand: false,
           builder: (context, scrollController) {
-            return StatefulBuilder(
-              builder: (context, setModalState) {
-                Widget buildFAQItem(String question, String answer) {
-                  final isExpanded = expandedQuestions.contains(question);
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 10),
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              child: Column(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
-                      color: AppTheme.pageAlt.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.line.withOpacity(0.3)),
+                      color: AppTheme.line,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          dense: true,
-                          title: Text(
-                            question,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.navy700),
-                          ),
-                          trailing: AnimatedRotation(
-                            turns: isExpanded ? 0.125 : 0.0,
-                            duration: const Duration(milliseconds: 200),
-                            child: Icon(
-                              Icons.add,
-                              color: isExpanded ? AppTheme.orange500 : AppTheme.navy700,
-                              size: 18,
-                            ),
-                          ),
-                          onTap: () {
-                            setModalState(() {
-                              if (isExpanded) {
-                                expandedQuestions.remove(question);
-                              } else {
-                                expandedQuestions.add(question);
-                              }
-                            });
-                          },
-                        ),
-                        AnimatedCrossFade(
-                          firstChild: const SizedBox.shrink(),
-                          secondChild: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            child: Text(
-                              answer,
-                              style: const TextStyle(color: AppTheme.ink, fontSize: 12.5, height: 1.45),
-                            ),
-                          ),
-                          crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                          duration: const Duration(milliseconds: 200),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                Widget buildFAQHeader(String title) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 18.0, bottom: 8.0, left: 4.0),
-                    child: Text(
-                      title,
-                      style: AppTheme.headingStyle.copyWith(
-                        fontSize: 13.5,
-                        color: const Color(0xFF1B3C6E),
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.04,
-                      ),
-                    ),
-                  );
-                }
-
-                return SingleChildScrollView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  ),
+                  Row(
                     children: [
-                      Center(
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: AppTheme.line,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                      const Row(
-                        children: [
-                          Icon(Icons.smart_toy, color: AppTheme.teal500, size: 28),
-                          SizedBox(width: 12),
-                          Text(
-                            'TradeWorks AI Assistant',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.navy700),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Need help matching with a contractor or booking a service? Tap below to text or call the live AI dispatcher.',
-                        style: TextStyle(color: AppTheme.gray, fontSize: 13, height: 1.4),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: HoverButton(
-                              text: 'Text Dispatcher',
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _showInboxModal();
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Calling AI Dispatcher line... (555-0199)')),
-                                );
-                              },
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: AppTheme.navy700),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                              child: const Text('Call Dispatcher', style: TextStyle(color: AppTheme.navy700, fontWeight: FontWeight.bold)),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      const Divider(),
-                      const SizedBox(height: 16),
+                      const Icon(Icons.stars, color: AppTheme.orange500, size: 26),
+                      const SizedBox(width: 8),
                       Text(
-                        'Frequently Asked Questions',
-                        style: AppTheme.headingStyle.copyWith(fontSize: 16, color: AppTheme.navy700),
-                      ),
-                      const SizedBox(height: 4),
-
-                      buildFAQHeader('🏡 Home & Search Page FAQs'),
-                      buildFAQItem(
-                        'How does the TradeWorks One network work?',
-                        'You join for free, browse vetted and insured home service professionals across 31 categories, and see upfront pricing before you book. You book directly on their calendar, and you earn 3–7% cash back in service credits on every completed job.',
-                      ),
-                      buildFAQItem(
-                        'How are contractors vetted?',
-                        'Every contractor in the network is verified for active state licenses and general liability insurance before taking any job. We verify credentials so you don\'t have to chase proof of coverage.',
-                      ),
-                      buildFAQItem(
-                        'What is GEO/AEO optimization?',
-                        'Generative Engine Optimization (GEO) and Answer Engine Optimization (AEO) are strategies to optimize your contractor website so it gets cited by AI search tools like ChatGPT, Claude, Perplexity, and Google AI Overviews, ensuring your business stays visible where modern buyers search.',
-                      ),
-
-                      buildFAQHeader('📅 Bookings Page FAQs'),
-                      buildFAQItem(
-                        'Can I cancel or reschedule a booking?',
-                        'Yes, you can cancel or reschedule any future booked job before the work begins for free with no homeowner fees. Cancellations or reschedules are handled directly via the Bookings tab.',
-                      ),
-
-                      buildFAQHeader('🏆 Rewards Page FAQs'),
-                      buildFAQItem(
-                        'How do TradeWorks service credits work?',
-                        'Earn 3% → 5% → 7% back as you spend more in a year — each rate applies only to spend within its YTD band (no retroactive re-crediting). Credits are service credits that apply toward any booking (never count as new spend). They are non-cashable and non-transferable, and reset every January 1.',
-                      ),
-                      buildFAQItem(
-                        'Do my service credits expire?',
-                        'Yes, each service credit expires 24 months after you earn it. Check your Rewards Tab ledger to see credit-specific expiry logs.',
-                      ),
-                      buildFAQItem(
-                        'How do I redeem my service credits?',
-                        'Credits apply automatically to your next booking. To redeem, just reach out to support and we\'ll apply them for you. In-app redemption is coming soon as a fast-follow feature.',
-                      ),
-
-                      buildFAQHeader('👤 Profile & Home Profile FAQs'),
-                      buildFAQItem(
-                        'How is my Home Profile information used?',
-                        'We use your home profile (square footage, year built, bedrooms, bathrooms, HVAC, water heater, roof ages) to suggest timely maintenance and pre-fill your bookings. It is kept secure and isn\'t shared beyond the specific pro you book.',
+                        'Exclusive Offers for You',
+                        style: AppTheme.headingStyle.copyWith(fontSize: 18, color: AppTheme.navy700),
                       ),
                     ],
                   ),
-                );
-              },
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      children: [
+                        _buildOfferCard(
+                          title: '\$50 Off Summer HVAC Special',
+                          desc: 'Get \$50 off any HVAC repair or maintenance service this month.',
+                          code: 'SUMMER50',
+                          partner: 'AirFlow HVAC Specialists',
+                        ),
+                        _buildOfferCard(
+                          title: 'Free Water Quality Test',
+                          desc: 'Book a plumbing diagnostic and get a water hardness/purity test free.',
+                          code: 'PUREWATER',
+                          partner: 'Rooter & Plumb Co.',
+                        ),
+                        _buildOfferCard(
+                          title: 'Double Rewards Points',
+                          desc: 'Earn 6% back in service credits on your next landscaping booking.',
+                          code: 'DOUBLEGREEN',
+                          partner: 'TradeWorks Network',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             );
           },
         );
       },
     );
   }
+
+  Widget _buildOfferCard({
+    required String title,
+    required String desc,
+    required String code,
+    required String partner,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.orangeTint,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.orange500.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                partner,
+                style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.orange700, fontSize: 11),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.orange500,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  code,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.navy700, fontSize: 14.5),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            desc,
+            style: const TextStyle(color: AppTheme.gray, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
 }
+
+class BrowseScreen extends StatelessWidget {
+  final String? initialSearchQuery;
+  final String? initialCategory;
+
+  const BrowseScreen({
+    super.key,
+    this.initialSearchQuery,
+    this.initialCategory,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: AppTheme.navy700),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Browse Services',
+          style: AppTheme.headingStyle.copyWith(
+            color: AppTheme.navy700,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(0.5),
+          child: Container(color: AppTheme.line, height: 0.5),
+        ),
+      ),
+      body: SunriseBackground(
+        child: SafeArea(
+          child: SearchTab(
+            onBookPro: (pro) {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (context) {
+                  return BookingStepper(
+                    proDetails: pro,
+                    onBookingComplete: () {
+                      Navigator.pop(context); // close stepper
+                      Navigator.pop(context, true); // pop BrowseScreen returning true
+                      // We can handle redirect via dashboard state if needed, but BrowseScreen handles its own pop
+                    },
+                  );
+                },
+              );
+            },
+            initialSearchQuery: initialSearchQuery,
+            initialCategory: initialCategory,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class AnimatedGiftIcon extends StatefulWidget {
+  final VoidCallback onTap;
+  const AnimatedGiftIcon({super.key, required this.onTap});
+
+  @override
+  State<AnimatedGiftIcon> createState() => _AnimatedGiftIconState();
+}
+
+class _AnimatedGiftIconState extends State<AnimatedGiftIcon> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            double lidOpenProgress = 0.0;
+            double wiggleProgress = 0.0;
+            final t = _controller.value;
+
+            // Timeline:
+            // 0.0 to 0.15: Wiggle
+            if (t >= 0.0 && t < 0.15) {
+              final wt = t / 0.15;
+              // 3 oscillations
+              wiggleProgress = math.sin(wt * math.pi * 6);
+            }
+            // 0.15 to 0.30: Lid open
+            else if (t >= 0.15 && t < 0.30) {
+              final ot = (t - 0.15) / 0.15;
+              lidOpenProgress = Curves.easeOutBack.transform(ot);
+            }
+            // 0.30 to 0.70: Hold open
+            else if (t >= 0.30 && t < 0.70) {
+              lidOpenProgress = 1.0;
+            }
+            // 0.70 to 0.85: Close lid
+            else if (t >= 0.70 && t < 0.85) {
+              final ct = (t - 0.70) / 0.15;
+              lidOpenProgress = 1.0 - Curves.easeIn.transform(ct);
+            }
+            // 0.85 to 1.0: Idle (0)
+
+            return CustomPaint(
+              size: const Size(26, 26),
+              painter: GiftBoxPainter(
+                lidOpenProgress: lidOpenProgress,
+                wiggleProgress: wiggleProgress,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class GiftBoxPainter extends CustomPainter {
+  final double lidOpenProgress; // 0.0 to 1.0
+  final double wiggleProgress;  // -1.0 to 1.0
+
+  GiftBoxPainter({required this.lidOpenProgress, required this.wiggleProgress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+
+    canvas.save();
+    canvas.scale(w / 24.0, h / 24.0);
+
+    // Apply wiggle around the bottom center (12, 22)
+    if (wiggleProgress != 0) {
+      canvas.translate(12, 22);
+      canvas.rotate(wiggleProgress * 0.08); // max angle ~4.5 degrees
+      canvas.translate(-12, -22);
+    }
+
+    final redPaint = Paint()
+      ..color = const Color(0xFFD32F2F) // Red box color (standard red/gold requested)
+      ..style = PaintingStyle.fill;
+
+    final goldPaint = Paint()
+      ..color = const Color(0xFFFFC107) // Gold strip / ribbon color
+      ..style = PaintingStyle.fill;
+
+    final goldStrokePaint = Paint()
+      ..color = const Color(0xFFFFC107)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+
+    // 1. Draw Box Body: centered horizontally from x=5 to x=19 (width=14), y=11 to y=21 (height=10)
+    final bodyRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(5, 11, 14, 10),
+      const Radius.circular(1.2),
+    );
+    canvas.drawRRect(bodyRect, redPaint);
+
+    // Draw vertical ribbon in the center of body (x=10.5 to x=13.5)
+    final bodyRibbon = const Rect.fromLTWH(10.5, 11, 3, 10);
+    canvas.drawRect(bodyRibbon, goldPaint);
+
+    // 2. Draw Box Lid & Bow (which will animate)
+    canvas.save();
+
+    // Lid closed bounds: x=3.5 to x=20.5 (width=17), y=8 to y=11 (height=3)
+    // Pivot at bottom-right of the lid: (19, 11)
+    final double lift = lidOpenProgress * 4.0;
+    final double rotate = lidOpenProgress * -0.22; // rotate up/left
+
+    final double px = 17.5;
+    final double py = 11.0;
+
+    canvas.translate(px, py);
+    canvas.rotate(rotate);
+    canvas.translate(-px, -py - lift);
+
+    // Draw Lid Rect
+    final lidRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(3.5, 8.0, 17, 3),
+      const Radius.circular(0.8),
+    );
+    canvas.drawRRect(lidRect, redPaint);
+
+    // Lid Ribbon
+    final lidRibbon = const Rect.fromLTWH(10.5, 8.0, 3, 3);
+    canvas.drawRect(lidRibbon, goldPaint);
+
+    // Draw Bow Loops
+    // Left loop (curve from center (12, 8) up left and back)
+    final leftLoopPath = Path()
+      ..moveTo(12, 8.0)
+      ..cubicTo(8, 4.0, 8, 8.0, 12, 8.0)
+      ..close();
+    canvas.drawPath(leftLoopPath, goldStrokePaint);
+
+    // Right loop (curve from center (12, 8) up right and back)
+    final rightLoopPath = Path()
+      ..moveTo(12, 8.0)
+      ..cubicTo(16, 4.0, 16, 8.0, 12, 8.0)
+      ..close();
+    canvas.drawPath(rightLoopPath, goldStrokePaint);
+
+    // Bow Center Knot
+    final knot = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(11.0, 7.0, 2, 1.5),
+      const Radius.circular(0.5),
+    );
+    canvas.drawRRect(knot, goldPaint);
+
+    canvas.restore(); // restore lid transforms
+    canvas.restore(); // restore wiggle transforms
+  }
+
+  @override
+  bool shouldRepaint(covariant GiftBoxPainter oldDelegate) {
+    return oldDelegate.lidOpenProgress != lidOpenProgress ||
+        oldDelegate.wiggleProgress != wiggleProgress;
+  }
+}
+

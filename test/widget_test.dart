@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:homeowners_app/main.dart';
+import 'package:homeowners_app/widgets/custom_widgets.dart';
 
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
@@ -26,5 +27,18 @@ void main() {
     // Verify that our counter has incremented.
     expect(find.text('0'), findsNothing);
     expect(find.text('1'), findsOneWidget);
+  });
+
+  testWidgets('sunrise background renders its child',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SunriseBackground(
+          child: Text('hello tradeworks'),
+        ),
+      ),
+    );
+
+    expect(find.text('hello tradeworks'), findsOneWidget);
   });
 }

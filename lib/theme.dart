@@ -4,23 +4,23 @@ import 'package:google_fonts/google_fonts.dart';
 class AppTheme {
   // Brand Palette (Matching tradeworksai.com exactly)
   static const Color navy900 = Color(0xFF0F2B46); // --bg-dark
-  static const Color navy700 = Color(0xFF1A1A2E); // --text-primary (Midnight Blue/Navy)
+  static const Color navy700 = Color(0xFF1B3C6E); // Home page blue
   static const Color navy500 = Color(0xFF132F4C); // --bg-dark-lighter
   static const Color navyTint = Color(0xFFF5F7FA); // --bg-light
 
-  static const Color teal700 = Color(0xFF0077B6); // Darker teal
-  static const Color teal500 = Color(0xFF00B4D8); // --color-teal - Secondary
-  static const Color tealTint = Color(0xFFE6F8FC); // Light teal tint
+  static const Color teal700 = Color(0xFF236A88);
+  static const Color teal500 = Color(0xFF2E86AB);
+  static const Color tealTint = Color(0xFFE6F2F7);
 
   static const Color orange700 = Color(0xFFC75D0D); // Darker orange
   static const Color orange500 = Color(0xFFE8751A); // --color-orange - Accent / CTA
   static const Color orangeTint = Color(0xFFFFF7ED); // Light orange tint
 
   // Neutral Colors
-  static const Color ink = Color(0xFF1A1A2E); // Midnight Blue for body text to match brand
-  static const Color gray = Color(0xFF6B7280); // Slate gray
-  static const Color line = Color(0xFFE2E8F0); // Border line color (Slate 200)
-  static const Color pageAlt = Color(0xFFF8FAFC); // Alternate background (Slate 50)
+  static const Color ink = Color(0xFF24303F);
+  static const Color gray = Color(0xFF5B6B7C);
+  static const Color line = Color(0xFFC9D2DE);
+  static const Color pageAlt = Color(0xFFF4F7FB);
   static const Color white = Color(0xFFFFFFFF);
 
   // Status/Feedback

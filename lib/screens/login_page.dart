@@ -18,6 +18,7 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -69,113 +70,30 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  void _signInWithGoogle() {
+  Future<void> _signInWithGoogle() async {
     if (_isLoading) return;
-    final tokenController = TextEditingController(
-      text: '71668222585-50stjb9s6ias4g5su87fsmdiaikh4iec.apps.googleusercontent.com',
-    );
-    final parentContext = context;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Google Sign-in (Dev Mode)'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'In production, native Google Sign-in obtains a JWT token. Enter or use the dev token below to call the real backend API:',
-              style: TextStyle(fontSize: 12.5),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: tokenController,
-              decoration: const InputDecoration(
-                labelText: 'Google Credential Token',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
+    setState(() => _isLoading = true);
+    try {
+      await AuthService.instance.signInWithGoogleInteractive();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        createPremiumRoute(const DashboardShell()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: AppTheme.error,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              setState(() {
-                _isLoading = true;
-              });
-              await AuthService.instance.simulateGoogleSignInSuccess();
-              if (parentContext.mounted) {
-                ScaffoldMessenger.of(parentContext).showSnackBar(
-                  const SnackBar(
-                    content: Text('Demo Bypass Successful! Welcome.'),
-                    backgroundColor: AppTheme.success,
-                  ),
-                );
-                Navigator.pushAndRemoveUntil(
-                  parentContext,
-                  createPremiumRoute(const DashboardShell()),
-                  (route) => false,
-                );
-              }
-              if (mounted) {
-                setState(() {
-                  _isLoading = false;
-                });
-              }
-            },
-            child: const Text(
-              'Demo Bypass',
-              style: TextStyle(color: AppTheme.orange500, fontWeight: FontWeight.bold),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              setState(() {
-                _isLoading = true;
-              });
-              try {
-                await AuthService.instance.googleSignIn(tokenController.text.trim());
-                if (parentContext.mounted) {
-                  ScaffoldMessenger.of(parentContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Google Sign-In successful!'),
-                      backgroundColor: AppTheme.success,
-                    ),
-                  );
-                  Navigator.pushAndRemoveUntil(
-                    parentContext,
-                    createPremiumRoute(const DashboardShell()),
-                    (route) => false,
-                  );
-                }
-              } catch (e) {
-                if (parentContext.mounted) {
-                  ScaffoldMessenger.of(parentContext).showSnackBar(
-                    SnackBar(
-                      content: Text(e.toString().replaceAll('Exception: ', '')),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              } finally {
-                if (mounted) {
-                  setState(() {
-                    _isLoading = false;
-                  });
-                }
-              }
-            },
-            child: const Text('Connect API'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -186,7 +104,8 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        iconTheme: IconThemeData(color: isDark ? Colors.white : AppTheme.navy700),
+        iconTheme:
+            IconThemeData(color: isDark ? Colors.white : AppTheme.navy700),
       ),
       extendBodyBehindAppBar: true,
       body: SunriseBackground(
@@ -205,7 +124,8 @@ class _LoginPageState extends State<LoginPage> {
                         Image.network(
                           'https://www.tradeworksai.com/images/bot%7Bfavicon%7D.png',
                           height: 40,
-                          errorBuilder: (context, error, stackTrace) => const Icon(
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
                             Icons.smart_toy,
                             color: AppTheme.orange500,
                             size: 40,
@@ -247,7 +167,8 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 24),
                           const Text(
                             'Email Address',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12.5),
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
@@ -256,18 +177,24 @@ class _LoginPageState extends State<LoginPage> {
                             enabled: !_isLoading,
                             decoration: InputDecoration(
                               hintText: 'e.g. yashwanth@example.com',
-                              hintStyle: TextStyle(color: isDark ? Colors.white38 : AppTheme.gray, fontSize: 13),
+                              hintStyle: TextStyle(
+                                  color:
+                                      isDark ? Colors.white38 : AppTheme.gray,
+                                  fontSize: 13),
                               filled: true,
-                              fillColor: isDark ? const Color(0xFF1E2E4A) : AppTheme.pageAlt,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E2E4A)
+                                  : AppTheme.pageAlt,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                                 borderSide: BorderSide.none,
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
                             ),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) {
-                                  return 'Please enter your email';
+                                return 'Please enter your email';
                               }
                               return null;
                             },
@@ -278,14 +205,17 @@ class _LoginPageState extends State<LoginPage> {
                             children: [
                               const Text(
                                 'Password',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12.5),
                               ),
                               GestureDetector(
                                 onTap: () {
                                   if (_isLoading) return;
                                   Navigator.push(
                                     context,
-                                    createPremiumRoute(const PasswordResetPage()),
+                                    createPremiumRoute(
+                                        const PasswordResetPage()),
                                   );
                                 },
                                 child: const Text(
@@ -302,18 +232,37 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 8),
                           TextFormField(
                             controller: _passwordController,
-                            obscureText: true,
+                            obscureText: _obscurePassword,
                             enabled: !_isLoading,
                             decoration: InputDecoration(
                               hintText: '••••••••',
-                              hintStyle: TextStyle(color: isDark ? Colors.white38 : AppTheme.gray, fontSize: 13),
+                              hintStyle: TextStyle(
+                                  color:
+                                      isDark ? Colors.white38 : AppTheme.gray,
+                                  fontSize: 13),
                               filled: true,
-                              fillColor: isDark ? const Color(0xFF1E2E4A) : AppTheme.pageAlt,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E2E4A)
+                                  : AppTheme.pageAlt,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                                 borderSide: BorderSide.none,
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: AppTheme.gray,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _obscurePassword = !_obscurePassword;
+                                  });
+                                },
+                              ),
                             ),
                             validator: (val) {
                               if (val == null || val.isEmpty) {
@@ -327,43 +276,32 @@ class _LoginPageState extends State<LoginPage> {
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 8.0),
-                                child: CircularProgressIndicator(color: AppTheme.orange500),
+                                child: CircularProgressIndicator(
+                                    color: AppTheme.orange500),
                               ),
                             )
                           else ...[
+                            OutlinedButton.icon(
+                              onPressed: _signInWithGoogle,
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(double.infinity, 48),
+                                side: const BorderSide(color: AppTheme.line),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: const Icon(Icons.g_mobiledata,
+                                  size: 28, color: AppTheme.navy700),
+                              label: const Text(
+                                'Continue with Google',
+                                style: TextStyle(
+                                    color: AppTheme.navy700,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
                             HoverButton(
                               text: 'Log In',
                               onPressed: _submit,
-                            ),
-                            const SizedBox(height: 16),
-                            OutlinedButton(
-                              onPressed: _signInWithGoogle,
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size(double.infinity, 44),
-                                side: const BorderSide(color: AppTheme.line),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.network(
-                                    'https://www.google.com/favicon.ico',
-                                    height: 16,
-                                    errorBuilder: (c, e, s) => const Icon(Icons.g_mobiledata, color: Colors.blue),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    'Sign in with Google',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13.5,
-                                      color: isDark ? Colors.white : AppTheme.navy700,
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ),
                           ],
                         ],
@@ -375,7 +313,9 @@ class _LoginPageState extends State<LoginPage> {
                       children: [
                         Text(
                           'Don\'t have an account? ',
-                          style: TextStyle(color: isDark ? Colors.white70 : AppTheme.gray, fontSize: 13.5),
+                          style: TextStyle(
+                              color: isDark ? Colors.white70 : AppTheme.gray,
+                              fontSize: 13.5),
                         ),
                         GestureDetector(
                           onTap: () {

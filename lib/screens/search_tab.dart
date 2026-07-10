@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import '../services/auth_service.dart';
+import '../services/stream_service.dart';
 import '../widgets/custom_widgets.dart';
+import '../services/homeowner_service.dart';
+import 'chat_screen.dart';
+import 'pro_profile.dart';
 
 class SearchTab extends StatefulWidget {
   final Function(Map<String, String>) onBookPro;
@@ -8,11 +13,11 @@ class SearchTab extends StatefulWidget {
   final String? initialCategory;
 
   const SearchTab({
-    super.key,
+    key,
     required this.onBookPro,
     this.initialSearchQuery,
     this.initialCategory,
-  });
+  }) : super(key: key);
 
   @override
   State<SearchTab> createState() => _SearchTabState();
@@ -20,29 +25,148 @@ class SearchTab extends StatefulWidget {
 
 class _SearchTabState extends State<SearchTab> {
   late final TextEditingController _searchController;
-  final TextEditingController _zipController = TextEditingController(text: '33569');
+  final TextEditingController _zipController = TextEditingController(text: '');
   late String _activeCategoryFilter;
+
+  bool _isLoading = false;
+  String? _errorMessage;
+  List<dynamic> _searchResults = [];
+
+  double? _maxDistanceFilter;
+  double? _minRatingFilter;
+  String? _priceTypeFilter; // 'rate_card' or 'quote_request'
+
+  List<dynamic> get _filteredResults {
+    return _searchResults.where((pro) {
+      if (_minRatingFilter != null) {
+        final rating = (pro['verifiedRating'] as num?)?.toDouble() ?? 5.0;
+        if (rating < _minRatingFilter!) return false;
+      }
+      if (_maxDistanceFilter != null) {
+        final dist = (pro['distanceMiles'] as num?)?.toDouble();
+        if (dist != null && dist > _maxDistanceFilter!) return false;
+      }
+      if (_priceTypeFilter != null) {
+        if (pro['workOrderType'] != _priceTypeFilter) return false;
+      }
+      return true;
+    }).toList();
+  }
 
   @override
   void initState() {
     super.initState();
-    _searchController = TextEditingController(text: widget.initialSearchQuery ?? '');
+    _searchController =
+        TextEditingController(text: widget.initialSearchQuery ?? '');
     _activeCategoryFilter = widget.initialCategory ?? 'All';
+    _initializeDefaultZipAndSearch();
+  }
+
+  Future<void> _initializeDefaultZipAndSearch() async {
+    try {
+      List<dynamic> addresses = HomeownerService.instance.cachedAddresses ?? [];
+      if (addresses.isEmpty) {
+        final data = await HomeownerService.instance.fetchProfile();
+        addresses = (data['addresses'] as List?) ??
+            (data['profile']?['addresses'] as List?) ??
+            [];
+      }
+
+      final defaultAddr = addresses.firstWhere(
+          (a) => a['isDefault'] == true || a['isDefault'] == 'true',
+          orElse: () => addresses.isNotEmpty ? addresses.first : null);
+      if (defaultAddr != null && defaultAddr['zip'] != null) {
+        _zipController.text = defaultAddr['zip'].toString();
+      } else {
+        _zipController.text = '33569';
+      }
+    } catch (e) {
+      _zipController.text = '33569';
+    }
+    _performSearch();
   }
 
   @override
   void didUpdateWidget(SearchTab oldWidget) {
     super.didUpdateWidget(oldWidget);
+    bool shouldSearch = false;
     if (widget.initialSearchQuery != oldWidget.initialSearchQuery) {
       _searchController.text = widget.initialSearchQuery ?? '';
+      shouldSearch = true;
     }
     if (widget.initialCategory != oldWidget.initialCategory) {
       _activeCategoryFilter = widget.initialCategory ?? 'All';
+      shouldSearch = true;
+    }
+    if (shouldSearch) {
+      _performSearch();
     }
   }
 
-  // Category list covering all 31 official categories plus "All"
-  final List<Map<String, dynamic>> _categories = [
+  String getCategorySlug(String categoryName) {
+    return categoryName
+        .toLowerCase()
+        .replaceAll(' & ', '-')
+        .replaceAll(' ', '-');
+  }
+
+  Future<void> _performSearch() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final zip = _zipController.text.trim();
+      String category = _activeCategoryFilter;
+
+      // If "All" is selected but the search bar has a query, check keywords
+      if (category == 'All' && _searchController.text.isNotEmpty) {
+        final query = _searchController.text.toLowerCase();
+        for (final entry in categoryKeywords.entries) {
+          final catName = entry.key;
+          final keywords = entry.value;
+          if (keywords.any((kw) => query.contains(kw) || kw.contains(query))) {
+            category = catName;
+            break;
+          }
+        }
+      }
+
+      // If category is "All", default to "hvac" for public pro listing
+      final categorySlug =
+          category == 'All' ? 'hvac' : getCategorySlug(category);
+
+      final data = await HomeownerService.instance.searchPros(
+        zip: zip.isNotEmpty ? zip : '33569',
+        categorySlug: categorySlug,
+      );
+
+      if (mounted) {
+        setState(() {
+          var rawResults = data['results'];
+          if (rawResults is List) {
+            _searchResults = rawResults;
+          } else if (rawResults is Map) {
+            _searchResults = rawResults.values.toList();
+          } else {
+            _searchResults = [];
+          }
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  static const List<Map<String, dynamic>> _categories = [
     {'name': 'All', 'icon': Icons.all_out},
     {'name': 'Plumbing', 'icon': Icons.plumbing},
     {'name': 'HVAC', 'icon': Icons.ac_unit},
@@ -77,226 +201,191 @@ class _SearchTabState extends State<SearchTab> {
     {'name': 'Smart Home', 'icon': Icons.settings_remote},
   ];
 
-  // Mock list of pros representing multiple categories
-  final List<Map<String, String>> _allPros = [
-    {
-      'name': 'Dave Miller',
-      'trade': 'Licensed HVAC Technician',
-      'company': 'Miller Cool Air & Heating',
-      'rating': '4.9',
-      'reviews': '148',
-      'price': '\$85/hr',
-      'category': 'HVAC',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'Sarah Jenkins',
-      'trade': 'Master Plumber',
-      'company': 'Jenkins Plumbing Group',
-      'rating': '4.8',
-      'reviews': '92',
-      'price': '\$90/hr',
-      'category': 'Plumbing',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'Marcus Vance',
-      'trade': 'General Handyman',
-      'company': 'Vance Home Services',
-      'rating': '4.9',
-      'reviews': '310',
-      'price': '\$60/hr',
-      'category': 'Handyman',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'GreenLawn Care',
-      'trade': 'Lawn Maintenance Pro',
-      'company': 'GreenLawn Tampa Corp',
-      'rating': '4.7',
-      'reviews': '412',
-      'price': '\$40/hr',
-      'category': 'Landscaping',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'MaidShine Cleaning',
-      'trade': 'Home Clean Specialist',
-      'company': 'MaidShine Services Inc',
-      'rating': '4.8',
-      'reviews': '280',
-      'price': '\$110 Fixed',
-      'category': 'Cleaning',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'Elena Rostova',
-      'trade': 'Licensed Electrician',
-      'company': 'Apex Electrical Services',
-      'rating': '4.9',
-      'reviews': '175',
-      'price': '\$95/hr',
-      'category': 'Electrical',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'Appliance Masters',
-      'trade': 'Appliance Repair Technician',
-      'company': 'Tampa Bay Appliance Repair',
-      'rating': '4.8',
-      'reviews': '210',
-      'price': '\$75/hr',
-      'category': 'Appliance Repair',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'ClearWater Pool Care',
-      'trade': 'Certified Pool Technician',
-      'company': 'ClearWater Pools & Spas',
-      'rating': '4.9',
-      'reviews': '88',
-      'price': '\$80 Fixed',
-      'category': 'Pool & Spa',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'Stump & Branch Tree Co.',
-      'trade': 'Licensed Arborist',
-      'company': 'Stump & Branch Tree Care',
-      'rating': '4.7',
-      'reviews': '134',
-      'price': '\$120/hr',
-      'category': 'Tree Service',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'Shield Pest Control',
-      'trade': 'Certified Pest Specialist',
-      'company': 'Shield Pest & Termite Control',
-      'rating': '4.9',
-      'reviews': '340',
-      'price': '\$70 Fixed',
-      'category': 'Pest Control',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'Elite Flooring & Tile',
-      'trade': 'Flooring Installation Pro',
-      'company': 'Elite Floors LLC',
-      'rating': '4.8',
-      'reviews': '156',
-      'price': '\$85/hr',
-      'category': 'Flooring',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'Apex Painting Pros',
-      'trade': 'Professional Painter',
-      'company': 'Apex Painting Contractors',
-      'rating': '4.8',
-      'reviews': '194',
-      'price': '\$50/hr',
-      'category': 'Painting',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'SecureLock Locksmith',
-      'trade': 'Mobile Locksmith',
-      'company': 'SecureLock & Key Services',
-      'rating': '4.9',
-      'reviews': '420',
-      'price': '\$65 Fixed',
-      'category': 'Locksmith',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'EcoJunk Haulers',
-      'trade': 'Junk Removal Specialist',
-      'company': 'EcoJunk Hauling Tampa',
-      'rating': '4.7',
-      'reviews': '258',
-      'price': '\$95 Fixed',
-      'category': 'Junk Removal',
-      'badge': 'Vetted & Insured',
-    },
-    {
-      'name': 'Overhead Garage Doctor',
-      'trade': 'Garage Door Technician',
-      'company': 'Overhead Garage Door Pros',
-      'rating': '4.9',
-      'reviews': '182',
-      'price': '\$90/hr',
-      'category': 'Garage Doors',
-      'badge': 'Vetted & Insured',
-    },
-  ];
+  static const Map<String, List<String>> categoryKeywords = {
+    'Plumbing': [
+      'pipe',
+      'drain',
+      'leak',
+      'toilet',
+      'clog',
+      'faucet',
+      'sink',
+      'plumber',
+      'shower',
+      'water heater'
+    ],
+    'HVAC': [
+      'ac',
+      'heating',
+      'hvac',
+      'cool',
+      'heat',
+      'air conditioning',
+      'furnace',
+      'vent',
+      'thermostat'
+    ],
+    'Handyman': [
+      'tv',
+      'mount',
+      'furniture',
+      'assembly',
+      'fixture',
+      'doorbell',
+      'shelf',
+      'hang',
+      'repair'
+    ],
+    'Landscaping': [
+      'lawn',
+      'grass',
+      'mow',
+      'garden',
+      'sprinkler',
+      'sod',
+      'weed',
+      'landscaper',
+      'yard'
+    ],
+    'Cleaning': [
+      'clean',
+      'maid',
+      'wash',
+      'dust',
+      'vacuum',
+      'housekeeping',
+      'deep clean'
+    ],
+    'Electrical': [
+      'wire',
+      'outlet',
+      'light',
+      'switch',
+      'ev charger',
+      'breaker',
+      'electrician',
+      'wiring'
+    ],
+    'Appliance Repair': [
+      'fridge',
+      'refrigerator',
+      'stove',
+      'oven',
+      'dishwasher',
+      'washer',
+      'dryer',
+      'freezer'
+    ],
+    'Pool & Spa': [
+      'pool',
+      'spa',
+      'jacuzzi',
+      'chlorine',
+      'pump',
+      'pool cleaning'
+    ],
+    'Tree Service': ['tree', 'branch', 'stump', 'trim', 'arborist', 'cutting'],
+    'Pest Control': [
+      'bug',
+      'pest',
+      'termite',
+      'ant',
+      'roach',
+      'spider',
+      'exterminator',
+      'flea',
+      'tick'
+    ],
+    'Flooring': [
+      'floor',
+      'tile',
+      'hardwood',
+      'carpet',
+      'laminate',
+      'vinyl',
+      'plank'
+    ],
+    'Painting': [
+      'paint',
+      'wall',
+      'stain',
+      'brush',
+      'roller',
+      'painter',
+      'exterior',
+      'interior'
+    ],
+    'Drywall & Plaster': [
+      'drywall',
+      'plaster',
+      'patch',
+      'sheetrock',
+      'spackle'
+    ],
+    'Roofing': ['roof', 'shingle', 'leak', 'tile', 'roofing', 'roofer'],
+    'Gutters': ['gutter', 'downspout', 'leaf', 'guards'],
+    'Siding': ['siding', 'vinyl siding', 'stucco', 'wood siding'],
+    'Windows & Doors': [
+      'window',
+      'door',
+      'entry',
+      'sliding',
+      'pane',
+      'storm door'
+    ],
+    'Screen Repair': ['screen', 'lanai', 'mesh', 'patio', 'window screen'],
+    'Garage Doors': ['garage', 'overhead', 'spring', 'opener', 'garage door'],
+    'Locksmith': ['lock', 'key', 'deadbolt', 'lockout', 'smart lock', 'rekey'],
+    'Junk Removal': ['junk', 'trash', 'debris', 'removal', 'haul', 'clutter'],
+    'Moving': ['move', 'pack', 'truck', 'relocate', 'movers', 'loading'],
+    'Fencing & Decks': ['fence', 'gate', 'deck', 'wood', 'vinyl', 'railing'],
+    'Concrete & Masonry': [
+      'concrete',
+      'brick',
+      'masonry',
+      'paver',
+      'driveway',
+      'patio',
+      'sidewalk'
+    ],
+    'Remodeling': [
+      'remodel',
+      'kitchen',
+      'bathroom',
+      'renovate',
+      'addition',
+      'contractor'
+    ],
+    'Home Security': ['security', 'alarm', 'camera', 'cctv', 'ring', 'safe'],
+    'Insulation': ['insulation', 'attic', 'fiberglass', 'blown-in'],
+    'Water Treatment': [
+      'water',
+      'filter',
+      'softener',
+      'reverse osmosis',
+      'purification'
+    ],
+    'Fireplace & Chimney': [
+      'fireplace',
+      'chimney',
+      'hearth',
+      'soot',
+      'sweep',
+      'flue'
+    ],
+    'Solar Energy': ['solar', 'panel', 'sun', 'pv'],
+    'Smart Home': [
+      'smart',
+      'automation',
+      'alexa',
+      'nest',
+      'home automation',
+      'hub'
+    ],
+  };
 
   @override
   Widget build(BuildContext context) {
-    // Advanced keyword matching map for the search bar
-    final Map<String, List<String>> categoryKeywords = {
-      'Plumbing': ['pipe', 'drain', 'leak', 'toilet', 'clog', 'faucet', 'sink', 'plumber', 'shower', 'water heater'],
-      'HVAC': ['ac', 'heating', 'hvac', 'cool', 'heat', 'air conditioning', 'furnace', 'vent', 'thermostat'],
-      'Handyman': ['tv', 'mount', 'furniture', 'assembly', 'fixture', 'doorbell', 'shelf', 'hang', 'repair'],
-      'Landscaping': ['lawn', 'grass', 'mow', 'garden', 'sprinkler', 'sod', 'weed', 'landscaper', 'yard'],
-      'Cleaning': ['clean', 'maid', 'wash', 'dust', 'vacuum', 'housekeeping', 'deep clean'],
-      'Electrical': ['wire', 'outlet', 'light', 'switch', 'ev charger', 'breaker', 'electrician', 'wiring'],
-      'Appliance Repair': ['fridge', 'refrigerator', 'stove', 'oven', 'dishwasher', 'washer', 'dryer', 'freezer'],
-      'Pool & Spa': ['pool', 'spa', 'jacuzzi', 'chlorine', 'pump', 'pool cleaning'],
-      'Tree Service': ['tree', 'branch', 'stump', 'trim', 'arborist', 'cutting'],
-      'Pest Control': ['bug', 'pest', 'termite', 'ant', 'roach', 'spider', 'exterminator', 'flea', 'tick'],
-      'Flooring': ['floor', 'tile', 'hardwood', 'carpet', 'laminate', 'vinyl', 'plank'],
-      'Painting': ['paint', 'wall', 'stain', 'brush', 'roller', 'painter', 'exterior', 'interior'],
-      'Drywall & Plaster': ['drywall', 'plaster', 'patch', 'sheetrock', 'spackle'],
-      'Roofing': ['roof', 'shingle', 'leak', 'tile', 'roofing', 'roofer'],
-      'Gutters': ['gutter', 'downspout', 'leaf', 'guards'],
-      'Siding': ['siding', 'vinyl siding', 'stucco', 'wood siding'],
-      'Windows & Doors': ['window', 'door', 'entry', 'sliding', 'pane', 'storm door'],
-      'Screen Repair': ['screen', 'lanai', 'mesh', 'patio', 'window screen'],
-      'Garage Doors': ['garage', 'overhead', 'spring', 'opener', 'garage door'],
-      'Locksmith': ['lock', 'key', 'deadbolt', 'lockout', 'smart lock', 'rekey'],
-      'Junk Removal': ['junk', 'trash', 'debris', 'removal', 'haul', 'clutter'],
-      'Moving': ['move', 'pack', 'truck', 'relocate', 'movers', 'loading'],
-      'Fencing & Decks': ['fence', 'gate', 'deck', 'wood', 'vinyl', 'railing'],
-      'Concrete & Masonry': ['concrete', 'brick', 'masonry', 'paver', 'driveway', 'patio', 'sidewalk'],
-      'Remodeling': ['remodel', 'kitchen', 'bathroom', 'renovate', 'addition', 'contractor'],
-      'Home Security': ['security', 'alarm', 'camera', 'cctv', 'ring', 'safe'],
-      'Insulation': ['insulation', 'attic', 'fiberglass', 'blown-in'],
-      'Water Treatment': ['water', 'filter', 'softener', 'reverse osmosis', 'purification'],
-      'Fireplace & Chimney': ['fireplace', 'chimney', 'hearth', 'soot', 'sweep', 'flue'],
-      'Solar Energy': ['solar', 'panel', 'sun', 'pv'],
-      'Smart Home': ['smart', 'automation', 'alexa', 'nest', 'home automation', 'hub'],
-    };
-
-    // Filter pros
-    final filteredPros = _allPros.where((pro) {
-      final matchesCat = _activeCategoryFilter == 'All' || pro['category'] == _activeCategoryFilter;
-      
-      final query = _searchController.text.toLowerCase().trim();
-      if (query.isEmpty) return matchesCat;
-
-      // 1. Check direct matches on name, trade, company, category
-      final directMatch = pro['name']!.toLowerCase().contains(query) ||
-          pro['trade']!.toLowerCase().contains(query) ||
-          pro['company']!.toLowerCase().contains(query) ||
-          pro['category']!.toLowerCase().contains(query);
-
-      if (directMatch) return matchesCat;
-
-      // 2. Check keyword mapping for this pro's category
-      final proCat = pro['category']!;
-      final keywords = categoryKeywords[proCat];
-      if (keywords != null) {
-        for (final kw in keywords) {
-          if (query.contains(kw) || kw.contains(query)) {
-            return matchesCat;
-          }
-        }
-      }
-
-      return false;
-    }).toList();
-
     return Column(
       children: [
         _buildSearchHeader(),
@@ -313,21 +402,51 @@ class _SearchTabState extends State<SearchTab> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Vetted Pros Available (${filteredPros.length})',
-                    style: AppTheme.textTheme.headlineMedium?.copyWith(fontSize: 16),
+                    'Vetted Pros Available (${_searchResults.length})',
+                    style: AppTheme.textTheme.headlineMedium
+                        ?.copyWith(fontSize: 16),
                   ),
-                  const Text('Sort: Highest Rated', style: TextStyle(color: AppTheme.gray, fontSize: 12)),
+                  const Text('Sort: Highest Rated',
+                      style: TextStyle(color: AppTheme.gray, fontSize: 12)),
                 ],
               ),
               const SizedBox(height: 12),
-              if (filteredPros.isEmpty)
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40.0),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppTheme.orange500),
+                  ),
+                )
+              else if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 40.0),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.error_outline,
+                          size: 48, color: AppTheme.error),
+                      const SizedBox(height: 12),
+                      Text(_errorMessage!,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13),
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _performSearch,
+                        child: const Text('Try Again'),
+                      ),
+                    ],
+                  ),
+                )
+              else if (_filteredResults.isEmpty)
                 _buildEmptyState()
               else
-                ...filteredPros.asMap().entries.map((entry) {
+                ..._filteredResults.asMap().entries.map((entry) {
                   final idx = entry.key;
                   final pro = entry.value;
                   return AnimatedEntrance(
-                    key: ValueKey('${pro['name']}_${_searchController.text}_$_activeCategoryFilter'),
+                    key: ValueKey(
+                        '${pro['contractorId']}_${_searchController.text}_$_activeCategoryFilter'),
                     delay: Duration(milliseconds: idx < 3 ? idx * 30 : 0),
                     child: _buildProCard(pro),
                   );
@@ -340,6 +459,14 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildSearchHeader() {
+    final hasActiveFilters = _maxDistanceFilter != null ||
+        _minRatingFilter != null ||
+        _priceTypeFilter != null;
+    int filterCount = 0;
+    if (_maxDistanceFilter != null) filterCount++;
+    if (_minRatingFilter != null) filterCount++;
+    if (_priceTypeFilter != null) filterCount++;
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
@@ -348,6 +475,7 @@ class _SearchTabState extends State<SearchTab> {
           TextField(
             controller: _searchController,
             onChanged: (val) => setState(() {}),
+            onSubmitted: (val) => _performSearch(),
             decoration: InputDecoration(
               hintText: 'What service do you need? (e.g. HVAC, pipe)',
               prefixIcon: const Icon(Icons.search, color: AppTheme.gray),
@@ -357,7 +485,8 @@ class _SearchTabState extends State<SearchTab> {
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
           ),
           const SizedBox(height: 10),
@@ -367,32 +496,64 @@ class _SearchTabState extends State<SearchTab> {
                 child: TextField(
                   controller: _zipController,
                   keyboardType: TextInputType.number,
+                  onSubmitted: (val) => _performSearch(),
                   decoration: InputDecoration(
                     hintText: 'ZIP Code',
-                    prefixIcon: const Icon(Icons.location_on, color: AppTheme.gray, size: 20),
+                    prefixIcon: const Icon(Icons.location_on,
+                        color: AppTheme.gray, size: 20),
                     filled: true,
                     fillColor: AppTheme.pageAlt,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppTheme.tealTint,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.filter_list, color: AppTheme.teal700, size: 20),
-                    SizedBox(width: 6),
-                    Text('Filters', style: TextStyle(color: AppTheme.teal700, fontWeight: FontWeight.bold, fontSize: 13)),
-                  ],
+              GestureDetector(
+                onTap: _showFiltersBottomSheet,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: hasActiveFilters
+                        ? AppTheme.orange500
+                        : AppTheme.tealTint,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: hasActiveFilters
+                        ? [
+                            BoxShadow(
+                              color: AppTheme.orange500.withOpacity(0.3),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            )
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.filter_list,
+                          color: hasActiveFilters
+                              ? Colors.white
+                              : AppTheme.teal700,
+                          size: 20),
+                      const SizedBox(width: 6),
+                      Text(
+                        hasActiveFilters ? 'Filters ($filterCount)' : 'Filters',
+                        style: TextStyle(
+                          color: hasActiveFilters
+                              ? Colors.white
+                              : AppTheme.teal700,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
             ],
@@ -417,15 +578,29 @@ class _SearchTabState extends State<SearchTab> {
               setState(() {
                 _activeCategoryFilter = cat['name'];
               });
+              _performSearch();
             },
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOutCubic,
               margin: const EdgeInsets.only(right: 12),
               width: 80,
               decoration: BoxDecoration(
                 color: isSel ? const Color(0xFF1B3C6E) : AppTheme.pageAlt,
                 borderRadius: BorderRadius.circular(16),
-                border: isSel ? null : Border.all(color: AppTheme.line.withOpacity(0.3)),
+                border: Border.all(
+                    color: isSel
+                        ? Colors.transparent
+                        : AppTheme.line.withOpacity(0.3)),
+                boxShadow: isSel
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF1B3C6E).withOpacity(0.25),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        )
+                      ]
+                    : null,
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -436,13 +611,14 @@ class _SearchTabState extends State<SearchTab> {
                     size: 22,
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    cat['name'],
+                  AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 200),
                     style: TextStyle(
                       color: isSel ? Colors.white : AppTheme.ink,
                       fontWeight: FontWeight.bold,
                       fontSize: 10.5,
                     ),
+                    child: Text(cat['name']),
                   ),
                 ],
               ),
@@ -453,7 +629,27 @@ class _SearchTabState extends State<SearchTab> {
     );
   }
 
-  Widget _buildProCard(Map<String, String> pro) {
+  Widget _buildProCard(Map<String, dynamic> pro) {
+    final businessName = pro['businessName'] ?? 'Service Pro';
+    final isNew = pro['isNew'] == true;
+    final badgeText = isNew ? 'New Pro' : 'Vetted & Insured';
+    final nextAvailable = pro['nextAvailable'] ?? 'Next Week';
+    final workOrderType = pro['workOrderType'] == 'quote_request'
+        ? 'Quote Request'
+        : 'Flat/Hourly';
+    final rating = pro['verifiedRating'] != null
+        ? pro['verifiedRating'].toString()
+        : '5.0';
+    final reviewsCount =
+        pro['verifiedCount'] != null ? pro['verifiedCount'].toString() : '0';
+
+    final priceLabel = pro['fromPrice'] != null
+        ? '\$${pro['fromPrice'].toString()}/${pro['fromUnit'] ?? 'hr'}'
+        : 'Get Quote';
+    final messageUserId = StreamService.instance.resolveMessagingUserId(
+      Map<String, dynamic>.from(pro),
+    );
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
@@ -461,83 +657,181 @@ class _SearchTabState extends State<SearchTab> {
         borderRadius: BorderRadius.circular(16),
         side: const BorderSide(color: AppTheme.line, width: 0.5),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        pro['name']!,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppTheme.tealTint,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          pro['badge']!,
-                          style: const TextStyle(
-                            color: AppTheme.teal700,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
+      child: InkWell(
+        onTap: () async {
+          final booked = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ProProfileScreen(pro: pro)),
+          );
+          if (booked == true && context.mounted) {
+            // We want to pass this up to the BrowseScreen which will pass it to dashboard_shell
+            // Wait! If SearchTab is not a Navigator itself, popping here will pop SearchTab?
+            // Actually, BrowseScreen contains SearchTab, but they are in the same Navigator scope if SearchTab is just a widget in BrowseScreen.
+            // But what if SearchTab is inside the main IndexedStack?
+            // If it's inside the IndexedStack (like the actual SearchTab in dashboard_shell wasn't, wait it WAS?)
+            // Oh, dashboard_shell doesn't use SearchTab directly in tabs, it uses BrowseScreen! Wait.
+            // If we are in BrowseScreen, popping BrowseScreen returns to DashboardShell.
+            Navigator.pop(context, true);
+          }
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              if (pro['photoUrl'] != null &&
+                  pro['photoUrl'].toString().isNotEmpty) ...[
+                CircleAvatar(
+                  radius: 24,
+                  backgroundImage: NetworkImage(pro['photoUrl'].toString()),
+                  backgroundColor: AppTheme.navyTint,
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            businessName,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${pro['trade']} • ${pro['company']}',
-                    style: const TextStyle(color: AppTheme.gray, fontSize: 12),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.star, color: Colors.amber, size: 16),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${pro['rating']} (${pro['reviews']} verified jobs)',
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  pro['price']!,
-                  style: AppTheme.textTheme.headlineMedium?.copyWith(
-                    color: AppTheme.orange500,
-                    fontSize: 16,
-                  ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.tealTint,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            badgeText,
+                            style: const TextStyle(
+                              color: AppTheme.teal700,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$workOrderType • Available: $nextAvailable',
+                      style:
+                          const TextStyle(color: AppTheme.gray, fontSize: 12),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.star, color: Colors.amber, size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$rating ($reviewsCount verified jobs)',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: () => widget.onBookPro(pro),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.orange500,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    priceLabel,
+                    style: AppTheme.textTheme.headlineMedium?.copyWith(
+                      color: AppTheme.orange500,
+                      fontSize: 16,
                     ),
                   ),
-                  child: const Text('Book Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                ),
-              ],
-            )
-          ],
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final booked = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => ProProfileScreen(pro: pro)),
+                      );
+                      if (booked == true && context.mounted) {
+                        Navigator.pop(context, true);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.orange500,
+                      foregroundColor: AppTheme.navy700,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                      elevation: 0,
+                    ),
+                    child: const Text('View Profile',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () async {
+                      if (!AuthService.instance.isAuthenticated) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Please sign in to message this contractor.'),
+                            backgroundColor: AppTheme.error,
+                          ),
+                        );
+                        return;
+                      }
+
+                      if (messageUserId == null) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Chat is coming soon for this contractor.'),
+                            backgroundColor: AppTheme.error,
+                          ),
+                        );
+                        return;
+                      }
+
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ChatScreen(
+                            contractorId: messageUserId,
+                            contractorName: businessName.toString(),
+                          ),
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppTheme.line),
+                      foregroundColor: AppTheme.navy700,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'Message',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ),
+                ],
+              )
+            ],
+          ),
         ),
       ),
     );
@@ -550,10 +844,215 @@ class _SearchTabState extends State<SearchTab> {
         children: [
           Icon(Icons.search_off, size: 48, color: AppTheme.gray),
           SizedBox(height: 12),
-          Text('No pros found', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          Text('No pros found',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           SizedBox(height: 4),
-          Text('Try adjusting your filters or keyword query.', style: TextStyle(color: AppTheme.gray, fontSize: 12)),
+          Text('Try adjusting your filters or keyword query.',
+              style: TextStyle(color: AppTheme.gray, fontSize: 12)),
         ],
+      ),
+    );
+  }
+
+  void _showFiltersBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        double? selectedDist = _maxDistanceFilter;
+        double? selectedRating = _minRatingFilter;
+        String? selectedPrice = _priceTypeFilter;
+
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.line,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Filter Pros',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: AppTheme.navy700),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setSheetState(() {
+                            selectedDist = null;
+                            selectedRating = null;
+                            selectedPrice = null;
+                          });
+                        },
+                        child: const Text('Reset All',
+                            style: TextStyle(color: AppTheme.orange500)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Distance Filter
+                  const Text('Distance',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _buildFilterChip(
+                        label: 'Any distance',
+                        selected: selectedDist == null,
+                        onTap: () => setSheetState(() => selectedDist = null),
+                      ),
+                      _buildFilterChip(
+                        label: 'Within 5 miles',
+                        selected: selectedDist == 5.0,
+                        onTap: () => setSheetState(() => selectedDist = 5.0),
+                      ),
+                      _buildFilterChip(
+                        label: 'Within 15 miles',
+                        selected: selectedDist == 15.0,
+                        onTap: () => setSheetState(() => selectedDist = 15.0),
+                      ),
+                      _buildFilterChip(
+                        label: 'Within 25 miles',
+                        selected: selectedDist == 25.0,
+                        onTap: () => setSheetState(() => selectedDist = 25.0),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Rating Filter
+                  const Text('Minimum Rating',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _buildFilterChip(
+                        label: 'All ratings',
+                        selected: selectedRating == null,
+                        onTap: () => setSheetState(() => selectedRating = null),
+                      ),
+                      _buildFilterChip(
+                        label: '4.5+ Stars',
+                        selected: selectedRating == 4.5,
+                        onTap: () => setSheetState(() => selectedRating = 4.5),
+                      ),
+                      _buildFilterChip(
+                        label: '4.8+ Stars',
+                        selected: selectedRating == 4.8,
+                        onTap: () => setSheetState(() => selectedRating = 4.8),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Price Type Filter
+                  const Text('Pricing Type',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _buildFilterChip(
+                        label: 'All pricing',
+                        selected: selectedPrice == null,
+                        onTap: () => setSheetState(() => selectedPrice = null),
+                      ),
+                      _buildFilterChip(
+                        label: 'Flat/Hourly',
+                        selected: selectedPrice == 'rate_card',
+                        onTap: () =>
+                            setSheetState(() => selectedPrice = 'rate_card'),
+                      ),
+                      _buildFilterChip(
+                        label: 'Quote Request',
+                        selected: selectedPrice == 'quote_request',
+                        onTap: () => setSheetState(
+                            () => selectedPrice = 'quote_request'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _maxDistanceFilter = selectedDist;
+                          _minRatingFilter = selectedRating;
+                          _priceTypeFilter = selectedPrice;
+                        });
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.orange500,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('Apply Filters',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterChip(
+      {required String label,
+      required bool selected,
+      required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Chip(
+        label: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : AppTheme.navy700,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
+        backgroundColor: selected ? const Color(0xFF1B3C6E) : AppTheme.pageAlt,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+              color: selected
+                  ? Colors.transparent
+                  : AppTheme.line.withOpacity(0.3)),
+        ),
       ),
     );
   }

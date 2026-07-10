@@ -1,15 +1,30 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'theme.dart';
-import 'screens/onboarding_slider.dart';
-import 'screens/dashboard_shell.dart';
-import 'services/auth_service.dart';
 
-// Global ValueNotifier to control theme switches dynamically
+import 'screens/dashboard_shell.dart';
+import 'screens/onboarding_slider.dart';
+import 'services/auth_service.dart';
+import 'services/stream_service.dart';
+import 'theme.dart';
+
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AuthService.instance.loadSession();
+  await StreamService.instance.initialize();
+
+  if (AuthService.instance.isAuthenticated &&
+      AuthService.instance.userId != null) {
+    try {
+      await StreamService.instance.ensureConnected();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Stream startup connect error: $e');
+      }
+    }
+  }
+
   runApp(const MyApp());
 }
 

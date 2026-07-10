@@ -14,7 +14,7 @@ class OnboardingSlider extends StatefulWidget {
 class _OnboardingSliderState extends State<OnboardingSlider> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  final int _numPages = 5;
+  final int _numPages = 4;
 
   @override
   void dispose() {
@@ -44,8 +44,7 @@ class _OnboardingSliderState extends State<OnboardingSlider> {
                   _buildAnimatedPage(0, _buildHeroSlide(theme, isDark)),
                   _buildAnimatedPage(1, _buildCategoriesSlide(theme, isDark)),
                   _buildAnimatedPage(2, _buildVettingSlide(theme, isDark)),
-                  _buildAnimatedPage(3, _buildRewardsSlide(theme, isDark)),
-                  _buildAnimatedPage(4, _buildStartSlide(theme, isDark)),
+                  _buildAnimatedPage(3, _buildStartSlide(theme, isDark)),
                 ],
               ),
 
