@@ -102,7 +102,7 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
           lastMessageText = 'This booking has been cancelled.';
           statusColor = AppTheme.error;
         } else {
-          lastMessageText = 'Intake submitted. Matching with dispatcher.';
+          lastMessageText = 'Intake submitted. Choose a pro to continue.';
           statusColor = AppTheme.gray;
         }
 

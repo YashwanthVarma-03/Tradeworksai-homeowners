@@ -9,6 +9,7 @@ import 'inbox_tab.dart';
 import 'reward_tab.dart';
 import 'profile_tab.dart';
 import 'booking_stepper.dart';
+import 'category_guides_screen.dart';
 import 'support_page.dart';
 import 'onboarding_slider.dart';
 import '../services/auth_service.dart';
@@ -133,6 +134,24 @@ class _DashboardShellState extends State<DashboardShell> {
     );
   }
 
+  Future<void> _openCategoryGuides() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CategoryGuidesScreen(
+          onBrowseCategory: (category) async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => BrowseScreen(initialCategory: category),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<Widget> tabs = [
@@ -188,6 +207,7 @@ class _DashboardShellState extends State<DashboardShell> {
             });
           }
         },
+        onGuidesTap: _openCategoryGuides,
       ),
       const InboxTab(),
       BookingsTab(
@@ -747,4 +767,3 @@ class GiftBoxPainter extends CustomPainter {
         oldDelegate.wiggleProgress != wiggleProgress;
   }
 }
-

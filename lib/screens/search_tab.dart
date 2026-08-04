@@ -467,6 +467,75 @@ class _SearchTabState extends State<SearchTab> {
     if (_minRatingFilter != null) filterCount++;
     if (_priceTypeFilter != null) filterCount++;
 
+    final useWireframeHeader = true;
+    if (useWireframeHeader) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        decoration: const BoxDecoration(
+          color: AppTheme.pageAlt,
+          border: Border(bottom: BorderSide(color: AppTheme.line)),
+        ),
+        child: Column(
+          children: [
+            TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              onChanged: (val) => setState(() {}),
+              onSubmitted: (val) => _performSearch(),
+              decoration: InputDecoration(
+                hintText: 'Search a service or pro',
+                prefixIcon: const Icon(Icons.search, color: AppTheme.gray),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(23),
+                  borderSide: const BorderSide(color: AppTheme.line, width: 1.5),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(23),
+                  borderSide:
+                      const BorderSide(color: AppTheme.orange500, width: 1.5),
+                ),
+              ),
+            ),
+            const SizedBox(height: 9),
+            TextField(
+              controller: _zipController,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (val) => _performSearch(),
+              decoration: InputDecoration(
+                hintText: 'ZIP code',
+                prefixIcon:
+                    const Icon(Icons.location_on_outlined, color: AppTheme.gray),
+                suffixIcon: IconButton(
+                  tooltip: 'Search this area',
+                  onPressed: _performSearch,
+                  icon: const Icon(Icons.arrow_forward,
+                      color: AppTheme.navy700, size: 20),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(23),
+                  borderSide: const BorderSide(color: AppTheme.line, width: 1.5),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(23),
+                  borderSide:
+                      const BorderSide(color: AppTheme.orange500, width: 1.5),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
@@ -564,6 +633,35 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildCategoryScroll() {
+    final useWireframeRail = true;
+    if (useWireframeRail) {
+      return SizedBox(
+        height: 90,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: _categories.length,
+          itemBuilder: (context, index) {
+            final cat = _categories[index];
+            final name = cat['name'] as String;
+            final isSel = name == _activeCategoryFilter;
+            return Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: TradeWorksCategoryTile(
+                label: name,
+                meta: index == 0 ? '${_filteredResults.length} pros' : 'services',
+                selected: isSel,
+                width: 88,
+                onTap: () {
+                  setState(() => _activeCategoryFilter = name);
+                  _performSearch();
+                },
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     return SizedBox(
       height: 75,
       child: ListView.builder(
@@ -635,8 +733,8 @@ class _SearchTabState extends State<SearchTab> {
     final badgeText = isNew ? 'New Pro' : 'Vetted & Insured';
     final nextAvailable = pro['nextAvailable'] ?? 'Next Week';
     final workOrderType = pro['workOrderType'] == 'quote_request'
-        ? 'Quote Request'
-        : 'Flat/Hourly';
+        ? 'Free estimate'
+        : 'Upfront price';
     final rating = pro['verifiedRating'] != null
         ? pro['verifiedRating'].toString()
         : '5.0';
@@ -644,8 +742,8 @@ class _SearchTabState extends State<SearchTab> {
         pro['verifiedCount'] != null ? pro['verifiedCount'].toString() : '0';
 
     final priceLabel = pro['fromPrice'] != null
-        ? '\$${pro['fromPrice'].toString()}/${pro['fromUnit'] ?? 'hr'}'
-        : 'Get Quote';
+        ? 'From \$${pro['fromPrice'].toString()}'
+        : workOrderType;
     final messageUserId = StreamService.instance.resolveMessagingUserId(
       Map<String, dynamic>.from(pro),
     );
@@ -712,7 +810,7 @@ class _SearchTabState extends State<SearchTab> {
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            badgeText,
+                            isNew ? badgeText : 'Select-certified',
                             style: const TextStyle(
                               color: AppTheme.teal700,
                               fontSize: 9,
@@ -724,7 +822,7 @@ class _SearchTabState extends State<SearchTab> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '$workOrderType • Available: $nextAvailable',
+                      '$workOrderType · Available: $nextAvailable',
                       style:
                           const TextStyle(color: AppTheme.gray, fontSize: 12),
                     ),
@@ -734,7 +832,7 @@ class _SearchTabState extends State<SearchTab> {
                         const Icon(Icons.star, color: Colors.amber, size: 16),
                         const SizedBox(width: 4),
                         Text(
-                          '$rating ($reviewsCount verified jobs)',
+                          '$rating · $reviewsCount completed work orders',
                           style: const TextStyle(
                               fontWeight: FontWeight.w600, fontSize: 12),
                         ),
@@ -773,7 +871,7 @@ class _SearchTabState extends State<SearchTab> {
                           borderRadius: BorderRadius.circular(8)),
                       elevation: 0,
                     ),
-                    child: const Text('View Profile',
+                    child: const Text('View profile',
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 13)),
                   ),
@@ -984,13 +1082,13 @@ class _SearchTabState extends State<SearchTab> {
                         onTap: () => setSheetState(() => selectedPrice = null),
                       ),
                       _buildFilterChip(
-                        label: 'Flat/Hourly',
+                        label: 'Upfront price',
                         selected: selectedPrice == 'rate_card',
                         onTap: () =>
                             setSheetState(() => selectedPrice = 'rate_card'),
                       ),
                       _buildFilterChip(
-                        label: 'Quote Request',
+                        label: 'Free estimate',
                         selected: selectedPrice == 'quote_request',
                         onTap: () => setSheetState(
                             () => selectedPrice = 'quote_request'),

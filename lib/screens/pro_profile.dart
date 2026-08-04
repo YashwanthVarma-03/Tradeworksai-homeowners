@@ -131,8 +131,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
             : '0');
 
     final workOrderType = displayPro['workOrderType'] == 'quote_request'
-        ? 'Quote Request'
-        : 'Flat/Hourly';
+        ? 'Free estimate'
+        : 'Upfront price';
     final isNew = displayPro['isNew'] == true;
     final badgeText = isNew ? 'New Pro' : 'TradeWorks Certified';
     final photoUrl = displayPro['profile_image_url'] ?? displayPro['photoUrl'];
@@ -317,7 +317,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
 
                 // Services & Pricing
                 _buildSectionContainer(
-                  'SERVICES & PRICING',
+                  'SERVICES & UPFRONT PRICING',
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -497,7 +497,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: const Text('Book Pro',
+                  child: const Text('Book this pro',
                       style:
                           TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                 ),

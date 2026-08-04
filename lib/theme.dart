@@ -8,9 +8,9 @@ class AppTheme {
   static const Color navy500 = Color(0xFF132F4C); // --bg-dark-lighter
   static const Color navyTint = Color(0xFFF5F7FA); // --bg-light
 
-  static const Color teal700 = Color(0xFF236A88);
-  static const Color teal500 = Color(0xFF2E86AB);
-  static const Color tealTint = Color(0xFFE6F2F7);
+  static const Color teal700 = Color(0xFF236A88); // Darker teal
+  static const Color teal500 = Color(0xFF2E86AB); // Wireframe teal
+  static const Color tealTint = Color(0xFFE6F2F7); // Light teal tint
 
   static const Color orange700 = Color(0xFFC75D0D); // Darker orange
   static const Color orange500 = Color(0xFFE8751A); // --color-orange - Accent / CTA

@@ -555,7 +555,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                               child: CircularProgressIndicator(
                                   strokeWidth: 2, color: AppTheme.navy700))
                           : Text(
-                              _currentStep == 3 ? 'Submit Request' : 'Continue',
+                              _currentStep == 3 ? 'Confirm booking' : 'Continue',
                               style: const TextStyle(
                                   color: AppTheme.navy700,
                                   fontWeight: FontWeight.bold,
@@ -596,7 +596,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 fontWeight: FontWeight.bold,
                 fontSize: 12)),
         const SizedBox(height: 8),
-        const Text('What do you need help with?',
+        const Text('What do you need?',
             style: TextStyle(
                 color: AppTheme.navy700,
                 fontWeight: FontWeight.bold,
@@ -857,7 +857,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         CheckboxListTile(
           value: _asap,
           onChanged: (v) => setState(() => _asap = v ?? false),
-          title: const Text('As Soon As Possible (ASAP)',
+          title: const Text('As soon as possible',
               style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle:
               const Text('Pro will respond with their earliest availability.'),
@@ -1025,7 +1025,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               const SizedBox(height: 8),
               Text(
                   _asap
-                      ? 'As Soon As Possible (ASAP)'
+                  ? 'As soon as possible'
                       : (_selectedDate != null && _selectedTime != null)
                           ? '$_selectedDate at $_selectedTime'
                           : 'Anytime',

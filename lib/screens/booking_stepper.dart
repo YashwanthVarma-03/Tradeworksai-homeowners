@@ -32,17 +32,17 @@ class _BookingStepperState extends State<BookingStepper> {
   final List<Map<String, dynamic>> _tiers = [
     {
       'name': 'Standard',
-      'desc': 'SLA: Response within 48 hours',
+      'desc': 'Responds within 48 hours',
       'surcharge': 0
     },
     {
       'name': 'Urgent',
-      'desc': 'SLA: Dispatch within 12 hours',
+      'desc': 'Responds within 12 hours',
       'surcharge': 30
     },
     {
       'name': 'Emergency',
-      'desc': 'SLA: Immediate 2-hour dispatch',
+      'desc': 'Responds within 2 hours',
       'surcharge': 75
     },
   ];
@@ -597,7 +597,7 @@ class _BookingStepperState extends State<BookingStepper> {
         Text('Service Intake Check', style: AppTheme.textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
-          'TradeWorks AI enforces upfront pricing to eliminate quotes negotiations and bidding wars.',
+          'Choose the service you want booked. You will see the full price or approved cap before confirming.',
           style: AppTheme.textTheme.bodyMedium?.copyWith(color: AppTheme.gray),
         ),
         const SizedBox(height: 20),
@@ -644,7 +644,7 @@ class _BookingStepperState extends State<BookingStepper> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'This is a flat rate service. The pro will perform the requested work for the specified amount. No bidding or hidden platform markup.',
+                  'This service has upfront pricing from this pro. No hidden platform markup.',
                   style:
                       TextStyle(color: AppTheme.ink, fontSize: 12, height: 1.4),
                 ),
@@ -664,7 +664,7 @@ class _BookingStepperState extends State<BookingStepper> {
         Text('SLA Dispatch Urgency', style: AppTheme.textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
-          'Choose an urgency tier. Emergency dispatch enforces a strict 2-hour response slot.',
+          'Choose how soon you need this. Urgency fees go to the pro.',
           style: AppTheme.textTheme.bodyMedium?.copyWith(color: AppTheme.gray),
         ),
         const SizedBox(height: 20),
@@ -1142,7 +1142,7 @@ class _BookingStepperState extends State<BookingStepper> {
         Text('Booking Summary & Confirm', style: AppTheme.textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
-          'Confirm that the details below are correct. Commit to book the pro calendar.',
+          'Confirm the details below to book.',
           style: AppTheme.textTheme.bodyMedium?.copyWith(color: AppTheme.gray),
         ),
         const SizedBox(height: 20),
@@ -1168,7 +1168,7 @@ class _BookingStepperState extends State<BookingStepper> {
               const SizedBox(height: 12),
               const Divider(),
               const SizedBox(height: 12),
-              _buildReviewRow(Icons.bolt, 'SLA Urgency Tier', _selectedTier),
+              _buildReviewRow(Icons.bolt, 'Urgency', _selectedTier),
               _buildReviewRow(
                   Icons.calendar_month, 'Scheduled Arrival', arrivalText),
               _buildReviewRow(Icons.location_on, 'Service Address', fullAddr),
@@ -1181,7 +1181,7 @@ class _BookingStepperState extends State<BookingStepper> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Base Service Charge',
+                  const Text('Upfront price',
                       style: TextStyle(color: AppTheme.gray, fontSize: 13)),
                   Text(widget.proDetails['price']!,
                       style: const TextStyle(
@@ -1208,7 +1208,7 @@ class _BookingStepperState extends State<BookingStepper> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Total Diagnostic / Capped Booking',
+                  const Text('Total or approved cap',
                       style:
                           TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   Text(

@@ -189,13 +189,13 @@ class CategoryToken {
 }
 
 class TradeWorksCategoryTokens {
-  static const fallback = CategoryToken(
+  static const CategoryToken fallback = CategoryToken(
     color: AppTheme.navy700,
     tint: AppTheme.navyTint,
     icon: Icons.home_repair_service,
   );
 
-  static const all = <String, CategoryToken>{
+  static const Map<String, CategoryToken> all = {
     'All': CategoryToken(
       color: AppTheme.navy700,
       tint: AppTheme.navyTint,
@@ -266,15 +266,30 @@ class TradeWorksCategoryTokens {
       tint: AppTheme.tealTint,
       icon: Icons.layers,
     ),
+    'Drywall & Plaster': CategoryToken(
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
+      icon: Icons.texture,
+    ),
     'Windows & Doors': CategoryToken(
       color: AppTheme.orange500,
       tint: AppTheme.orangeTint,
       icon: Icons.window,
     ),
+    'Garage Doors': CategoryToken(
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
+      icon: Icons.garage,
+    ),
     'Water Treatment': CategoryToken(
       color: AppTheme.navy700,
       tint: AppTheme.navyTint,
       icon: Icons.water_drop,
+    ),
+    'Guides': CategoryToken(
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
+      icon: Icons.menu_book,
     ),
   };
 
@@ -292,28 +307,32 @@ class TradeWorksCategoryTile extends StatelessWidget {
     super.key,
     required this.label,
     this.meta,
-    this.selected = false,
     required this.onTap,
+    this.selected = false,
     this.width,
   });
 
   @override
   Widget build(BuildContext context) {
     final token = TradeWorksCategoryTokens.forName(label);
-    final bg = selected ? token.color : token.tint;
-    final fg = selected ? Colors.white : AppTheme.ink;
+    final background = selected ? token.color : token.tint;
+    final foreground = selected ? Colors.white : AppTheme.ink;
+    final iconColor = selected ? Colors.white : token.color;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         width: width,
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 10),
+        constraints: const BoxConstraints(minHeight: 88),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         decoration: BoxDecoration(
-          color: bg,
+          color: background,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected ? token.color : token.color.withOpacity(0.12),
+            width: selected ? 0 : 1,
           ),
           boxShadow: selected
               ? [
@@ -335,11 +354,7 @@ class TradeWorksCategoryTile extends StatelessWidget {
                 color: selected ? Colors.white.withOpacity(0.16) : Colors.white,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                token.icon,
-                size: 20,
-                color: selected ? Colors.white : token.color,
-              ),
+              child: Icon(token.icon, color: iconColor, size: 20),
             ),
             const SizedBox(height: 7),
             Text(
@@ -348,22 +363,23 @@ class TradeWorksCategoryTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: fg,
-                fontSize: 11,
-                height: 1.12,
+                color: foreground,
                 fontWeight: FontWeight.w700,
+                fontSize: 11,
+                height: 1.15,
               ),
             ),
             if (meta != null) ...[
               const SizedBox(height: 2),
               Text(
                 meta!,
+                textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected ? Colors.white.withOpacity(0.86) : AppTheme.gray,
-                  fontSize: 9.5,
+                  color: selected ? Colors.white.withOpacity(0.88) : AppTheme.gray,
                   fontWeight: FontWeight.w500,
+                  fontSize: 9.5,
                 ),
               ),
             ],
@@ -589,6 +605,5 @@ class SlidingSegmentControl extends StatelessWidget {
     );
   }
 }
-
 
 

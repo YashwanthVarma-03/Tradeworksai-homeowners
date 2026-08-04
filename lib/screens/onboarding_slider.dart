@@ -190,7 +190,7 @@ class _OnboardingSliderState extends State<OnboardingSlider> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Browse vetted, insured home-service pros across 31 categories, see upfront pricing, and book on their calendar. Earn 3–7% cashback rewards back.',
+            'Browse vetted, insured home-service pros across 31 categories, see upfront pricing, and book on their calendar. Earn service credits when work is completed.',
             textAlign: TextAlign.center,
             style: AppTheme.textTheme.bodyMedium?.copyWith(
               color: isDark ? Colors.white70 : AppTheme.gray,
@@ -379,7 +379,7 @@ class _OnboardingSliderState extends State<OnboardingSlider> {
           _buildCheckRow(
             Icons.price_check,
             'Upfront Pre-negotiated Rates',
-            'No bidding wars, no quote markup. You pay the transparent rate card direct to the contractor.',
+            'No auction, no platform markup. You pay the transparent price directly to the pro.',
             isDark,
           ),
           const SizedBox(height: 40),

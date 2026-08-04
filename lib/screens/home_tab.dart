@@ -10,6 +10,7 @@ class HomeTab extends StatefulWidget {
   final VoidCallback onInboxTap;
   final Function(String) onSearchQuery;
   final Function(String) onCategorySelected;
+  final VoidCallback onGuidesTap;
 
   const HomeTab({
     super.key,
@@ -18,6 +19,7 @@ class HomeTab extends StatefulWidget {
     required this.onInboxTap,
     required this.onSearchQuery,
     required this.onCategorySelected,
+    required this.onGuidesTap,
   });
 
   @override
@@ -502,7 +504,11 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildAttentionStrip(),
+<<<<<<< HEAD
                   if (_attentionWork != null) const SizedBox(height: 18),
+=======
+                  if (_hasAttentionWork) const SizedBox(height: 18),
+>>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
                   _buildCategoryGrid(),
                   const SizedBox(height: 24),
                   _buildSuggestedMaintenanceSection(),
@@ -516,6 +522,11 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 
+<<<<<<< HEAD
+=======
+  bool get _hasAttentionWork => _attentionWork != null;
+
+>>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
   Map<String, dynamic>? get _attentionWork {
     for (final dynamic item in _activeJobs) {
       if (item is! Map) continue;
@@ -531,6 +542,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     return null;
   }
 
+<<<<<<< HEAD
   int get _attentionCount => _activeJobs.where((dynamic item) {
         if (item is! Map) return false;
         final status = item['status']?.toString().toLowerCase() ?? '';
@@ -551,6 +563,27 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     return InkWell(
       borderRadius: BorderRadius.circular(13),
       onTap: () => _showQuoteApprovalDialog(job),
+=======
+  Widget _buildAttentionStrip() {
+    final job = _attentionWork;
+    if (job == null) return const SizedBox.shrink();
+
+    final service = job['serviceCategory']?.toString() ?? 'Work order';
+    final proName = job['pro']?['businessName']?.toString() ?? 'Your pro';
+    final count = _activeJobs.where((dynamic item) {
+      if (item is! Map) return false;
+      final status = item['status']?.toString().toLowerCase() ?? '';
+      return status.contains('quote') ||
+          status.contains('review') ||
+          status.contains('payment') ||
+          status.contains('approval') ||
+          status.contains('action');
+    }).length;
+
+    return InkWell(
+      onTap: () => _showQuoteApprovalDialog(job),
+      borderRadius: BorderRadius.circular(13),
+>>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
         decoration: BoxDecoration(
@@ -588,13 +621,22 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppTheme.navy700,
+<<<<<<< HEAD
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
+=======
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+>>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
+<<<<<<< HEAD
                     '$proName$extra',
+=======
+                    count > 1 ? '$proName - +${count - 1} more' : proName,
+>>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: AppTheme.gray, fontSize: 12),
@@ -705,6 +747,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             ),
             child: TextField(
               controller: _homeSearchController,
+              focusNode: _homeSearchFocus,
               textInputAction: TextInputAction.search,
               onSubmitted: (value) {
                 final query = value.trim();
@@ -720,32 +763,54 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 border: InputBorder.none,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                suffixIcon: Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: () {
-                      final query = _homeSearchController.text.trim();
-                      if (query.isNotEmpty) {
-                        widget.onSearchQuery(query);
-                      }
-                    },
-                    icon: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: AppTheme.orange500,
-                        borderRadius: BorderRadius.circular(9),
+                suffixIcon: SizedBox(
+                  width: 136,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        tooltip: 'Describe with a photo',
+                        onPressed: _aiIntakeDialog,
+                        icon: const Icon(Icons.photo_camera_outlined,
+                            color: AppTheme.teal700, size: 20),
                       ),
-                      child: const Icon(Icons.arrow_forward,
-                          color: Colors.white, size: 16),
-                    ),
+                      IconButton(
+                        tooltip: 'Describe with voice',
+                        onPressed: _aiIntakeDialog,
+                        icon: const Icon(Icons.mic_none,
+                            color: AppTheme.teal700, size: 20),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(9),
+                          onTap: () {
+                            final query = _homeSearchController.text.trim();
+                            if (query.isNotEmpty) {
+                              widget.onSearchQuery(query);
+                            } else {
+                              _aiIntakeDialog();
+                            }
+                          },
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: AppTheme.orange500,
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: const Icon(Icons.arrow_forward,
+                                color: AppTheme.navy700, size: 18),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
+          if (false) ...[
           const SizedBox(height: 14),
           Row(
             children: [
@@ -785,6 +850,8 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
               ),
             ],
           ),
+          ],
+          if (_isSearchFocused) ...[
           const SizedBox(height: 14),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -794,9 +861,15 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 _buildPopularChip('Drain cleaning'),
                 _buildPopularChip('House cleaning'),
                 _buildPopularChip('Handyman'),
+                _buildPopularChip('Outlet not working'),
+                _buildPopularChip('Water heater'),
+                _buildPopularChip('Roof leak'),
+                _buildPopularChip('Lawn cleanup'),
+                _buildPopularChip('Appliance repair'),
               ],
             ),
           ),
+          ],
         ],
       ),
     );
@@ -824,6 +897,65 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   }
 
   Widget _buildCategoryGrid() {
+    final visibleCategories = [
+      'HVAC',
+      'Plumbing',
+      'Electrical',
+      'Cleaning',
+      'Roofing',
+      'Landscaping',
+      'Handyman',
+      'Painting',
+    ];
+
+    if (visibleCategories.isNotEmpty) {
+      return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Browse by category',
+              style: AppTheme.headingStyle
+                  .copyWith(fontSize: 16, color: AppTheme.navy700),
+            ),
+            GestureDetector(
+              onTap: () => widget.onCategorySelected('All'),
+              child: const Text(
+                'See all 31 >',
+                style: TextStyle(
+                  color: AppTheme.teal700,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            mainAxisSpacing: 9,
+            crossAxisSpacing: 9,
+            childAspectRatio: 0.86,
+          ),
+          itemCount: visibleCategories.length,
+          itemBuilder: (context, index) {
+            final name = visibleCategories[index];
+            return TradeWorksCategoryTile(
+              label: name,
+              onTap: () => widget.onCategorySelected(name),
+            );
+          },
+        ),
+      ],
+      );
+    }
+
     final List<Map<String, dynamic>> cats = [
       {
         'name': 'HVAC',
@@ -874,7 +1006,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         'bg': AppTheme.tealTint
       },
       {
-        'name': 'All 31',
+        'name': 'Guides',
         'icon': Icons.apps,
         'color': Colors.white,
         'bg': AppTheme.orange500
@@ -893,9 +1025,9 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                   .copyWith(fontSize: 15, color: AppTheme.navy700),
             ),
             GestureDetector(
-              onTap: widget.onBookTap,
+              onTap: widget.onGuidesTap,
               child: const Text(
-                'See all 31 ›',
+                'Read guides',
                 style: TextStyle(
                     color: AppTheme.teal500,
                     fontWeight: FontWeight.bold,
@@ -912,11 +1044,11 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             itemCount: cats.length,
             itemBuilder: (context, index) {
               final cat = cats[index];
-              final isAll = cat['name'] == 'All 31';
+              final isAll = cat['name'] == 'Guides';
               return GestureDetector(
                 onTap: () {
                   if (isAll) {
-                    widget.onBookTap();
+                    widget.onGuidesTap();
                   } else {
                     widget.onCategorySelected(cat['name']);
                   }
