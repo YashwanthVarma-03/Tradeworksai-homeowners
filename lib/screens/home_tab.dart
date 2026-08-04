@@ -504,11 +504,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildAttentionStrip(),
-<<<<<<< HEAD
                   if (_attentionWork != null) const SizedBox(height: 18),
-=======
-                  if (_hasAttentionWork) const SizedBox(height: 18),
->>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
                   _buildCategoryGrid(),
                   const SizedBox(height: 24),
                   _buildSuggestedMaintenanceSection(),
@@ -522,11 +518,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 
-<<<<<<< HEAD
-=======
-  bool get _hasAttentionWork => _attentionWork != null;
-
->>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
   Map<String, dynamic>? get _attentionWork {
     for (final dynamic item in _activeJobs) {
       if (item is! Map) continue;
@@ -542,7 +533,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     return null;
   }
 
-<<<<<<< HEAD
   int get _attentionCount => _activeJobs.where((dynamic item) {
         if (item is! Map) return false;
         final status = item['status']?.toString().toLowerCase() ?? '';
@@ -563,27 +553,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     return InkWell(
       borderRadius: BorderRadius.circular(13),
       onTap: () => _showQuoteApprovalDialog(job),
-=======
-  Widget _buildAttentionStrip() {
-    final job = _attentionWork;
-    if (job == null) return const SizedBox.shrink();
-
-    final service = job['serviceCategory']?.toString() ?? 'Work order';
-    final proName = job['pro']?['businessName']?.toString() ?? 'Your pro';
-    final count = _activeJobs.where((dynamic item) {
-      if (item is! Map) return false;
-      final status = item['status']?.toString().toLowerCase() ?? '';
-      return status.contains('quote') ||
-          status.contains('review') ||
-          status.contains('payment') ||
-          status.contains('approval') ||
-          status.contains('action');
-    }).length;
-
-    return InkWell(
-      onTap: () => _showQuoteApprovalDialog(job),
-      borderRadius: BorderRadius.circular(13),
->>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
         decoration: BoxDecoration(
@@ -621,22 +590,13 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppTheme.navy700,
-<<<<<<< HEAD
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-=======
                       fontWeight: FontWeight.w800,
                       fontSize: 13,
->>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-<<<<<<< HEAD
                     '$proName$extra',
-=======
-                    count > 1 ? '$proName - +${count - 1} more' : proName,
->>>>>>> 02c1c7b (Update homeowners app source for iOS repo)
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: AppTheme.gray, fontSize: 12),
@@ -852,10 +812,10 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           ),
           ],
           if (_isSearchFocused) ...[
-          const SizedBox(height: 14),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 _buildPopularChip('AC repair'),
                 _buildPopularChip('Drain cleaning'),
@@ -868,7 +828,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 _buildPopularChip('Appliance repair'),
               ],
             ),
-          ),
           ],
         ],
       ),

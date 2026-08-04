@@ -822,7 +822,7 @@ class _SearchTabState extends State<SearchTab> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '$workOrderType · Available: $nextAvailable',
+                      '$workOrderType - Available: $nextAvailable',
                       style:
                           const TextStyle(color: AppTheme.gray, fontSize: 12),
                     ),
@@ -832,7 +832,7 @@ class _SearchTabState extends State<SearchTab> {
                         const Icon(Icons.star, color: Colors.amber, size: 16),
                         const SizedBox(width: 4),
                         Text(
-                          '$rating · $reviewsCount completed work orders',
+                          '$rating - $reviewsCount completed work orders',
                           style: const TextStyle(
                               fontWeight: FontWeight.w600, fontSize: 12),
                         ),

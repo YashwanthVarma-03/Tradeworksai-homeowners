@@ -540,7 +540,9 @@ class _BookingStepperState extends State<BookingStepper> {
                     AppTheme.textTheme.headlineMedium?.copyWith(fontSize: 16),
               ),
               Text(
-                'Step ${_currentStep + 1} of 5',
+                _currentStep == 4
+                    ? 'Last step'
+                    : 'Step ${_currentStep + 1} of 5',
                 style: const TextStyle(
                     color: AppTheme.teal700,
                     fontWeight: FontWeight.bold,
@@ -594,7 +596,7 @@ class _BookingStepperState extends State<BookingStepper> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Service Intake Check', style: AppTheme.textTheme.titleLarge),
+        Text('What do you need?', style: AppTheme.textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
           'Choose the service you want booked. You will see the full price or approved cap before confirming.',
@@ -661,7 +663,7 @@ class _BookingStepperState extends State<BookingStepper> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('SLA Dispatch Urgency', style: AppTheme.textTheme.titleLarge),
+        Text('How soon do you need this?', style: AppTheme.textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
           'Choose how soon you need this. Urgency fees go to the pro.',
@@ -1193,7 +1195,7 @@ class _BookingStepperState extends State<BookingStepper> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('$_selectedTier SLA Surcharge',
+                    Text('$_selectedTier urgency fee',
                         style: const TextStyle(
                             color: AppTheme.gray, fontSize: 13)),
                     Text('+\$$surcharge',
@@ -1222,6 +1224,29 @@ class _BookingStepperState extends State<BookingStepper> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'You pay the pro directly - $0 markup, no platform fee.',
+                style: TextStyle(color: AppTheme.gray, fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.orangeTint,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.orange500.withOpacity(0.25)),
+                ),
+                child: const Text(
+                  'You will earn service credits when this work order is completed.',
+                  style: TextStyle(
+                    color: AppTheme.navy700,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ),
@@ -1297,7 +1322,7 @@ class _BookingStepperState extends State<BookingStepper> {
               child: HoverButton(
                 text: _isSubmittingBooking
                     ? 'Booking...'
-                    : (_currentStep == 4 ? 'Confirm & Book' : 'Continue'),
+                    : (_currentStep == 4 ? 'Confirm booking' : 'Continue'),
                 onPressed: () {
                   if (!_isSubmittingBooking) {
                     if (_currentStep < 4) {

@@ -201,7 +201,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         !_asap &&
         (_selectedDate == null || _selectedTime == null)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Please select a time slot or choose ASAP.'),
+          content: Text('Please select an arrival window or choose as soon as possible.'),
           backgroundColor: AppTheme.error));
       return;
     }
@@ -876,7 +876,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           else if (_slotsError != null)
             Text(_slotsError!, style: const TextStyle(color: AppTheme.error))
           else if (_uiDates.isEmpty)
-            const Text('No direct booking slots available.')
+            const Text('No arrival windows are available.')
           else ...[
             SizedBox(
               height: 45,
@@ -967,7 +967,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 fontWeight: FontWeight.bold,
                 fontSize: 12)),
         const SizedBox(height: 8),
-        const Text('Review & Submit',
+        const Text('Review & confirm',
             style: TextStyle(
                 color: AppTheme.navy700,
                 fontWeight: FontWeight.bold,
@@ -1044,7 +1044,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'No payment is required now. The pro will review your request and provide a quote or confirm the booking before any charges.',
+                  'You pay the pro directly. TradeWorks adds $0 markup and no platform fee. You will earn service credits when this work order is completed.',
                   style: TextStyle(
                       color: AppTheme.teal700, fontSize: 13, height: 1.4),
                 ),

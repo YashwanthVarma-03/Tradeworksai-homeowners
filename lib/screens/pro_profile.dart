@@ -134,7 +134,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         ? 'Free estimate'
         : 'Upfront price';
     final isNew = displayPro['isNew'] == true;
-    final badgeText = isNew ? 'New Pro' : 'TradeWorks Certified';
+    final badgeText = isNew ? 'New Pro' : 'Select-certified';
     final photoUrl = displayPro['profile_image_url'] ?? displayPro['photoUrl'];
     final hasPhoto = photoUrl != null && photoUrl.toString().isNotEmpty;
     final city = displayPro['city']?.toString();

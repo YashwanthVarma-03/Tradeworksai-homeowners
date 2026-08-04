@@ -1369,7 +1369,7 @@ class _PricingModule extends StatelessWidget {
         ),
         _PricingCard(
           title: 'Free estimate',
-          label: 'Quote Request',
+          label: 'Free estimate',
           text: 'Bigger projects get an itemized estimate before you decide.',
           color: Color(0xFF1B3C6E),
         ),
