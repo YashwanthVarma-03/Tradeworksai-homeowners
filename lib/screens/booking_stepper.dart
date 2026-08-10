@@ -1227,7 +1227,7 @@ class _BookingStepperState extends State<BookingStepper> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'You pay the pro directly - $0 markup, no platform fee.',
+                'You pay the pro directly - \$0 markup, no platform fee.',
                 style: TextStyle(color: AppTheme.gray, fontSize: 12),
               ),
               const SizedBox(height: 10),

@@ -231,6 +231,11 @@ class TradeWorksCategoryTokens {
       tint: AppTheme.orangeTint,
       icon: Icons.nature_people,
     ),
+    'Lawn': CategoryToken(
+      color: AppTheme.orange500,
+      tint: AppTheme.orangeTint,
+      icon: Icons.nature_people,
+    ),
     'Handyman': CategoryToken(
       color: AppTheme.teal500,
       tint: AppTheme.tealTint,

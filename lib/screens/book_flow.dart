@@ -1,69 +1,236 @@
-import 'package:flutter/material.dart';
-import '../theme.dart';
-import '../services/homeowner_service.dart';
-import '../services/auth_service.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../services/auth_service.dart';
+import '../services/homeowner_service.dart';
+import '../theme.dart';
 import 'account/manage_addresses.dart';
 import 'booking_success_screen.dart';
+
+enum _BookingPage {
+  service,
+  details,
+  urgency,
+  schedule,
+  location,
+  review,
+}
 
 class BookFlowScreen extends StatefulWidget {
   final Map<String, dynamic> pro;
 
-  const BookFlowScreen({Key? key, required this.pro}) : super(key: key);
+  const BookFlowScreen({super.key, required this.pro});
 
   @override
   State<BookFlowScreen> createState() => _BookFlowScreenState();
 }
 
 class _BookFlowScreenState extends State<BookFlowScreen> {
-  int _currentStep = 0;
-  bool _isSubmitting = false;
-
-  // Step 1
+  late final PageController _pageController;
   final _issueController = TextEditingController();
-  List<XFile> _selectedPhotos = [];
-  final ImagePicker _picker = ImagePicker();
-
-  // Step 2
-  List<dynamic> _addresses = [];
-  Map<String, dynamic>? _selectedAddressObj;
   final _accessNotesController = TextEditingController();
-  bool _isLoadingAddresses = true;
+  final _picker = ImagePicker();
 
-  // Step 3
-  bool _asap = false;
+  final List<XFile> _selectedPhotos = [];
+  final List<dynamic> _addresses = [];
+
+  Map<String, dynamic>? _contractorProfile;
+  Map<String, dynamic>? _selectedAddressObj;
+  String? _contractorId;
+
+  bool _isLoadingAddresses = true;
+  bool _isLoadingSlots = false;
+  bool _isSubmitting = false;
+  String? _slotsError;
+
+  int _pageIndex = 0;
+  int _selectedServiceIndex = 0;
+  int _selectedPricingIndex = 0;
+  int _selectedUrgencyIndex = 0;
+  final bool _asap = false;
   String? _selectedDate;
   String? _selectedTime;
 
-  bool _isLoadingSlots = false;
-  String? _slotsError;
-  List<dynamic> _availableSlotsList = [];
-  List<String> _uiDates = [];
-  Map<String, List<Map<String, dynamic>>> _uiSlotsByDate = {};
+  List<String> _dates = [];
+  Map<String, List<Map<String, dynamic>>> _slotsByDate = {};
 
   @override
   void initState() {
     super.initState();
-    _fetchAddresses();
-    _fetchAvailability();
+    _pageController = PageController();
+    _issueController.text = _fallbackDescription;
+    _loadProfileAndAvailability();
+    _loadAddresses();
   }
 
-  Future<void> _fetchAddresses() async {
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _issueController.dispose();
+    _accessNotesController.dispose();
+    super.dispose();
+  }
+
+  Map<String, dynamic> get _mergedPro {
+    return {
+      ...widget.pro,
+      if (_contractorProfile != null) ..._contractorProfile!,
+    };
+  }
+
+  String get _proName =>
+      _string(_mergedPro['businessName']) ??
+      _string(_mergedPro['business_name']) ??
+      _string(_mergedPro['name']) ??
+      'Book Pro';
+
+  String get _proTrade =>
+      _string(_mergedPro['trade']) ??
+      _string(_mergedPro['category']) ??
+      'Home Service';
+
+  String get _fallbackDescription {
+    final summary = _string(widget.pro['summary']);
+    if (summary != null && summary.isNotEmpty) return summary;
+    return 'Diagnostic and repair request.';
+  }
+
+  List<_ServiceOption> get _serviceOptions {
+    final rawServices = _readList(
+      _contractorProfile?['services'] ??
+          _contractorProfile?['service_options'] ??
+          widget.pro['services'] ??
+          widget.pro['service_options'],
+    ) ?? const [];
+
+    final parsed = <_ServiceOption>[];
+    for (final item in rawServices) {
+      if (item is Map) {
+        parsed.add(_ServiceOption.fromMap(Map<String, dynamic>.from(item)));
+      } else if (item != null) {
+        parsed.add(_ServiceOption.fromString(item.toString(), trade: _proTrade));
+      }
+    }
+
+    if (parsed.isNotEmpty) return parsed;
+    return _fallbackServiceOptions();
+  }
+
+  _ServiceOption get _selectedService => _serviceOptions[
+      _selectedServiceIndex.clamp(0, _serviceOptions.length - 1)];
+
+  List<_PricingChoice> get _pricingChoices => _selectedService.pricingChoices;
+
+  List<_UrgencyOption> get _urgencyOptions {
+    final raw = _readList(
+      _contractorProfile?['urgency_tiers'] ??
+          _contractorProfile?['response_times'] ??
+          _contractorProfile?['service_levels'],
+    ) ?? const [];
+    final parsed = <_UrgencyOption>[];
+    for (final item in raw) {
+      if (item is Map) {
+        parsed.add(_UrgencyOption.fromMap(Map<String, dynamic>.from(item)));
+      }
+    }
+    if (parsed.isNotEmpty) return parsed;
+    return [
+      const _UrgencyOption(
+        label: 'Standard',
+        detail: 'Responds within 48 hours',
+        feeLabel: 'Included',
+        urgencySlug: 'standard',
+        available: true,
+      ),
+      const _UrgencyOption(
+        label: 'Urgent',
+        detail: 'Responds within 8 hours',
+        feeLabel: '+\$35',
+        urgencySlug: 'urgent',
+        available: true,
+      ),
+      const _UrgencyOption(
+        label: 'Emergency',
+        detail: 'Responds within 2 hours',
+        feeLabel: '+\$90',
+        urgencySlug: 'emergency',
+        available: true,
+      ),
+    ];
+  }
+
+  List<_BookingPage> get _pages {
+    return <_BookingPage>[
+      _BookingPage.service,
+      _BookingPage.details,
+      _BookingPage.urgency,
+      _BookingPage.schedule,
+      _BookingPage.location,
+      _BookingPage.review,
+    ];
+  }
+
+  _BookingPage get _currentPage => _pages[_pageIndex];
+
+  bool get _isLastPage => _pageIndex == _pages.length - 1;
+
+  int get _currentStepNumber => _pageIndex + 1;
+
+  int get _totalSteps => _pages.length;
+
+  Future<void> _loadProfileAndAvailability() async {
+    try {
+      final slug = _string(widget.pro['slug']) ??
+          _string(widget.pro['id']) ??
+          _string(widget.pro['businessName']) ??
+          _string(widget.pro['business_name']);
+      if (slug != null && slug.isNotEmpty) {
+        final data = await HomeownerService.instance.getContractorProfile(slug);
+        if (mounted) {
+          setState(() {
+            _contractorProfile = data['profile'] as Map<String, dynamic>? ?? data;
+            _contractorId = _extractContractorId(_contractorProfile ?? data) ??
+                _string(widget.pro['contractorId']) ??
+                _string(widget.pro['id']);
+            _issueController.text = _fallbackDescription;
+          });
+        }
+      } else {
+        if (mounted) setState(() {});
+      }
+      await _refreshAvailability();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _contractorId = _string(widget.pro['contractorId']) ??
+              _string(widget.pro['id']);
+        });
+      }
+      await _refreshAvailability();
+    }
+  }
+
+  Future<void> _loadAddresses() async {
+    if (!mounted) return;
     setState(() => _isLoadingAddresses = true);
     try {
       final profileResp = await HomeownerService.instance.fetchProfile();
-      final List<dynamic> addressList = profileResp['addresses'] as List? ??
-          profileResp['profile']?['addresses'] as List? ??
+      final List<dynamic> addressList = _readList(profileResp['addresses']) ??
+          _readList(profileResp['profile']?['addresses']) ??
           [];
       if (mounted) {
         setState(() {
-          _addresses = addressList;
+          _addresses
+            ..clear()
+            ..addAll(addressList);
           _isLoadingAddresses = false;
           if (_addresses.isNotEmpty) {
             _selectedAddressObj = _addresses.firstWhere(
-                (a) => a['isDefault'] == true || a['isDefault'] == 'true',
-                orElse: () => _addresses.first);
+              (a) => a['isDefault'] == true || a['isDefault'] == 'true',
+              orElse: () => _addresses.first,
+            );
           }
         });
       }
@@ -74,10 +241,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     }
   }
 
-  Future<void> _fetchAvailability() async {
-    final contractorId =
-        (widget.pro['contractorId'] ?? widget.pro['id'] ?? '1').toString();
+  Future<void> _refreshAvailability() async {
+    final contractorId = _contractorId;
+    if (contractorId == null || contractorId.isEmpty) return;
     if (!mounted) return;
+
     setState(() {
       _isLoadingSlots = true;
       _slotsError = null;
@@ -93,205 +261,161 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
       final data = await HomeownerService.instance.getContractorAvailability(
         contractorId: contractorId,
-        urgency: 'standard',
+        urgency: _selectedUrgency.urgencySlug,
         fromDate: fromDate,
         toDate: toDate,
       );
 
-      final List<dynamic> slotsList = data['slots'] ?? [];
-      if (mounted) {
-        setState(() {
-          _availableSlotsList = slotsList;
-          _isLoadingSlots = false;
-          _parseSlotsIntoUI();
-        });
-      }
+      final slotsList = _readList(data['slots']) ?? [];
+      if (!mounted) return;
+      setState(() {
+        _isLoadingSlots = false;
+        _buildSlots(slotsList);
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _slotsError = e.toString().replaceAll('Exception: ', '');
-          _isLoadingSlots = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _isLoadingSlots = false;
+        _slotsError = e.toString().replaceAll('Exception: ', '');
+      });
     }
   }
 
-  void _parseSlotsIntoUI() {
-    _uiDates.clear();
-    _uiSlotsByDate.clear();
+  void _buildSlots(List<dynamic> slotsList) {
+    _dates = [];
+    _slotsByDate = {};
 
-    if (_availableSlotsList.isEmpty) return;
-
-    for (final slot in _availableSlotsList) {
-      final startStr = slot['start'] as String?;
+    for (final slot in slotsList) {
+      if (slot is! Map) continue;
+      final startStr = _string(slot['start']);
       if (startStr == null) continue;
-
       try {
         final dt = DateTime.parse(startStr).toLocal();
-
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final tomorrow = today.add(const Duration(days: 1));
-        final checkDate = DateTime(dt.year, dt.month, dt.day);
-
-        String dateKey;
-        if (checkDate == today)
-          dateKey = 'Today';
-        else if (checkDate == tomorrow)
-          dateKey = 'Tomorrow';
-        else {
-          final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-          final months = [
-            'Jan',
-            'Feb',
-            'Mar',
-            'Apr',
-            'May',
-            'Jun',
-            'Jul',
-            'Aug',
-            'Sep',
-            'Oct',
-            'Nov',
-            'Dec'
-          ];
-          dateKey =
-              '${weekdays[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
-        }
-
-        int hour = dt.hour;
-        final isPm = hour >= 12;
-        if (hour > 12) hour -= 12;
-        if (hour == 0) hour = 12;
-        final minuteStr = dt.minute.toString().padLeft(2, '0');
-        final timeLabel = '$hour:$minuteStr ${isPm ? 'PM' : 'AM'}';
-
-        if (!_uiDates.contains(dateKey)) {
-          _uiDates.add(dateKey);
-        }
-
-        _uiSlotsByDate.putIfAbsent(dateKey, () => []);
-        _uiSlotsByDate[dateKey]!.add({
+        final dateKey = _formatDate(dt);
+        final timeLabel = _formatTime(dt);
+        _dates.add(dateKey);
+        _slotsByDate.putIfAbsent(dateKey, () => []);
+        _slotsByDate[dateKey]!.add({
           'label': timeLabel,
-          'slot': slot,
+          'slot': Map<String, dynamic>.from(slot),
         });
       } catch (_) {}
     }
 
-    if (_uiDates.isNotEmpty) {
-      _selectedDate = _uiDates.first;
-      final slotsForDate = _uiSlotsByDate[_selectedDate];
-      if (slotsForDate != null && slotsForDate.isNotEmpty) {
-        _selectedTime = slotsForDate.first['label'] as String;
-      }
-    } else {
-      _selectedDate = null;
-      _selectedTime = null;
+    _dates = _dates.toSet().toList();
+    if (_dates.isNotEmpty) {
+      _selectedDate = _dates.first;
+      final nextSlots = _slotsByDate[_selectedDate] ?? [];
+      _selectedTime = nextSlots.isNotEmpty ? nextSlots.first['label'] as String : null;
     }
   }
 
-  void _nextStep() {
-    if (_currentStep == 1 && _selectedAddressObj == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Please add an address to continue.'),
-          backgroundColor: AppTheme.error));
-      return;
-    }
-    if (_currentStep == 2 &&
-        !_asap &&
-        (_selectedDate == null || _selectedTime == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Please select an arrival window or choose as soon as possible.'),
-          backgroundColor: AppTheme.error));
-      return;
-    }
+  Future<void> _pickPhotos() async {
+    final images = await _picker.pickMultiImage();
+    if (images.isEmpty || !mounted) return;
+    setState(() => _selectedPhotos.addAll(images));
+  }
 
-    if (_currentStep < 3) {
-      setState(() => _currentStep++);
-    } else {
-      _submitRequest();
+  Future<void> _goToPage(int index) async {
+    if (index < 0 || index >= _pages.length) return;
+    setState(() => _pageIndex = index);
+    if (_pageController.hasClients) {
+      await _pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
     }
   }
 
-  void _prevStep() {
-    if (_currentStep > 0) {
-      setState(() => _currentStep--);
+  void _goToNext() {
+    if (_pageIndex < _pages.length - 1) {
+      _goToPage(_pageIndex + 1);
+    }
+  }
+
+  void _goBack() {
+    if (_pageIndex > 0) {
+      _goToPage(_pageIndex - 1);
     } else {
       Navigator.pop(context);
     }
   }
 
-  void _submitRequest() async {
+  Future<void> _autoAdvance() async {
+    await Future.delayed(const Duration(milliseconds: 180));
+    if (mounted) {
+      _goToNext();
+    }
+  }
+
+  Future<void> _submitBooking() async {
+    if (_isSubmitting) return;
     setState(() => _isSubmitting = true);
+
     try {
-      final contractorId =
-          (widget.pro['contractorId'] ?? widget.pro['id'] ?? '1').toString();
+      final contractorId = _contractorId ??
+          _string(widget.pro['contractorId']) ??
+          _string(widget.pro['id']) ??
+          '1';
+      final service = _selectedService;
+      final selectedPricing = _selectedPricingChoice;
 
       String? startsAt;
       String? endsAt;
       if (!_asap &&
           _selectedDate != null &&
-          _uiSlotsByDate.containsKey(_selectedDate)) {
-        final slotsForDate = _uiSlotsByDate[_selectedDate];
-        if (slotsForDate != null) {
-          final chosenSlotMap = slotsForDate.firstWhere(
-              (s) => s['label'] == _selectedTime,
-              orElse: () => slotsForDate.first);
-          final slotObj = chosenSlotMap['slot'];
-          startsAt = slotObj['start'];
-          endsAt = slotObj['end'];
+          _slotsByDate.containsKey(_selectedDate)) {
+        final slotsForDate = _slotsByDate[_selectedDate];
+        if (slotsForDate != null && slotsForDate.isNotEmpty) {
+          final chosen = slotsForDate.firstWhere(
+            (s) => s['label'] == _selectedTime,
+            orElse: () => slotsForDate.first,
+          );
+          final slot = chosen['slot'] as Map<String, dynamic>?;
+          startsAt = _string(slot?['start']);
+          endsAt = _string(slot?['end']);
         }
       }
+      startsAt ??= DateTime.now().add(const Duration(days: 1)).toIso8601String();
+      endsAt ??=
+          DateTime.parse(startsAt).add(const Duration(hours: 2)).toIso8601String();
 
-      if (startsAt == null) {
-        final now = DateTime.now();
-        DateTime targetDate = now.add(const Duration(days: 1));
-        startsAt = targetDate.toIso8601String();
-        endsAt = targetDate.add(const Duration(hours: 2)).toIso8601String();
-      }
-
-      String street = '123 Main St';
-      String city = 'Springfield';
-      String state = 'FL';
-      String zip = '33569';
-
-      if (_selectedAddressObj != null) {
-        street = _selectedAddressObj!['street'] ?? '';
-        city = _selectedAddressObj!['city'] ?? '';
-        state = _selectedAddressObj!['state'] ?? '';
-        zip = _selectedAddressObj!['zip'] ?? '';
-      }
+      final address = _selectedAddressObj;
+      final street = _string(address?['street']) ?? '124 Skyview Lane';
+      final city = _string(address?['city']) ?? 'Tampa';
+      final state = _string(address?['state']) ?? 'FL';
+      final zip = _string(address?['zip']) ?? '33578';
 
       final bookingData = {
         'requester_name': AuthService.instance.userName ?? 'Homeowner',
         'requester_email': AuthService.instance.userEmail ?? '',
-        'service_category': widget.pro['trade'] ?? 'Home Service',
-        'service_description': _issueController.text.isNotEmpty
-            ? _issueController.text
-            : 'Diagnostic and repair request.',
+        'service_category': service.title,
+        'service_description':
+            _issueController.text.trim().isNotEmpty ? _issueController.text.trim() : service.subtitle,
         'address_street': street,
         'address_city': city,
         'address_state': state,
         'address_zip': zip,
-        'work_order_type': widget.pro['workOrderType'] ?? 'rate_card',
-        'access_notes': _accessNotesController.text,
+        'work_order_type': selectedPricing.workOrderType,
+        'access_notes': _accessNotesController.text.trim(),
+        'service_details': service.title,
+        'attached_photos': _selectedPhotos.map((p) => p.path).toList(),
+        'selected_pricing_label': selectedPricing.label,
       };
-
-      final actionVal = widget.pro['workOrderType'] == 'quote_request'
-          ? 'quote_request'
-          : 'commit';
 
       final response = await HomeownerService.instance.commitBooking(
         contractorId: contractorId,
-        action: actionVal,
-        urgency: _asap ? 'urgent' : 'standard',
+        action: selectedPricing.workOrderType == 'quote_request'
+            ? 'quote_request'
+            : 'commit',
+        urgency: _selectedUrgency.urgencySlug,
         booking: bookingData,
         startsAt: startsAt,
         endsAt: endsAt,
       );
 
       if (!mounted) return;
-      setState(() => _isSubmitting = false);
       final viewed = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
@@ -307,19 +431,19 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     } catch (e) {
       final errStr = e.toString().replaceAll('Exception: ', '');
       if (errStr.contains('verification_required') && mounted) {
-        // Trigger verification email sending
         try {
           await HomeownerService.instance
               .sendVerificationEmail(AuthService.instance.userEmail ?? '');
         } catch (_) {}
         _showVerificationDialog();
       } else if (mounted) {
-        setState(() => _isSubmitting = false);
-        final message = errStr.contains('booking_cap')
-            ? 'You already have the maximum number of open bookings. Please complete or cancel one from Scheduled or Active before placing another booking.'
-            : errStr;
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(message), backgroundColor: AppTheme.error));
+          SnackBar(content: Text(errStr), backgroundColor: AppTheme.error),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
       }
     }
   }
@@ -332,727 +456,1531 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(
-            children: [
-              Icon(Icons.shield_outlined, color: AppTheme.orange500, size: 28),
-              SizedBox(width: 8),
-              Text('Verify Email',
-                  style: TextStyle(
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDlgState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.shield_outlined, color: AppTheme.orange500, size: 28),
+                  SizedBox(width: 8),
+                  Text(
+                    'Verify Email',
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
-                      color: AppTheme.navy700)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'We sent a 6-digit code to ${AuthService.instance.userEmail ?? 'your email'}. Enter it below to secure your account and confirm booking.',
-                style: const TextStyle(
-                    fontSize: 13, color: AppTheme.ink, height: 1.4),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: codeController,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 8),
-                textAlign: TextAlign.center,
-                decoration: InputDecoration(
-                  hintText: '000000',
-                  hintStyle:
-                      TextStyle(color: Colors.grey.shade400, letterSpacing: 8),
-                  counterText: '',
-                  errorText: localError,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: AppTheme.line)),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: AppTheme.line)),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: AppTheme.orange500)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Center(
-                child: TextButton(
-                  onPressed: verifying
-                      ? null
-                      : () async {
-                          try {
-                            await HomeownerService.instance
-                                .sendVerificationEmail(
-                                    AuthService.instance.userEmail ?? '');
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Verification code resent!'),
-                                  backgroundColor: AppTheme.success),
-                            );
-                          } catch (err) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('Failed to resend: $err'),
-                                  backgroundColor: AppTheme.error),
-                            );
-                          }
-                        },
-                  child: const Text('Resend Code',
-                      style: TextStyle(
-                          color: AppTheme.teal700,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13)),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: verifying ? null : () => Navigator.pop(dialogContext),
-              child:
-                  const Text('Cancel', style: TextStyle(color: AppTheme.gray)),
-            ),
-            ElevatedButton(
-              onPressed: verifying
-                  ? null
-                  : () async {
-                      final code = codeController.text.trim();
-                      if (code.length != 6) {
-                        setDlgState(() {
-                          localError = 'Please enter a 6-digit code';
-                        });
-                        return;
-                      }
-
-                      setDlgState(() {
-                        verifying = true;
-                        localError = null;
-                      });
-
-                      try {
-                        await HomeownerService.instance
-                            .confirmVerification(code);
-                        if (mounted) {
-                          Navigator.pop(
-                              dialogContext); // close verification dialog
-                          // Re-trigger submit request
-                          _submitRequest();
-                        }
-                      } catch (err) {
-                        setDlgState(() {
-                          verifying = false;
-                          localError =
-                              err.toString().replaceAll('Exception: ', '');
-                        });
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.orange500,
-                foregroundColor: AppTheme.navy700,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-              child: verifying
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppTheme.navy700))
-                  : const Text('Verify & Book',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: AppTheme.navy700),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(widget.pro['businessName'] ?? 'Book Pro',
-            style: const TextStyle(
-                color: AppTheme.navy700,
-                fontWeight: FontWeight.bold,
-                fontSize: 16)),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Stepper Progress
-            LinearProgressIndicator(
-              value: (_currentStep + 1) / 4,
-              backgroundColor: AppTheme.line,
-              valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.teal500),
-            ),
-
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: _buildCurrentStep(),
-              ),
-            ),
-
-            // Bottom Action Bar
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: AppTheme.line)),
-              ),
-              child: Row(
-                children: [
-                  if (_currentStep > 0)
-                    Expanded(
-                      flex: 1,
-                      child: OutlinedButton(
-                        onPressed: _prevStep,
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: AppTheme.line),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                        ),
-                        child: const Text('Back',
-                            style: TextStyle(
-                                color: AppTheme.navy700,
-                                fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  if (_currentStep > 0) const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton(
-                      onPressed: _isSubmitting ? null : _nextStep,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.orange500,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
-                      ),
-                      child: _isSubmitting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: AppTheme.navy700))
-                          : Text(
-                              _currentStep == 3 ? 'Confirm booking' : 'Continue',
-                              style: const TextStyle(
-                                  color: AppTheme.navy700,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15)),
+                      color: AppTheme.navy700,
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'We sent a 6-digit code to ${AuthService.instance.userEmail ?? 'your email'}. Enter it below to secure your account and confirm booking.',
+                    style: const TextStyle(fontSize: 13, color: AppTheme.ink, height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: codeController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 8,
+                    ),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      hintText: '000000',
+                      hintStyle: TextStyle(
+                        color: Colors.grey.shade400,
+                        letterSpacing: 8,
+                      ),
+                      counterText: '',
+                      errorText: localError,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppTheme.line),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppTheme.line),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppTheme.orange500),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: verifying ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel', style: TextStyle(color: AppTheme.gray)),
+                ),
+                ElevatedButton(
+                  onPressed: verifying
+                      ? null
+                      : () async {
+                          final code = codeController.text.trim();
+                          if (code.length != 6) {
+                            setDlgState(() => localError = 'Please enter a 6-digit code');
+                            return;
+                          }
+                          setDlgState(() {
+                            verifying = true;
+                            localError = null;
+                          });
+                          try {
+                            await HomeownerService.instance.confirmVerification(code);
+                            if (!dialogContext.mounted) return;
+                            Navigator.pop(dialogContext);
+                            if (mounted) _submitBooking();
+                          } catch (err) {
+                            setDlgState(() {
+                              verifying = false;
+                              localError = err.toString().replaceAll('Exception: ', '');
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.orange500,
+                    foregroundColor: AppTheme.navy700,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: verifying
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppTheme.navy700,
+                          ),
+                        )
+                      : const Text('Verify & Book', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  _UrgencyOption get _selectedUrgency =>
+      _urgencyOptions[_selectedUrgencyIndex.clamp(0, _urgencyOptions.length - 1)];
+
+  _PricingChoice get _selectedPricingChoice =>
+      _pricingChoices[_selectedPricingIndex.clamp(0, _pricingChoices.length - 1)];
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        _goBack();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(),
+              _buildProgress(),
+              Expanded(
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: _pages.length,
+                  onPageChanged: (index) {
+                    if (index != _pageIndex) {
+                      setState(() => _pageIndex = index);
+                    }
+                  },
+                  itemBuilder: (context, index) {
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                      child: _buildStepFor(_pages[index]),
+                    );
+                  },
+                ),
+              ),
+              _buildFooter(),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildCurrentStep() {
-    switch (_currentStep) {
-      case 0:
-        return _buildStep1();
-      case 1:
-        return _buildStep2();
-      case 2:
-        return _buildStep3();
-      case 3:
-        return _buildStep4();
-      default:
-        return const SizedBox();
-    }
-  }
-
-  Widget _buildStep1() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Step 1 of 4',
-            style: TextStyle(
-                color: AppTheme.teal700,
-                fontWeight: FontWeight.bold,
-                fontSize: 12)),
-        const SizedBox(height: 8),
-        const Text('What do you need?',
-            style: TextStyle(
-                color: AppTheme.navy700,
-                fontWeight: FontWeight.bold,
-                fontSize: 22)),
-        const SizedBox(height: 24),
-        const Text('Describe the issue',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _issueController,
-          maxLines: 4,
-          decoration: InputDecoration(
-            hintText: 'E.g., The sink is leaking under the cabinet...',
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppTheme.line)),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppTheme.line)),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppTheme.teal500)),
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_ios, color: AppTheme.navy700),
+            onPressed: _goBack,
           ),
-        ),
-        const SizedBox(height: 20),
-        const Text('Photos (Optional)',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: () async {
-            final List<XFile> images = await _picker.pickMultiImage();
-            if (images.isNotEmpty) {
-              setState(() {
-                _selectedPhotos.addAll(images);
-              });
-            }
-          },
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: AppTheme.pageAlt,
-              borderRadius: BorderRadius.circular(10),
-              border:
-                  Border.all(color: AppTheme.line, style: BorderStyle.solid),
-            ),
+          Expanded(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.add_a_photo_outlined,
-                    color: AppTheme.gray, size: 32),
-                const SizedBox(height: 8),
                 Text(
-                    _selectedPhotos.isEmpty
-                        ? 'Tap to upload photos'
-                        : 'Tap to add more photos (${_selectedPhotos.length} added)',
-                    style: const TextStyle(color: AppTheme.gray)),
+                  'Book $_proName',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.navy700,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _isLastPage ? 'Last step' : 'Step $_currentStepNumber of $_totalSteps',
+                  style: const TextStyle(
+                    color: AppTheme.teal700,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           ),
-        ),
-        if (_selectedPhotos.isNotEmpty) ...[
-          const SizedBox(height: 12),
+          const SizedBox(width: 8),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: AppTheme.orangeTint,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.verified, color: AppTheme.orange500, size: 16),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgress() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+      child: Row(
+        children: List.generate(_totalSteps, (index) {
+          final on = index <= _pageIndex;
+          return Expanded(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              margin: EdgeInsets.only(right: index == _totalSteps - 1 ? 0 : 4),
+              height: 4,
+              decoration: BoxDecoration(
+                color: on ? AppTheme.teal500 : AppTheme.line.withOpacity(0.35),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildStepFor(_BookingPage page) {
+    switch (page) {
+      case _BookingPage.service:
+        return _buildServiceStep();
+      case _BookingPage.details:
+        return _buildDetailsStep();
+      case _BookingPage.urgency:
+        return _buildUrgencyStep();
+      case _BookingPage.schedule:
+        return _buildScheduleStep();
+      case _BookingPage.location:
+        return _buildLocationStep();
+      case _BookingPage.review:
+        return _buildReviewStep();
+    }
+  }
+
+  Widget _buildServiceStep() {
+    return _stepShell(
+      title: 'What do you need?',
+      subtitle: 'Prices are $_proName\'s own. You\'ll see the full amount before you confirm.',
+      child: Column(
+        children: _serviceOptions.asMap().entries.map((entry) {
+          final index = entry.key;
+          final service = entry.value;
+          final selected = index == _selectedServiceIndex;
+          return _selectionCard(
+            selected: selected,
+            onTap: () {
+              setState(() {
+                _selectedServiceIndex = index;
+                _selectedPricingIndex = 0;
+                _issueController.text = service.subtitle.isNotEmpty
+                    ? service.subtitle
+                    : _fallbackDescription;
+              });
+              _autoAdvance();
+            },
+            title: service.title,
+            subtitle: service.subtitle,
+            trailing: service.priceLabel,
+            trailingSub: service.pricingDetail,
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildDetailsStep() {
+    final chips = _detailChipsForTrade(_proTrade);
+    return _stepShell(
+      title: 'Tell us about the job',
+      subtitle: 'Structured details help the pro arrive with the right parts and make the price more accurate.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Quick details',
+            style: TextStyle(
+              color: AppTheme.navy700,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _selectedPhotos
-                .map((photo) => Stack(
+            children: chips
+                .map(
+                  (label) => ChoiceChip(
+                    selected: false,
+                    label: Text(label),
+                    onSelected: (_) {},
+                    side: const BorderSide(color: AppTheme.line),
+                    backgroundColor: Colors.white,
+                    labelStyle: const TextStyle(
+                      color: AppTheme.navy700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 18),
+          _fieldLabel('Describe the problem'),
+          _textField(
+            controller: _issueController,
+            hint: 'E.g. Upstairs is not cooling, started Sunday.',
+            maxLines: 4,
+          ),
+          const SizedBox(height: 16),
+          _fieldLabel('Photos (optional)'),
+          GestureDetector(
+            onTap: _pickPhotos,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: AppTheme.pageAlt,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.line),
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.add_a_photo_outlined, color: AppTheme.gray, size: 30),
+                  const SizedBox(height: 8),
+                  Text(
+                    _selectedPhotos.isEmpty
+                        ? 'Tap to upload photos'
+                        : 'Tap to add more photos (${_selectedPhotos.length} added)',
+                    style: const TextStyle(color: AppTheme.gray, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_selectedPhotos.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _selectedPhotos
+                  .map(
+                    (photo) => Stack(
                       clipBehavior: Clip.none,
                       children: [
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(File(photo.path),
-                              width: 80, height: 80, fit: BoxFit.cover),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(
+                            File(photo.path),
+                            width: 76,
+                            height: 76,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                         Positioned(
                           right: -5,
                           top: -5,
                           child: GestureDetector(
                             onTap: () {
-                              setState(() {
-                                _selectedPhotos.remove(photo);
-                              });
+                              setState(() => _selectedPhotos.remove(photo));
                             },
                             child: Container(
-                              padding: const EdgeInsets.all(2),
+                              width: 20,
+                              height: 20,
                               decoration: const BoxDecoration(
-                                  color: Colors.red, shape: BoxShape.circle),
-                              child: const Icon(Icons.close,
-                                  color: Colors.white, size: 14),
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close, size: 12, color: Colors.white),
                             ),
                           ),
                         ),
                       ],
-                    ))
-                .toList(),
-          ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
-  Widget _buildStep2() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Step 2 of 4',
-            style: TextStyle(
-                color: AppTheme.teal700,
-                fontWeight: FontWeight.bold,
-                fontSize: 12)),
-        const SizedBox(height: 8),
-        const Text('Where is the service needed?',
-            style: TextStyle(
-                color: AppTheme.navy700,
-                fontWeight: FontWeight.bold,
-                fontSize: 22)),
-        const SizedBox(height: 24),
+  Widget _buildUrgencyStep() {
+    return _stepShell(
+      title: 'How soon do you need this?',
+      subtitle: 'These options and fees are set by $_proName. Other pros differ.',
+      child: Column(
+        children: _urgencyOptions.asMap().entries.map((entry) {
+          final index = entry.key;
+          final tier = entry.value;
+          final selected = index == _selectedUrgencyIndex;
+          return Opacity(
+            opacity: tier.available ? 1 : 0.42,
+            child: _selectionCard(
+              selected: selected && tier.available,
+              onTap: tier.available
+                  ? () {
+                      setState(() => _selectedUrgencyIndex = index);
+                      _refreshAvailability();
+                      _autoAdvance();
+                    }
+                  : null,
+              title: tier.label,
+              subtitle: tier.detail,
+              trailing: tier.feeLabel,
+              trailingSub: tier.available ? 'Set by $_proName' : 'Unavailable right now',
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
 
-        // Service address label removed – default address is shown automatically
-        const SizedBox(height: 8),
-        if (_isLoadingAddresses)
-          const Center(
-              child: CircularProgressIndicator(color: AppTheme.orange500))
-        else if (_addresses.isEmpty)
+  Widget _buildScheduleStep() {
+    return _stepShell(
+      title: 'When works for you?',
+      subtitle: 'Live from $_proName\'s calendar. Times are in your property\'s timezone.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _fieldLabel('Pick a day'),
+          const SizedBox(height: 8),
+          if (_isLoadingSlots)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator(color: AppTheme.orange500)),
+            )
+          else if (_slotsError != null)
+            Text(_slotsError!, style: const TextStyle(color: AppTheme.error))
+          else if (_dates.isEmpty)
+            const Text('No arrival windows are available.')
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _dates.map((date) {
+                final selected = date == _selectedDate;
+                return ChoiceChip(
+                  selected: selected,
+                  label: Text(date),
+                  selectedColor: AppTheme.navy700,
+                  labelStyle: TextStyle(
+                    color: selected ? Colors.white : AppTheme.navy700,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  backgroundColor: Colors.white,
+                  side: BorderSide(color: selected ? AppTheme.navy700 : AppTheme.line),
+                  onSelected: (_) {
+                    setState(() {
+                      _selectedDate = date;
+                      final nextSlots = _slotsByDate[date] ?? [];
+                      _selectedTime =
+                          nextSlots.isNotEmpty ? nextSlots.first['label'] as String : null;
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          const SizedBox(height: 16),
+          _fieldLabel('Pick an arrival window'),
+          const SizedBox(height: 8),
+          if (_selectedDate == null || (_slotsByDate[_selectedDate] ?? []).isEmpty)
+            const Text('No arrival windows are available.')
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: (_slotsByDate[_selectedDate] ?? []).map((slotMap) {
+                final label = slotMap['label'] as String;
+                final selected = _selectedTime == label;
+                return ChoiceChip(
+                  selected: selected,
+                  label: Text(label),
+                  selectedColor: AppTheme.teal500,
+                  labelStyle: TextStyle(
+                    color: selected ? Colors.white : AppTheme.navy700,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  backgroundColor: Colors.white,
+                  side: BorderSide(color: selected ? AppTheme.teal500 : AppTheme.line),
+                  onSelected: (_) {
+                    setState(() {
+                      _selectedTime = label;
+                    });
+                    _autoAdvance();
+                  },
+                );
+              }).toList(),
+            ),
+          const SizedBox(height: 14),
           Container(
-            padding: const EdgeInsets.all(16),
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF4F4),
-              border: Border.all(color: AppTheme.error.withOpacity(0.4)),
+              color: AppTheme.pageAlt,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
+            child: const Text(
+              'The pro will message you with a tighter ETA on the day. Live status starts once the work order is booked.',
+              style: TextStyle(color: AppTheme.gray, height: 1.45),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationStep() {
+    return _stepShell(
+      title: 'Where & anything we should know',
+      subtitle: 'Separate the job description from access instructions. Photos and notes stay attached to the work order.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _fieldLabel('Service address'),
+          const SizedBox(height: 8),
+          if (_isLoadingAddresses)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: CircularProgressIndicator(color: AppTheme.orange500)),
+            )
+          else if (_selectedAddressObj == null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF4F4),
+                border: Border.all(color: AppTheme.error.withOpacity(0.35)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'No address saved',
+                    style: TextStyle(
+                      color: AppTheme.error,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text('You must add an address before booking.'),
+                  const SizedBox(height: 10),
+                  OutlinedButton(
+                    onPressed: _openManageAddresses,
+                    child: const Text('Add an Address'),
+                  ),
+                ],
+              ),
+            )
+          else
+            InkWell(
+              onTap: _openManageAddresses,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.tealTint,
+                  border: Border.all(color: AppTheme.teal500, width: 1.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
                   children: [
-                    Icon(Icons.location_off, color: AppTheme.error, size: 20),
-                    SizedBox(width: 8),
-                    Text('No address saved',
-                        style: TextStyle(
-                            color: AppTheme.error,
-                            fontWeight: FontWeight.bold)),
+                    const Icon(Icons.home, color: AppTheme.teal700),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '${_selectedAddressObj?['label'] ?? 'Home'} · ${_selectedAddressObj?['street']}, ${_selectedAddressObj?['city']}, ${_selectedAddressObj?['state']} ${_selectedAddressObj?['zip']}',
+                        style: const TextStyle(
+                          color: AppTheme.navy700,
+                          fontWeight: FontWeight.w700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                    const Text(
+                      'Change',
+                      style: TextStyle(
+                        color: AppTheme.teal700,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                const Text('You must add an address before booking.',
-                    style: TextStyle(color: AppTheme.gray, fontSize: 13)),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const ManageAddressesScreen()),
-                      );
-                      // Re-fetch addresses when user comes back
-                      _fetchAddresses();
-                    },
-                    icon: const Icon(Icons.add_location_alt, size: 16),
-                    label: const Text('Add an Address'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.navy700,
-                      side: const BorderSide(color: AppTheme.navy700),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          const SizedBox(height: 18),
+          _fieldLabel('Describe the problem'),
+          _textField(
+            controller: _issueController,
+            hint: 'Upstairs is not cooling, started Sunday.',
+            maxLines: 3,
+          ),
+          const SizedBox(height: 14),
+          _fieldLabel('Gate / access code'),
+          _textField(
+            controller: _accessNotesController,
+            hint: 'e.g. #4233',
+            maxLines: 1,
+          ),
+          const SizedBox(height: 14),
+          _fieldLabel('Getting in & on-site notes'),
+          _textField(
+            controller: TextEditingController(
+              text: 'Parking, pets, where the unit is...',
+            ),
+            hint: 'Parking, pets, where the unit is...',
+            maxLines: 2,
+            readOnly: true,
+          ),
+          const SizedBox(height: 14),
+          _fieldLabel('Photos'),
+          if (_selectedPhotos.isEmpty)
+            GestureDetector(
+              onTap: _pickPhotos,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: AppTheme.line),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Center(
+                  child: Text(
+                    'Tap to add photos',
+                    style: TextStyle(color: AppTheme.teal700, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ..._selectedPhotos.map(
+                  (photo) => ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.file(
+                      File(photo.path),
+                      width: 76,
+                      height: 76,
+                      fit: BoxFit.cover,
                     ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _pickPhotos,
+                  child: Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.line),
+                    ),
+                    child: const Icon(Icons.add, color: AppTheme.teal700),
                   ),
                 ),
               ],
             ),
-          )
-        else ...[
-          Builder(
-            builder: (context) {
-              final defaultAddr = _addresses.firstWhere(
-                  (a) => a['isDefault'] == true || a['isDefault'] == 'true',
-                  orElse: () => _addresses.first);
-              // Ensure _selectedAddressObj is set to default
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_selectedAddressObj?['id'] != defaultAddr['id'] &&
-                    mounted) {
-                  setState(() => _selectedAddressObj = defaultAddr);
-                }
-              });
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppTheme.teal500, width: 2),
-                  borderRadius: BorderRadius.circular(10),
-                  color: AppTheme.tealTint,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewStep() {
+    final pricing = _selectedPricingChoice;
+    final estimatedCredits = ((pricing.amount ?? _selectedService.amount ?? 149) * 0.05).round();
+
+    return _stepShell(
+      title: 'Review & confirm',
+      subtitle: 'Confirm the details below to book.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _summaryRow('Pro', _proName, action: 'Change'),
+          _summaryRow('Service', _selectedService.title, action: 'Change'),
+          _summaryRow('Pricing', pricing.label),
+          _summaryRow('Urgency', _selectedUrgency.label, action: 'Change'),
+          _summaryRow(
+            'When',
+            _asap
+                ? 'As soon as possible'
+                : (_selectedDate != null && _selectedTime != null)
+                    ? '$_selectedDate, $_selectedTime'
+                    : 'Anytime',
+            action: 'Change',
+          ),
+          _summaryRow(
+            'Where',
+            '${_selectedAddressObj?['label'] ?? 'Home'} · ${_selectedAddressObj?['street'] ?? 'Address'}',
+            action: 'Change',
+          ),
+          _summaryRow(
+            'Details',
+            '${_issueController.text.trim().isEmpty ? _selectedService.subtitle : _issueController.text.trim()}${_selectedPhotos.isNotEmpty ? '\n${_selectedPhotos.length} photos' : ''}',
+            multiline: true,
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.navyTint,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.line),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  pricing.priceText,
+                  style: const TextStyle(
+                    color: AppTheme.gray,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.location_on, color: AppTheme.teal500),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(defaultAddr['label'] ?? 'Home',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold)),
-                          Text(
-                              '${defaultAddr['street']}, ${defaultAddr['city']}, ${defaultAddr['state']} ${defaultAddr['zip']}'),
-                        ],
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 4),
+                Text(
+                  pricing.priceHeadline,
+                  style: const TextStyle(
+                    color: AppTheme.navy700,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              );
-            },
+                const SizedBox(height: 4),
+                Text(
+                  'You pay $_proName directly · \$0 markup, no platform fee.',
+                  style: const TextStyle(color: AppTheme.ink, height: 1.4),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'You\'ll earn about \$$estimatedCredits in service credits when this job is completed.',
+                  style: const TextStyle(
+                    color: AppTheme.teal700,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'We will quickly verify your email to finish.',
+            style: TextStyle(color: AppTheme.gray, height: 1.4),
           ),
         ],
+      ),
+    );
+  }
 
-        const SizedBox(height: 20),
-        const Text('Access Notes (Optional)',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _accessNotesController,
-          maxLines: 2,
-          decoration: InputDecoration(
-            hintText: 'Gate code, parking instructions, etc.',
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppTheme.line)),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppTheme.line)),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppTheme.teal500)),
+  Widget _stepShell({
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppTheme.navy700,
+            fontSize: 23,
+            fontWeight: FontWeight.w800,
           ),
         ),
+        const SizedBox(height: 8),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            color: AppTheme.gray,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 18),
+        child,
       ],
     );
   }
 
-  Widget _buildStep3() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Step 3 of 4',
-            style: TextStyle(
-                color: AppTheme.teal700,
-                fontWeight: FontWeight.bold,
-                fontSize: 12)),
-        const SizedBox(height: 8),
-        const Text('When do you need it?',
-            style: TextStyle(
-                color: AppTheme.navy700,
-                fontWeight: FontWeight.bold,
-                fontSize: 22)),
-        const SizedBox(height: 24),
-        CheckboxListTile(
-          value: _asap,
-          onChanged: (v) => setState(() => _asap = v ?? false),
-          title: const Text('As soon as possible',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle:
-              const Text('Pro will respond with their earliest availability.'),
-          activeColor: AppTheme.teal500,
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
-        ),
-        if (!_asap) ...[
-          const SizedBox(height: 20),
-          const Text('Select preferred time slot:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-          const SizedBox(height: 12),
-          if (_isLoadingSlots)
-            const Center(
-                child: CircularProgressIndicator(color: AppTheme.orange500))
-          else if (_slotsError != null)
-            Text(_slotsError!, style: const TextStyle(color: AppTheme.error))
-          else if (_uiDates.isEmpty)
-            const Text('No arrival windows are available.')
-          else ...[
-            SizedBox(
-              height: 45,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _uiDates.length,
-                itemBuilder: (context, index) {
-                  final d = _uiDates[index];
-                  final isSel = d == _selectedDate;
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedDate = d;
-                        final nextSlots = _uiSlotsByDate[d] ?? [];
-                        if (nextSlots.isNotEmpty) {
-                          _selectedTime = nextSlots.first['label'] as String;
-                        }
-                      });
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: isSel ? AppTheme.teal500 : Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                            color: isSel ? AppTheme.teal500 : AppTheme.line),
-                      ),
-                      child: Text(
-                        d,
-                        style: TextStyle(
-                          color: isSel ? Colors.white : AppTheme.navy700,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  );
-                },
+  Widget _buildFooter() {
+    final label = _isLastPage
+        ? 'Confirm booking'
+        : (_currentPage == _BookingPage.location ? 'Review booking' : 'Continue');
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppTheme.line)),
+      ),
+      child: Row(
+        children: [
+          if (_pageIndex > 0)
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _goBack,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: AppTheme.line),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Back',
+                  style: TextStyle(
+                    color: AppTheme.navy700,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 16),
-            if (_selectedDate != null)
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: (_uiSlotsByDate[_selectedDate!] ?? []).map((slotMap) {
-                  final label = slotMap['label'] as String;
-                  final isSel = _selectedTime == label;
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() => _selectedTime = label);
+          if (_pageIndex > 0) const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: ElevatedButton(
+              onPressed: _isSubmitting
+                  ? null
+                  : () {
+                      if (_isLastPage) {
+                        _submitBooking();
+                      } else {
+                        _goToNext();
+                      }
                     },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: isSel ? AppTheme.tealTint : Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: isSel ? AppTheme.teal500 : AppTheme.line),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.orange500,
+                foregroundColor: AppTheme.navy700,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppTheme.navy700,
                       ),
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          color: isSel ? AppTheme.teal700 : AppTheme.ink,
-                          fontWeight:
-                              isSel ? FontWeight.bold : FontWeight.normal,
-                        ),
+                    )
+                  : Text(
+                      label,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
-          ]
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _selectionCard({
+    required String title,
+    required String subtitle,
+    required String trailing,
+    required String trailingSub,
+    required VoidCallback? onTap,
+    required bool selected,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.tealTint : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? AppTheme.teal500 : AppTheme.line,
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _radio(selected),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: selected ? AppTheme.teal700 : AppTheme.navy700,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: AppTheme.gray,
+                          fontSize: 12.5,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    trailing,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: AppTheme.navy700,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    trailingSub,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: AppTheme.gray,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _radio(bool selected) {
+    return Container(
+      width: 20,
+      height: 20,
+      margin: const EdgeInsets.only(top: 2),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? AppTheme.teal500 : AppTheme.line,
+          width: 2,
+        ),
+      ),
+      child: selected
+          ? Center(
+              child: Container(
+                width: 9,
+                height: 9,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppTheme.teal500,
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+
+  Widget _fieldLabel(String label) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: AppTheme.navy700,
+        fontSize: 12.5,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+
+  Widget _textField({
+    required TextEditingController controller,
+    required String hint,
+    int maxLines = 1,
+    bool readOnly = false,
+  }) {
+    return TextField(
+      controller: controller,
+      maxLines: maxLines,
+      readOnly: readOnly,
+      decoration: InputDecoration(
+        hintText: hint,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppTheme.line),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppTheme.line),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppTheme.teal500),
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryRow(
+    String label,
+    String value, {
+    String? action,
+    bool multiline = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE8EDF3))),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 86,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppTheme.gray,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              maxLines: multiline ? 3 : 1,
+              overflow: multiline ? TextOverflow.ellipsis : TextOverflow.visible,
+              style: const TextStyle(
+                color: AppTheme.navy700,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+          ),
+          if (action != null) ...[
+            const SizedBox(width: 8),
+            Text(
+              action,
+              style: const TextStyle(
+                color: AppTheme.teal700,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openManageAddresses() async {
+    final navigator = Navigator.of(context);
+    await navigator.push(
+      MaterialPageRoute(builder: (_) => const ManageAddressesScreen()),
+    );
+    if (!mounted) return;
+    await _loadAddresses();
+  }
+
+  String _formatDate(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final check = DateTime(dt.year, dt.month, dt.day);
+    if (check == today) return 'Today';
+    if (check == tomorrow) return 'Tomorrow';
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${weekdays[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
+  }
+
+  String _formatTime(DateTime dt) {
+    var hour = dt.hour;
+    final isPm = hour >= 12;
+    if (hour > 12) hour -= 12;
+    if (hour == 0) hour = 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${isPm ? 'PM' : 'AM'}';
+  }
+
+  List<String> _detailChipsForTrade(String trade) {
+    final lower = trade.toLowerCase();
+    if (lower.contains('hvac') || lower.contains('air') || lower.contains('cool')) {
+      return const ['Central air', 'Heat pump', 'Mini-split', 'Not cooling', 'Short cycling'];
+    }
+    if (lower.contains('plumb') || lower.contains('water')) {
+      return const ['Drain', 'Leak under sink', 'Water heater', 'Toilet', 'Shower'];
+    }
+    if (lower.contains('electr') || lower.contains('light')) {
+      return const ['Outlet', 'Light fixture', 'Breaker', 'Ceiling fan', 'Panel'];
+    }
+    return const ['Inspect', 'Repair', 'Install', 'Replace', 'Not sure'];
+  }
+
+  List<_ServiceOption> _fallbackServiceOptions() {
+    final trade = _proTrade.toLowerCase();
+    if (trade.contains('hvac') || trade.contains('air') || trade.contains('cool')) {
+      return const [
+        _ServiceOption(
+          title: 'AC repair (diagnose + fix)',
+          subtitle: 'Not cooling, short cycling, leaking',
+          amount: 149,
+          priceLabel: 'From \$149',
+          pricingLabel: 'Upfront price',
+          pricingDetail: 'Best for routine, pre-priced work.',
+          pricingChoices: [
+            _PricingChoice(
+              label: 'Upfront price',
+              detail: 'See the price before you book.',
+              amount: 149,
+              priceText: 'From \$149',
+              priceHeadline: '\$149',
+              workOrderType: 'rate_card',
+              secondaryText: 'Upfront price',
+            ),
+            _PricingChoice(
+              label: 'You approve the cap',
+              detail: 'Diagnose first, then approve a not-to-exceed cap before work begins.',
+              amount: 89,
+              priceText: '\$89 diagnostic',
+              priceHeadline: 'You approve the cap',
+              workOrderType: 'nte',
+              secondaryText: 'Diagnostic waived if approved',
+            ),
+            _PricingChoice(
+              label: 'Free estimate',
+              detail: 'Review itemized estimates from 1–2 vetted pros and pick one.',
+              amount: null,
+              priceText: 'Free estimate',
+              priceHeadline: 'Free estimate',
+              workOrderType: 'quote_request',
+              secondaryText: '1–2 pro review',
+            ),
+          ],
+        ),
+      ];
+    }
+
+    if (trade.contains('plumb')) {
+      return const [
+        _ServiceOption(
+          title: 'Drain cleaning',
+          subtitle: 'Clogged drain, leak repair, faucet trouble',
+          amount: 119,
+          priceLabel: 'From \$119',
+          pricingLabel: 'Upfront price',
+          pricingDetail: 'Common plumbing repairs',
+          pricingChoices: [
+            _PricingChoice(
+              label: 'Upfront price',
+              detail: 'Flat service price shown before booking.',
+              amount: 119,
+              priceText: 'From \$119',
+              priceHeadline: '\$119',
+              workOrderType: 'rate_card',
+              secondaryText: 'Upfront price',
+            ),
+            _PricingChoice(
+              label: 'You approve the cap',
+              detail: 'Inspect first, then approve the cap.',
+              amount: 89,
+              priceText: '\$89 diagnostic',
+              priceHeadline: 'You approve the cap',
+              workOrderType: 'nte',
+              secondaryText: 'Diagnostic waived if approved',
+            ),
+          ],
+        ),
+      ];
+    }
+
+    return [
+      _ServiceOption(
+        title: 'Service visit',
+        subtitle: _fallbackDescription,
+        amount: _readInt(widget.pro['fromPrice']) ?? 149,
+        priceLabel: 'From \$${_readInt(widget.pro['fromPrice']) ?? 149}',
+        pricingLabel: 'Upfront price',
+        pricingDetail: 'See the full price before you confirm.',
+        pricingChoices: [
+          _PricingChoice(
+            label: 'Upfront price',
+            detail: 'See the price before you book.',
+            amount: _readInt(widget.pro['fromPrice']) ?? 149,
+            priceText: 'From \$${_readInt(widget.pro['fromPrice']) ?? 149}',
+            priceHeadline: '\$${_readInt(widget.pro['fromPrice']) ?? 149}',
+            workOrderType: _string(widget.pro['workOrderType']) ?? 'rate_card',
+            secondaryText: 'Upfront price',
+          ),
+        ],
+      ),
+    ];
+  }
+
+  List<dynamic>? _readList(dynamic value) {
+    if (value is List) return value;
+    return null;
+  }
+
+  String? _string(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
+      return null;
+    }
+    return text;
+  }
+
+  int? _readInt(dynamic value) {
+    final text = _string(value);
+    if (text == null) return null;
+    return int.tryParse(text.replaceAll(RegExp(r'[^0-9]'), ''));
+  }
+
+  String? _extractContractorId(Map<String, dynamic> source) {
+    for (final key in const [
+      'contractorId',
+      'contractor_id',
+      'id',
+      'userId',
+      'user_id',
+    ]) {
+      final value = _string(source[key]);
+      if (value != null) return value;
+    }
+    return null;
+  }
+}
+
+class _ServiceOption {
+  final String title;
+  final String subtitle;
+  final int? amount;
+  final String priceLabel;
+  final String pricingLabel;
+  final String pricingDetail;
+  final List<_PricingChoice> pricingChoices;
+
+  const _ServiceOption({
+    required this.title,
+    required this.subtitle,
+    required this.amount,
+    required this.priceLabel,
+    required this.pricingLabel,
+    required this.pricingDetail,
+    required this.pricingChoices,
+  });
+
+  factory _ServiceOption.fromString(String value, {required String trade}) {
+    final lower = value.toLowerCase();
+    if (trade.toLowerCase().contains('hvac') && lower.contains('repair')) {
+      return _ServiceOption(
+        title: value,
+        subtitle: 'Not cooling, short cycling, leaking',
+        amount: 149,
+        priceLabel: 'From \$149',
+        pricingLabel: 'Upfront price',
+        pricingDetail: 'See the price before you book.',
+        pricingChoices: const [
+          _PricingChoice(
+            label: 'Upfront price',
+            detail: 'See the price before you book.',
+            amount: 149,
+            priceText: 'From \$149',
+            priceHeadline: '\$149',
+            workOrderType: 'rate_card',
+            secondaryText: 'Upfront price',
+          ),
+        ],
+      );
+    }
+    return _ServiceOption(
+      title: value,
+      subtitle: 'Service request',
+      amount: 129,
+      priceLabel: 'From \$129',
+      pricingLabel: 'Upfront price',
+      pricingDetail: 'See the price before you book.',
+      pricingChoices: const [
+        _PricingChoice(
+          label: 'Upfront price',
+          detail: 'See the price before you book.',
+          amount: 129,
+          priceText: 'From \$129',
+          priceHeadline: '\$129',
+          workOrderType: 'rate_card',
+          secondaryText: 'Upfront price',
+        ),
       ],
     );
   }
 
-  Widget _buildStep4() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Step 4 of 4',
-            style: TextStyle(
-                color: AppTheme.teal700,
-                fontWeight: FontWeight.bold,
-                fontSize: 12)),
-        const SizedBox(height: 8),
-        const Text('Review & confirm',
-            style: TextStyle(
-                color: AppTheme.navy700,
-                fontWeight: FontWeight.bold,
-                fontSize: 22)),
-        const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppTheme.pageAlt,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.line),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('SERVICE DETAILS',
-                  style: TextStyle(
-                      color: AppTheme.gray,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text(widget.pro['trade'] ?? 'Home Service',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 4),
-              Text(
-                  _issueController.text.isEmpty
-                      ? 'No description provided'
-                      : _issueController.text,
-                  style: const TextStyle(color: AppTheme.ink)),
-              const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Divider(height: 1)),
-              const Text('ADDRESS',
-                  style: TextStyle(
-                      color: AppTheme.gray,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              if (_selectedAddressObj != null)
-                Text(
-                    '${_selectedAddressObj!['street']}, ${_selectedAddressObj!['city']}, ${_selectedAddressObj!['state']} ${_selectedAddressObj!['zip']}',
-                    style: const TextStyle(fontWeight: FontWeight.bold))
-              else
-                const Text('No Address Selected',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-              const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Divider(height: 1)),
-              const Text('SCHEDULE',
-                  style: TextStyle(
-                      color: AppTheme.gray,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text(
-                  _asap
-                  ? 'As soon as possible'
-                      : (_selectedDate != null && _selectedTime != null)
-                          ? '$_selectedDate at $_selectedTime'
-                          : 'Anytime',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-            ],
-          ),
+  factory _ServiceOption.fromMap(Map<String, dynamic> map) {
+    final choices = <_PricingChoice>[];
+    final rawChoices = map['pricing_options'] ??
+        map['pricingOptions'] ??
+        map['pricing_paths'] ??
+        map['pricingPaths'];
+    if (rawChoices is List) {
+      for (final choice in rawChoices) {
+        if (choice is Map) {
+          choices.add(_PricingChoice.fromMap(Map<String, dynamic>.from(choice)));
+        } else if (choice != null) {
+          choices.add(_PricingChoice(
+            label: choice.toString(),
+            detail: '',
+            amount: null,
+            priceText: choice.toString(),
+            priceHeadline: choice.toString(),
+            workOrderType: 'rate_card',
+            secondaryText: '',
+          ));
+        }
+      }
+    }
+
+    final price = _parseInt(map['fromPrice'] ?? map['price'] ?? map['amount']);
+    final workOrderType = _string(map['workOrderType']) ?? 'rate_card';
+    final title = _string(map['name']) ??
+        _string(map['title']) ??
+        _string(map['service_name']) ??
+        'Service';
+    final subtitle = _string(map['description']) ??
+        _string(map['summary']) ??
+        _string(map['details']) ??
+        'Service request';
+
+    if (choices.isEmpty) {
+      choices.add(
+        _PricingChoice(
+          label: workOrderType == 'quote_request'
+              ? 'Free estimate'
+              : workOrderType == 'nte'
+                  ? 'You approve the cap'
+                  : 'Upfront price',
+          detail: workOrderType == 'quote_request'
+              ? 'Review itemized estimates from 1–2 vetted pros and pick one.'
+              : workOrderType == 'nte'
+                  ? 'Diagnose first, then approve a not-to-exceed cap before work begins.'
+                  : 'See the price before you book.',
+          amount: price,
+          priceText: workOrderType == 'quote_request'
+              ? 'Free estimate'
+              : workOrderType == 'nte'
+                  ? '\$89 diagnostic'
+                  : 'From \$${price ?? 149}',
+          priceHeadline: workOrderType == 'quote_request'
+              ? 'Free estimate'
+              : workOrderType == 'nte'
+                  ? 'You approve the cap'
+                  : '\$${price ?? 149}',
+          workOrderType: workOrderType,
+          secondaryText: workOrderType == 'quote_request'
+              ? '1–2 pro review'
+              : workOrderType == 'nte'
+                  ? 'Diagnostic waived if approved'
+                  : 'Upfront price',
         ),
-        const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(16),
-          color: AppTheme.tealTint,
-          child: const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.info_outline, color: AppTheme.teal700, size: 20),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'You pay the pro directly. TradeWorks adds $0 markup and no platform fee. You will earn service credits when this work order is completed.',
-                  style: TextStyle(
-                      color: AppTheme.teal700, fontSize: 13, height: 1.4),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+      );
+    }
+
+    return _ServiceOption(
+      title: title,
+      subtitle: subtitle,
+      amount: price,
+      priceLabel: choices.first.priceText,
+      pricingLabel: _string(map['pricing_label']) ??
+          _string(map['pricingLabel']) ??
+          choices.first.label,
+      pricingDetail: _string(map['pricing_detail']) ??
+          _string(map['pricingDetail']) ??
+          choices.first.detail,
+      pricingChoices: choices,
     );
+  }
+
+  static int? _parseInt(dynamic value) {
+    final text = value?.toString();
+    if (text == null) return null;
+    return int.tryParse(text.replaceAll(RegExp(r'[^0-9]'), ''));
+  }
+
+  static String? _string(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') return null;
+    return text;
+  }
+}
+
+class _PricingChoice {
+  final String label;
+  final String detail;
+  final int? amount;
+  final String priceText;
+  final String priceHeadline;
+  final String workOrderType;
+  final String secondaryText;
+
+  const _PricingChoice({
+    required this.label,
+    required this.detail,
+    required this.amount,
+    required this.priceText,
+    required this.priceHeadline,
+    required this.workOrderType,
+    required this.secondaryText,
+  });
+
+  factory _PricingChoice.fromMap(Map<String, dynamic> map) {
+    final label = _string(map['label']) ?? _string(map['name']) ?? 'Option';
+    final detail = _string(map['detail']) ?? _string(map['description']) ?? '';
+    final amount = _parseInt(map['price'] ?? map['amount']);
+    final workOrderType =
+        _string(map['workOrderType']) ?? _string(map['type']) ?? 'rate_card';
+    final headline = _string(map['headline']) ??
+        _string(map['priceHeadline']) ??
+        (amount != null ? '\$$amount' : label);
+    final priceText =
+        _string(map['priceText']) ?? (amount != null ? 'From \$$amount' : label);
+    final secondaryText =
+        _string(map['secondaryText']) ?? _string(map['subtitle']) ?? '';
+    return _PricingChoice(
+      label: label,
+      detail: detail,
+      amount: amount,
+      priceText: priceText,
+      priceHeadline: headline,
+      workOrderType: workOrderType,
+      secondaryText: secondaryText,
+    );
+  }
+
+  static String? _string(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') return null;
+    return text;
+  }
+
+  static int? _parseInt(dynamic value) {
+    final text = value?.toString();
+    if (text == null) return null;
+    return int.tryParse(text.replaceAll(RegExp(r'[^0-9]'), ''));
+  }
+}
+
+class _UrgencyOption {
+  final String label;
+  final String detail;
+  final String feeLabel;
+  final String urgencySlug;
+  final bool available;
+
+  const _UrgencyOption({
+    required this.label,
+    required this.detail,
+    required this.feeLabel,
+    required this.urgencySlug,
+    required this.available,
+  });
+
+  factory _UrgencyOption.fromMap(Map<String, dynamic> map) {
+    final label = _string(map['label']) ?? _string(map['name']) ?? 'Standard';
+    final detail = _string(map['detail']) ??
+        _string(map['description']) ??
+        _string(map['responseWindow']) ??
+        'Set by the pro';
+    final feeLabel = _string(map['feeLabel']) ??
+        _string(map['fee_label']) ??
+        _string(map['price']) ??
+        'Included';
+    final urgencySlug =
+        _string(map['urgencySlug']) ?? _string(map['urgency_slug']) ?? label.toLowerCase();
+    final available = map['available'] != false && map['isAvailable'] != false;
+    return _UrgencyOption(
+      label: label,
+      detail: detail,
+      feeLabel: feeLabel,
+      urgencySlug: urgencySlug,
+      available: available,
+    );
+  }
+
+  static String? _string(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') return null;
+    return text;
   }
 }

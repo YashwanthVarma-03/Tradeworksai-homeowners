@@ -70,6 +70,7 @@ flutter:
   assets:
     - assets/data/category_guides.json
     - assets/data/homeowner_guides.json
+    - android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

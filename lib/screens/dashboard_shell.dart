@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 import 'home_tab.dart';
 import 'search_tab.dart';
 import 'bookings_tab.dart';
-import 'inbox_tab.dart';
 import 'reward_tab.dart';
 import 'profile_tab.dart';
 import 'booking_stepper.dart';
 import 'category_guides_screen.dart';
-import 'support_page.dart';
 import 'onboarding_slider.dart';
 import '../services/auth_service.dart';
 
@@ -23,8 +22,6 @@ class DashboardShell extends StatefulWidget {
 
 class _DashboardShellState extends State<DashboardShell> {
   int _currentIndex = 0;
-  String? _searchQuery;
-  String? _selectedCategory;
   int _bookingsInitialSegment = 0;
   Key _bookingsTabKey = UniqueKey();
 
@@ -79,61 +76,6 @@ class _DashboardShellState extends State<DashboardShell> {
     );
   }
 
-  void _showInboxModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return FractionallySizedBox(
-          heightFactor: 0.85,
-          child: Column(
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(top: 12, bottom: 8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.line,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Inbox & Messages',
-                      style: AppTheme.headingStyle.copyWith(
-                        fontSize: 18,
-                        color: AppTheme.navy700,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: AppTheme.gray),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              const Expanded(
-                child: InboxTab(),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _openCategoryGuides() async {
     await Navigator.push(
       context,
@@ -143,7 +85,10 @@ class _DashboardShellState extends State<DashboardShell> {
             await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => BrowseScreen(initialCategory: category),
+                builder: (context) => BrowseScreen(
+                  initialCategory: category,
+                  showAppBar: true,
+                ),
               ),
             );
           },
@@ -159,7 +104,9 @@ class _DashboardShellState extends State<DashboardShell> {
         onBookTap: () async {
           final booked = await Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const BrowseScreen()),
+            MaterialPageRoute(
+              builder: (context) => const BrowseScreen(showAppBar: true),
+            ),
           );
           if (booked == true) {
             setState(() {
@@ -174,14 +121,17 @@ class _DashboardShellState extends State<DashboardShell> {
         },
         onInboxTap: () {
           setState(() {
-            _currentIndex = 1; // Go to Inbox Tab
+            _currentIndex = 1; // Go to Browse Tab
           });
         },
         onSearchQuery: (query) async {
           final booked = await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => BrowseScreen(initialSearchQuery: query),
+              builder: (context) => BrowseScreen(
+                initialSearchQuery: query,
+                showAppBar: true,
+              ),
             ),
           );
           if (booked == true) {
@@ -196,7 +146,10 @@ class _DashboardShellState extends State<DashboardShell> {
           final booked = await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => BrowseScreen(initialCategory: cat),
+              builder: (context) => BrowseScreen(
+                initialCategory: cat,
+                showAppBar: true,
+              ),
             ),
           );
           if (booked == true) {
@@ -209,14 +162,16 @@ class _DashboardShellState extends State<DashboardShell> {
         },
         onGuidesTap: _openCategoryGuides,
       ),
-      const InboxTab(),
+      const BrowseScreen(),
       BookingsTab(
         key: _bookingsTabKey,
         initialSegment: _bookingsInitialSegment,
         onBookNowTap: () async {
           final booked = await Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const BrowseScreen()),
+            MaterialPageRoute(
+              builder: (context) => const BrowseScreen(showAppBar: true),
+            ),
           );
           if (booked == true) {
             setState(() {
@@ -231,12 +186,14 @@ class _DashboardShellState extends State<DashboardShell> {
         onBookTap: () async {
           final booked = await Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const BrowseScreen()),
+            MaterialPageRoute(
+              builder: (context) => const BrowseScreen(showAppBar: true),
+            ),
           );
           if (booked == true) {
             setState(() {
               _bookingsInitialSegment = 1;
-              _currentIndex = 2; // Go to Bookings Tab
+              _currentIndex = 2;
               _bookingsTabKey = UniqueKey();
             });
           }
@@ -255,7 +212,7 @@ class _DashboardShellState extends State<DashboardShell> {
         },
         onRewardsTap: () {
           setState(() {
-            _currentIndex = 3; // Go to Rewards Tab
+            _currentIndex = 3; // Rewards Tab
           });
         },
       ),
@@ -263,60 +220,29 @@ class _DashboardShellState extends State<DashboardShell> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: Row(
-          children: [
-            Image.network(
-              'https://www.tradeworksai.com/images/bot%7Bfavicon%7D.png',
-              height: 24,
-              errorBuilder: (context, error, stackTrace) => const Icon(
-                Icons.smart_toy,
-                color: AppTheme.orange500,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'TradeWorks ',
-              style: AppTheme.headingStyle.copyWith(
-                color: AppTheme.navy700,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-              decoration: BoxDecoration(
-                color: AppTheme.orangeTint,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: AppTheme.orange500, width: 1),
-              ),
-              child: Text(
-                'AI',
-                style: AppTheme.headingStyle.copyWith(
-                  color: AppTheme.orange500,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
+      body: PopScope(
+        canPop: false,
+        onPopInvoked: (didPop) {
+          if (didPop) return;
+          if (_currentIndex != 0) {
+            setState(() => _currentIndex = 0);
+          } else {
+            SystemNavigator.pop();
+          }
+        },
+        child: SunriseBackground(
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildTradeWorksNav(),
+                Expanded(
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: tabs,
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          AnimatedGiftIcon(
-            onTap: () {
-              _showOffersSheet();
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: SunriseBackground(
-        child: SafeArea(
-          child: IndexedStack(
-            index: _currentIndex,
-            children: tabs,
           ),
         ),
       ),
@@ -351,28 +277,9 @@ class _DashboardShellState extends State<DashboardShell> {
                 label: 'Home',
               ),
               BottomNavigationBarItem(
-                icon: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Icon(Icons.mail_outline),
-                    Positioned(
-                      right: -2,
-                      top: -2,
-                      child: SizedBox(
-                        width: 8,
-                        height: 8,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: AppTheme.orange500,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                activeIcon: Icon(Icons.mail),
-                label: 'Inbox',
+                icon: Icon(Icons.search_outlined),
+                activeIcon: Icon(Icons.search),
+                label: 'Browse',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.calendar_today_outlined),
@@ -380,8 +287,8 @@ class _DashboardShellState extends State<DashboardShell> {
                 label: 'Bookings',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.stars_outlined),
-                activeIcon: Icon(Icons.stars),
+                icon: Icon(Icons.star_outline),
+                activeIcon: Icon(Icons.star),
                 label: 'Rewards',
               ),
               BottomNavigationBarItem(
@@ -392,6 +299,65 @@ class _DashboardShellState extends State<DashboardShell> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTradeWorksNav() {
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: AppTheme.line, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Image.asset(
+            'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
+            width: 30,
+            height: 30,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            'TradeWorks',
+            style: TextStyle(
+              color: AppTheme.navy700,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppTheme.navyTint,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: const Text(
+              'AI',
+              style: TextStyle(
+                color: AppTheme.navy700,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Inbox',
+            onPressed: () {},
+            icon: const Icon(Icons.mail_outline,
+                color: AppTheme.navy700, size: 20),
+          ),
+          IconButton(
+            tooltip: 'Help',
+            onPressed: () {},
+            icon: const Icon(Icons.help_outline,
+                color: AppTheme.navy700, size: 20),
+          ),
+        ],
       ),
     );
   }
@@ -525,39 +491,44 @@ class _DashboardShellState extends State<DashboardShell> {
 class BrowseScreen extends StatelessWidget {
   final String? initialSearchQuery;
   final String? initialCategory;
+  final bool showAppBar;
 
   const BrowseScreen({
     super.key,
     this.initialSearchQuery,
     this.initialCategory,
+    this.showAppBar = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: AppTheme.navy700),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          'Browse Services',
-          style: AppTheme.headingStyle.copyWith(
-            color: AppTheme.navy700,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        elevation: 0,
-        backgroundColor: Colors.white,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(0.5),
-          child: Container(color: AppTheme.line, height: 0.5),
-        ),
-      ),
+      appBar: showAppBar
+          ? AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios, color: AppTheme.navy700),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: Text(
+                'Browse Services',
+                style: AppTheme.headingStyle.copyWith(
+                  color: AppTheme.navy700,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              elevation: 0,
+              backgroundColor: Colors.white,
+              bottom: const PreferredSize(
+                preferredSize: Size.fromHeight(0.5),
+                child: Divider(height: 0.5, thickness: 0.5, color: AppTheme.line),
+              ),
+            )
+          : null,
       body: SunriseBackground(
         child: SafeArea(
+          top: !showAppBar,
           child: SearchTab(
             onBookPro: (pro) {
               showModalBottomSheet(
@@ -568,9 +539,8 @@ class BrowseScreen extends StatelessWidget {
                   return BookingStepper(
                     proDetails: pro,
                     onBookingComplete: () {
-                      Navigator.pop(context); // close stepper
-                      Navigator.pop(context, true); // pop BrowseScreen returning true
-                      // We can handle redirect via dashboard state if needed, but BrowseScreen handles its own pop
+                      Navigator.pop(context);
+                      Navigator.pop(context, true);
                     },
                   );
                 },
@@ -578,6 +548,7 @@ class BrowseScreen extends StatelessWidget {
             },
             initialSearchQuery: initialSearchQuery,
             initialCategory: initialCategory,
+            showSectionBackButton: !showAppBar,
           ),
         ),
       ),
