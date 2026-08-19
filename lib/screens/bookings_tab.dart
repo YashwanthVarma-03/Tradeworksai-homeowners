@@ -3,6 +3,8 @@ import '../theme.dart';
 import '../services/auth_service.dart';
 import '../widgets/custom_widgets.dart';
 import '../services/homeowner_service.dart';
+import '../utils/app_error_utils.dart';
+import '../widgets/offline_state.dart';
 import 'work_orders/work_order_detail.dart';
 import 'work_orders/quote_review.dart';
 import 'work_orders/receipt.dart';
@@ -141,7 +143,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _errorMessage = AppErrorUtils.friendlyMessage(e);
           _isLoading = false;
         });
       }
@@ -762,26 +764,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       );
     }
     if (_errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
-              const SizedBox(height: 12),
-              Text(_errorMessage!,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 14),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => _fetchJobs(showLoading: true),
-                child: const Text('Try Again'),
-              ),
-            ],
-          ),
-        ),
+      return OfflineState(
+        onRetry: () => _fetchJobs(showLoading: true),
+        message: _errorMessage,
       );
     }
     return RefreshIndicator(

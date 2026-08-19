@@ -6,14 +6,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
 import 'auth_service.dart';
+import '../utils/app_error_utils.dart';
 
 class StreamService extends ChangeNotifier {
   StreamService._internal();
 
   static final StreamService instance = StreamService._internal();
 
-  static const String _baseUrl =
-      'https://us-central1-tradeworksai-senthil-dev-env.cloudfunctions.net/';
+  static const List<String> _tokenEndpointUrls = [
+    'https://us-central1-tradeworksai-senthil-dev-env.cloudfunctions.net/stream-token-v2-supabase',
+    'https://tradeworks-api-71668222585.us-east1.run.app/shared/stream-token',
+  ];
   static const String _cachedApiKeyPref = 'stream_api_key';
 
   SharedPreferences? _prefs;
@@ -27,6 +30,72 @@ class StreamService extends ChangeNotifier {
   bool get isReady => _client != null && _client!.state.currentUser != null;
   bool get isConnecting => _isConnecting;
   String? get lastError => _lastError;
+
+  bool _isConnectivityFailure(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('timed out') ||
+        text.contains('socketexception') ||
+        text.contains('clientexception') ||
+        text.contains('failed host lookup') ||
+        text.contains('connection closed') ||
+        text.contains('network');
+  }
+
+  String _friendlyChatError(Object error) {
+    if (_isConnectivityFailure(error)) {
+      return 'Chat service is taking too long to respond. Please try again.';
+    }
+    return AppErrorUtils.friendlyMessage(error);
+  }
+
+  Future<Map<String, dynamic>> _fetchTokenPayload({
+    required String? userId,
+    required String? email,
+    required String? withUserId,
+  }) async {
+    Object? lastError;
+
+    for (final endpoint in _tokenEndpointUrls) {
+      try {
+        final response = await http
+            .post(
+              Uri.parse(endpoint),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                if (userId != null) 'userId': userId,
+                if (email != null && email.isNotEmpty) 'email': email,
+                if (withUserId != null && withUserId.isNotEmpty)
+                  'withUserId': withUserId,
+              }),
+            )
+            .timeout(const Duration(seconds: 12));
+
+        if (response.body.isEmpty) {
+          throw Exception('Empty Stream token response');
+        }
+
+        final data = jsonDecode(response.body);
+        if (data is! Map<String, dynamic>) {
+          throw Exception('Invalid Stream token response');
+        }
+        if (data['success'] != true) {
+          throw Exception(data['error'] ?? 'Failed to initialize chat');
+        }
+        return data;
+      } catch (error) {
+        lastError = error;
+
+        // Try the backup endpoint when the current one is stale or unreachable.
+        if (_isConnectivityFailure(error)) {
+          continue;
+        }
+
+        rethrow;
+      }
+    }
+
+    throw Exception(_friendlyChatError(lastError ?? 'Chat token request failed'));
+  }
 
   String? resolveMessagingUserId(Map<String, dynamic>? data) {
     if (data == null) return null;
@@ -102,28 +171,11 @@ class StreamService extends ChangeNotifier {
       try {
         await initialize();
 
-        final response = await http.post(
-          Uri.parse('${_baseUrl}stream-token-v2-supabase'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            if (userId != null) 'userId': userId,
-            if (email != null && email.isNotEmpty) 'email': email,
-            if (withUserId != null && withUserId.isNotEmpty)
-              'withUserId': withUserId,
-          }),
+        final data = await _fetchTokenPayload(
+          userId: userId,
+          email: email,
+          withUserId: withUserId,
         );
-
-        if (response.body.isEmpty) {
-          throw Exception('Empty Stream token response');
-        }
-
-        final data = jsonDecode(response.body);
-        if (data is! Map<String, dynamic>) {
-          throw Exception('Invalid Stream token response');
-        }
-        if (data['success'] != true) {
-          throw Exception(data['error'] ?? 'Failed to initialize chat');
-        }
 
         final apiKey = data['apiKey']?.toString();
         final token = data['token']?.toString();
@@ -160,17 +212,31 @@ class StreamService extends ChangeNotifier {
               await _client!.disconnectUser(flushChatPersistence: false);
             } catch (_) {}
           }
-          await _client!.connectUser(
-            User(
-              id: streamUserId,
-              name: name,
-              image: AuthService.instance.pictureUrl,
-            ),
-            token,
-          );
+          try {
+            await _client!.connectUser(
+              User(
+                id: streamUserId,
+                name: name,
+                image: AuthService.instance.pictureUrl,
+              ),
+              token,
+            );
+          } catch (error) {
+            try {
+              await _client!.disconnectUser(flushChatPersistence: true);
+            } catch (_) {}
+            await _client!.connectUser(
+              User(
+                id: streamUserId,
+                name: name,
+                image: AuthService.instance.pictureUrl,
+              ),
+              token,
+            );
+          }
         }
       } catch (e) {
-        _lastError = e.toString().replaceAll('Exception: ', '');
+        _lastError = _friendlyChatError(e);
         if (kDebugMode) {
           print('StreamService connection error: $_lastError');
         }

@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import '../theme.dart';
-import '../widgets/custom_widgets.dart';
 
-import 'package:flutter/material.dart';
-import '../theme.dart';
-import '../widgets/custom_widgets.dart';
 import '../services/homeowner_service.dart';
+import '../theme.dart';
+import '../utils/app_error_utils.dart';
+import '../widgets/custom_widgets.dart';
+import '../widgets/offline_state.dart';
 
 class RewardTab extends StatefulWidget {
   final VoidCallback onBookTap;
@@ -57,7 +56,7 @@ class _RewardTabState extends State<RewardTab> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _errorMessage = AppErrorUtils.friendlyMessage(e);
           _isLoading = false;
         });
       }
@@ -83,23 +82,9 @@ class _RewardTabState extends State<RewardTab> {
       );
     }
     if (_errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
-              const SizedBox(height: 12),
-              Text(_errorMessage!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14), textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _fetchRewardsData,
-                child: const Text('Try Again'),
-              ),
-            ],
-          ),
-        ),
+      return OfflineState(
+        onRetry: _fetchRewardsData,
+        message: _errorMessage,
       );
     }
 

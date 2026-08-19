@@ -4,6 +4,8 @@ import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
+import '../utils/app_error_utils.dart';
+import '../widgets/offline_state.dart';
 import 'chat_screen.dart';
 
 class InboxTab extends StatefulWidget {
@@ -303,7 +305,7 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _errorMessage = AppErrorUtils.friendlyMessage(e);
           _isLoading = false;
         });
       }
@@ -362,26 +364,9 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
       );
     }
     if (_errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
-              const SizedBox(height: 12),
-              Text(_errorMessage!,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 14),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _fetchInboxData,
-                child: const Text('Try Again'),
-              ),
-            ],
-          ),
-        ),
+      return OfflineState(
+        onRetry: _fetchInboxData,
+        message: _errorMessage,
       );
     }
 

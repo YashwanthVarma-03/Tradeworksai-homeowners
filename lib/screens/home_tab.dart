@@ -1,9 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
+import '../utils/app_error_utils.dart';
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
+import '../widgets/offline_state.dart';
+
+enum _AiAssistMode { camera, voice }
 
 class HomeTab extends StatefulWidget {
   final VoidCallback onBookTap;
@@ -30,6 +37,7 @@ class HomeTab extends StatefulWidget {
 class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  final ImagePicker _imagePicker = ImagePicker();
 
   String _currentLocation = 'Set your address';
   String? _userName;
@@ -124,7 +132,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _errorMessage = AppErrorUtils.friendlyMessage(e);
         _isLoading = false;
       });
     } finally {
@@ -208,6 +216,244 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     widget.onSearchQuery(query);
   }
 
+  Future<void> _openCameraIntake() async {
+    await _showAiAssistSheet(initialMode: _AiAssistMode.camera);
+  }
+
+  Future<void> _openVoiceIntake() async {
+    await _showAiAssistSheet(initialMode: _AiAssistMode.voice);
+  }
+
+  Future<void> _showAiAssistSheet({required _AiAssistMode initialMode}) async {
+    final noteController = TextEditingController(text: _searchController.text);
+    final noteFocusNode = FocusNode();
+    XFile? selectedPhoto;
+    String? errorMessage;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> capturePhoto() async {
+              try {
+                final photo = await _imagePicker.pickImage(
+                  source: ImageSource.camera,
+                  imageQuality: 85,
+                );
+                if (photo == null) return;
+                setModalState(() {
+                  selectedPhoto = photo;
+                  errorMessage = null;
+                });
+              } catch (_) {
+                setModalState(() {
+                  errorMessage =
+                      'Unable to open the camera. Check camera permission and try again.';
+                });
+              }
+            }
+
+            void submit() {
+              final query = noteController.text.trim();
+              if (query.isEmpty) {
+                setModalState(() {
+                  errorMessage = 'Add a short description before continuing.';
+                });
+                return;
+              }
+
+              setState(() {
+                _searchController.text = query;
+              });
+              Navigator.of(sheetContext).pop();
+              widget.onSearchQuery(query);
+            }
+
+            final isCameraMode = initialMode == _AiAssistMode.camera;
+            final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(24, 12, 24, bottomInset + 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 56,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: AppTheme.line,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      isCameraMode ? 'Camera intake' : 'Voice intake',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.navy700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      isCameraMode
+                          ? 'Take a photo, add a short note, and continue to matching pros.'
+                          : 'Describe the issue in a few words and continue to matching pros.',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.5,
+                        color: AppTheme.gray,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: noteController,
+                      focusNode: noteFocusNode,
+                      autofocus: initialMode == _AiAssistMode.voice,
+                      minLines: 4,
+                      maxLines: 5,
+                      textInputAction: TextInputAction.done,
+                      decoration: InputDecoration(
+                        hintText: isCameraMode
+                            ? 'What is going on at home?'
+                            : 'Describe what you need help with.',
+                        filled: true,
+                        fillColor: const Color(0xFFF7FAFD),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: const BorderSide(color: AppTheme.line),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: const BorderSide(color: AppTheme.line),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide:
+                              const BorderSide(color: AppTheme.teal700, width: 1.2),
+                        ),
+                        contentPadding: const EdgeInsets.all(18),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: capturePhoto,
+                            icon: const Icon(Icons.photo_camera_outlined),
+                            label: Text(
+                              selectedPhoto == null ? 'Add photo' : 'Retake photo',
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.navy700,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              side: const BorderSide(color: AppTheme.line),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              FocusScope.of(context).requestFocus(noteFocusNode);
+                            },
+                            icon: const Icon(Icons.mic_none),
+                            label: const Text('Use voice'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.navy700,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              side: const BorderSide(color: AppTheme.line),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (selectedPhoto != null) ...[
+                      const SizedBox(height: 16),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: Image.file(
+                          File(selectedPhoto!.path),
+                          height: 160,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ],
+                    if (errorMessage != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF7FAFD),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          errorMessage!,
+                          style: const TextStyle(
+                            color: AppTheme.navy700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: submit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.orange500,
+                          foregroundColor: AppTheme.navy700,
+                          minimumSize: const Size.fromHeight(56),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: const Text(
+                          'Find pros',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    noteController.dispose();
+    noteFocusNode.dispose();
+  }
+
   void _showQuoteApprovalDialog(Map<String, dynamic> job) {
     final service = job['serviceCategory']?.toString() ?? 'Work order';
     final proName = job['pro']?['businessName']?.toString() ?? 'Your pro';
@@ -273,31 +519,9 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       backgroundColor: Colors.white,
       body: SunriseBackground(
         child: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.error_outline,
-                      size: 48, color: AppTheme.error),
-                  const SizedBox(height: 12),
-                  Text(
-                    _errorMessage ?? 'Something went wrong',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppTheme.navy700,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  ElevatedButton(
-                    onPressed: _fetchHomeData,
-                    child: const Text('Try Again'),
-                  ),
-                ],
-              ),
-            ),
+          child: OfflineState(
+            onRetry: _fetchHomeData,
+            message: _errorMessage,
           ),
         ),
       ),
@@ -395,13 +619,13 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                     children: [
                       IconButton(
                         tooltip: 'Describe with a photo',
-                        onPressed: _changeLocationDialog,
+                        onPressed: _openCameraIntake,
                         icon: const Icon(Icons.photo_camera_outlined,
                             color: AppTheme.teal700, size: 20),
                       ),
                       IconButton(
                         tooltip: 'Describe with voice',
-                        onPressed: _changeLocationDialog,
+                        onPressed: _openVoiceIntake,
                         icon: const Icon(Icons.mic_none,
                             color: AppTheme.teal700, size: 20),
                       ),

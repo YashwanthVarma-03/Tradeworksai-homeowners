@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
+import '../utils/app_error_utils.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
+import '../widgets/offline_state.dart';
 
 class ChatScreen extends StatefulWidget {
   final String contractorId;
@@ -33,11 +35,12 @@ class _ChatScreenState extends State<ChatScreen> {
     _initChannel();
   }
 
-  Future<void> _initChannel() async {
+  Future<void> _initChannel({bool forceReconnect = false}) async {
     try {
       final channel = await StreamService.instance.openDirectMessageChannel(
         otherUserId: widget.contractorId,
         otherUserName: widget.contractorName,
+        forceReconnect: forceReconnect,
       );
 
       if (!mounted) return;
@@ -49,8 +52,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error =
-            'Could not open chat: ${e.toString().replaceAll('Exception: ', '')}';
+        _error = AppErrorUtils.friendlyMessage(e);
         _isCreating = false;
       });
     }
@@ -72,40 +74,18 @@ class _ChatScreenState extends State<ChatScreen> {
         StreamService.instance.client == null) {
       return Scaffold(
         appBar: _buildAppBar(),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.chat_bubble_outline,
-                    size: 48, color: AppTheme.gray),
-                const SizedBox(height: 16),
-                Text(
-                  _error ?? 'Could not load chat.',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.gray),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Start chats from a contractor profile or booking context.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.gray, fontSize: 12),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _isCreating = true;
-                      _error = null;
-                    });
-                    _initChannel();
-                  },
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          ),
+        body: OfflineState(
+          title: AppErrorUtils.noInternetTitle,
+          message: _error ??
+              StreamService.instance.lastError ??
+              AppErrorUtils.noInternetMessage,
+          onRetry: () {
+            setState(() {
+              _isCreating = true;
+              _error = null;
+            });
+            _initChannel(forceReconnect: true);
+          },
         ),
       );
     }

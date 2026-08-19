@@ -310,9 +310,7 @@ class _BookingStepperState extends State<BookingStepper> {
         } catch (_) {}
         _showVerificationDialog();
       } else if (mounted) {
-        final message = errStr.contains('booking_cap')
-            ? 'You already have the maximum number of open bookings. Please complete or cancel one before placing another booking.'
-            : errStr;
+        final message = HomeownerService.instance.bookingErrorMessage(e);
         showDialog(
           context: context,
           builder: (context) => AlertDialog(

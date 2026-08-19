@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
+import '../utils/app_error_utils.dart';
 
 class HomeownerService {
   static final HomeownerService instance = HomeownerService._internal();
@@ -118,6 +119,14 @@ class HomeownerService {
       return null;
     }
     return text;
+  }
+
+  String bookingErrorMessage(Object error) {
+    final message = AppErrorUtils.friendlyMessage(error).trim();
+    if (message.contains('booking_cap')) {
+      return 'You already have the maximum number of open bookings. Please complete or cancel one before placing another booking.';
+    }
+    return message.isEmpty ? 'Booking failed. Please try again.' : message;
   }
 
   String? _extractContractorIdFromNode(dynamic node) {
@@ -360,7 +369,7 @@ class HomeownerService {
       if (kDebugMode) {
         print('HomeownerService POST Error on $endpoint: $e');
       }
-      rethrow;
+      throw Exception(AppErrorUtils.friendlyMessage(e));
     }
   }
 

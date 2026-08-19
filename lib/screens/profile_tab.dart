@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
 import '../theme.dart';
+import '../utils/app_error_utils.dart';
+import '../widgets/offline_state.dart';
 import 'support_page.dart';
 import 'account/manage_addresses.dart';
 import 'account/payment_methods.dart';
@@ -78,7 +80,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _errorMessage = AppErrorUtils.friendlyMessage(e);
           _isLoading = false;
         });
       }
@@ -105,26 +107,9 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
       );
     }
     if (_errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
-              const SizedBox(height: 12),
-              Text(_errorMessage!,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 14),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _fetchProfileData,
-                child: const Text('Try Again'),
-              ),
-            ],
-          ),
-        ),
+      return OfflineState(
+        onRetry: _fetchProfileData,
+        message: _errorMessage,
       );
     }
 

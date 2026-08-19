@@ -4,6 +4,8 @@ import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
+import '../utils/app_error_utils.dart';
+import '../widgets/offline_state.dart';
 import 'book_flow.dart';
 import 'chat_screen.dart';
 
@@ -45,7 +47,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = AppErrorUtils.friendlyMessage(e);
         _isLoading = false;
       });
     }
@@ -269,7 +271,11 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
           children: [
             _buildProfileAppBar(),
             if (_isLoading) const LinearProgressIndicator(minHeight: 2),
-            if (_errorMessage != null && _profile == null) _buildProfileFallbackNote(),
+            if (_errorMessage != null && _profile == null)
+              OfflineState(
+                onRetry: _fetchProfile,
+                message: _errorMessage,
+              ),
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
@@ -354,22 +360,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
             icon: const Icon(Icons.ios_share, color: AppTheme.navy700),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildProfileFallbackNote() {
-    return Container(
-      width: double.infinity,
-      color: AppTheme.orangeTint,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: const Text(
-        'Showing saved contractor details while live profile data loads.',
-        style: TextStyle(
-          color: AppTheme.navy700,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }

@@ -437,8 +437,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         } catch (_) {}
         _showVerificationDialog();
       } else if (mounted) {
+        final message = HomeownerService.instance.bookingErrorMessage(e);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errStr), backgroundColor: AppTheme.error),
+          SnackBar(content: Text(message), backgroundColor: AppTheme.error),
         );
       }
     } finally {

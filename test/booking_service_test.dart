@@ -27,6 +27,14 @@ void main() {
           AuthService.instance.userEmail, equals('demo.homeowner@gmail.com'));
     });
 
+    test('booking cap errors are presented as actionable copy', () {
+      final message =
+          HomeownerService.instance.bookingErrorMessage(Exception('booking_cap'));
+
+      expect(message, contains('maximum number of open bookings'));
+      expect(message, contains('complete or cancel'));
+    });
+
     test('commitBooking saves work order to mock state in demo mode', () async {
       final bookingData = {
         'requester_name': AuthService.instance.userName ?? 'Homeowner',
