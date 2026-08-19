@@ -571,7 +571,6 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
         readValue(widget.job['pro']?['contractorId']) ??
         readValue(widget.job['pro']?['contractor_id']) ??
         readValue(widget.job['pro']?['id']) ??
-        readValue(widget.job['pro']?['userId']) ??
         readValue(widget.job['contractor']?['id']) ??
         readValue(widget.job['contractor']?['contractorId']) ??
         readValue(widget.job['contractor']?['contractor_id']);

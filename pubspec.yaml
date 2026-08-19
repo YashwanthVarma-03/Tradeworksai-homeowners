@@ -44,6 +44,8 @@ dependencies:
   url_launcher: ^6.3.1
   image_picker: ^1.1.2
   stream_chat_flutter: ^8.0.0
+  supabase_flutter: ^2.0.0
+  speech_to_text: ^7.0.0
 
 dev_dependencies:
   flutter_test:
@@ -55,6 +57,10 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^3.0.0
+
+dependency_overrides:
+  speech_to_text:
+    path: third_party/speech_to_text
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/homeowner_service.dart';
+import '../services/intake_service.dart';
 import '../theme.dart';
 import 'pro_profile.dart';
 
@@ -13,9 +16,10 @@ enum _BrowseView {
 }
 
 class SearchTab extends StatefulWidget {
-  final Function(Map<String, String>) onBookPro;
+  final Function(Map<String, dynamic>) onBookPro;
   final String? initialSearchQuery;
   final String? initialCategory;
+  final bool initialAllShowsCategories;
   final bool showSectionBackButton;
 
   const SearchTab({
@@ -23,6 +27,7 @@ class SearchTab extends StatefulWidget {
     required this.onBookPro,
     this.initialSearchQuery,
     this.initialCategory,
+    this.initialAllShowsCategories = false,
     this.showSectionBackButton = true,
   });
 
@@ -31,14 +36,24 @@ class SearchTab extends StatefulWidget {
 }
 
 class _SearchTabState extends State<SearchTab> {
+  static const String _recentSearchesKey = 'browse_recent_searches';
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
+  late final ScrollController _railController;
   final TextEditingController _locationController =
       TextEditingController(text: 'Home · 33578');
+  final List<String> _recentSearches = [];
+  final List<_BrowsePro> _livePros = [];
+  final Map<String, int> _categoryCounts = {};
+  final Map<String, bool> _categoryCoverage = {};
 
   _BrowseView _view = _BrowseView.browse;
-  String _selectedCategory = 'All';
+  String _selectedCategory = 'HVAC';
+  String _selectedZip = '33578';
   String? _committedQuery;
+  bool _isLoadingResults = false;
+  bool _isLoadingCoverage = false;
+  String? _resultsError;
 
   @override
   void initState() {
@@ -46,18 +61,30 @@ class _SearchTabState extends State<SearchTab> {
     _searchController =
         TextEditingController(text: widget.initialSearchQuery ?? '');
     _searchFocusNode = FocusNode();
+    _railController = ScrollController();
     _searchFocusNode.addListener(_handleFocusChange);
+    _applyLocationLabel('Home', _selectedZip);
+    _loadRecentSearches();
 
     if (widget.initialCategory != null && widget.initialCategory != 'All') {
       _selectedCategory = widget.initialCategory!;
     }
     if (widget.initialCategory == 'All') {
-      _view = _BrowseView.allCategories;
+      _selectedCategory = 'All';
+      _view = widget.initialAllShowsCategories
+          ? _BrowseView.allCategories
+          : _BrowseView.browse;
     }
     if (_searchController.text.trim().isNotEmpty) {
       _committedQuery = _searchController.text.trim();
       _view = _resolveSearchView(_committedQuery!);
     }
+
+    _loadLocationAndResults();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureSelectedRailVisible();
+    });
   }
 
   @override
@@ -69,7 +96,7 @@ class _SearchTabState extends State<SearchTab> {
           ? null
           : _searchController.text.trim();
       if (_committedQuery != null) {
-        _view = _resolveSearchView(_committedQuery!);
+        _runQuerySearch(_committedQuery!);
       } else if (_searchFocusNode.hasFocus) {
         _view = _BrowseView.searchFocused;
       } else {
@@ -83,12 +110,24 @@ class _SearchTabState extends State<SearchTab> {
     if (widget.initialCategory != oldWidget.initialCategory) {
       if (widget.initialCategory == 'All') {
         _selectedCategory = 'All';
-        _view = _BrowseView.allCategories;
+        if (widget.initialAllShowsCategories) {
+          _searchFocusNode.unfocus();
+          setState(() {
+            _committedQuery = null;
+            _searchController.clear();
+            _view = _BrowseView.allCategories;
+          });
+        } else {
+          _runAllServicesSearch();
+        }
       } else if (widget.initialCategory != null) {
         _selectedCategory = widget.initialCategory!;
-        _view = _BrowseView.browse;
+        _runCategorySearch(widget.initialCategory!);
       }
       setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _ensureSelectedRailVisible();
+      });
     }
   }
 
@@ -96,9 +135,289 @@ class _SearchTabState extends State<SearchTab> {
   void dispose() {
     _searchFocusNode.removeListener(_handleFocusChange);
     _searchFocusNode.dispose();
+    _railController.dispose();
     _searchController.dispose();
     _locationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getStringList(_recentSearchesKey) ?? const [];
+    if (!mounted) return;
+    setState(() {
+      _recentSearches
+        ..clear()
+        ..addAll(stored);
+    });
+  }
+
+  Future<void> _saveRecentSearch(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    _recentSearches.removeWhere(
+      (item) => item.toLowerCase() == trimmed.toLowerCase(),
+    );
+    _recentSearches.insert(0, trimmed);
+    if (_recentSearches.length > 6) {
+      _recentSearches.removeRange(6, _recentSearches.length);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_recentSearchesKey, _recentSearches);
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _applyLocationLabel(String city, String zip) {
+    final normalizedCity = city.trim().isEmpty ? 'Home' : city.trim();
+    final separator = String.fromCharCode(183);
+    _locationController.text = '$normalizedCity $separator $zip';
+  }
+
+  String _normalizeLocationText(String value) {
+    final separator = String.fromCharCode(183);
+    return value
+        .replaceAll('Ã‚Â·', separator)
+        .replaceAll('Â·', separator)
+        .replaceAll('  ', ' ')
+        .trim();
+  }
+
+  Future<void> _loadLocationAndResults() async {
+    await _loadLocationFromProfile();
+    await _refreshZipCoverage();
+    _locationController.text = _normalizeLocationText(_locationController.text);
+    if (!mounted) return;
+
+    if (_committedQuery != null && _committedQuery!.isNotEmpty) {
+      await _runQuerySearch(_committedQuery!);
+      return;
+    }
+
+    if (widget.initialCategory != null && widget.initialCategory != 'All') {
+      await _runCategorySearch(widget.initialCategory!);
+      return;
+    }
+
+    if (_selectedCategory == 'All' && !widget.initialAllShowsCategories) {
+      await _runAllServicesSearch();
+      return;
+    }
+
+    if (_selectedCategory == 'All') {
+      return;
+    }
+
+    await _runCategorySearch(_selectedCategory);
+  }
+
+  Future<void> _loadLocationFromProfile() async {
+    try {
+      final profileResp = await HomeownerService.instance.fetchProfile();
+      final profile = profileResp['profile'];
+      final addresses = (profileResp['addresses'] as List?) ??
+          (profile is Map ? profile['addresses'] as List? : null) ??
+          const [];
+      if (addresses.isEmpty) return;
+
+      final defaultAddr = addresses.firstWhere(
+        (a) => a is Map && (a['isDefault'] == true || a['isDefault'] == 'true'),
+        orElse: () => addresses.first,
+      );
+      if (defaultAddr is! Map) return;
+
+      final city = _readText(defaultAddr['city']) ?? 'Home';
+      final zip = _extractZip(defaultAddr['zip']) ?? _selectedZip;
+      if (!mounted) {
+        _selectedZip = zip;
+        _applyLocationLabel(city, zip);
+        return;
+      }
+
+      setState(() {
+        _selectedZip = zip;
+        _applyLocationLabel(city, zip);
+      });
+    } catch (_) {
+      // Keep fallback ZIP if profile lookup fails.
+    }
+  }
+
+  List<_BrowseCategory> get _visibleRailCategories =>
+      _allCategories
+          .where((cat) => _categorySlugForName(cat.name) != null)
+          .take(9)
+          .toList();
+
+  List<_BrowseCategory> get _railCategoriesForCurrentSelection {
+    final visible = [..._visibleRailCategories];
+    if (_selectedCategory == 'All' ||
+        visible.any((category) => category.name == _selectedCategory)) {
+      return visible;
+    }
+    final missingIndex = _allCategories.indexWhere(
+      (category) => category.name == _selectedCategory,
+    );
+    if (missingIndex == -1) {
+      return visible;
+    }
+    return [...visible, _allCategories[missingIndex]];
+  }
+
+  void _ensureSelectedRailVisible() {
+    if (!_railController.hasClients) return;
+    final visible = _railCategoriesForCurrentSelection;
+    final categoryIndex =
+        visible.indexWhere((cat) => cat.name == _selectedCategory);
+    if (_selectedCategory != 'All' && categoryIndex == -1) return;
+    final selectedIndex =
+        _selectedCategory == 'All' ? 0 : categoryIndex + 1;
+    if (selectedIndex < 0) return;
+    final targetOffset = (selectedIndex * 102.0 - 10).clamp(
+      0.0,
+      _railController.position.maxScrollExtent,
+    );
+    _railController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _queueSelectedRailVisibility() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _ensureSelectedRailVisible();
+      Future.delayed(const Duration(milliseconds: 80), () {
+        if (mounted) {
+          _ensureSelectedRailVisible();
+        }
+      });
+    });
+  }
+
+  Future<void> _refreshZipCoverage() async {
+    final zip = _selectedZip.trim();
+    if (zip.isEmpty) {
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _isLoadingCoverage = true);
+    }
+
+    try {
+      final coverage = await HomeownerService.instance.getZipCoverage(zip: zip);
+      final categories = (coverage['categories'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final nextCounts = <String, int>{};
+      final nextCoverage = <String, bool>{};
+
+      for (final category in _allCategories) {
+        nextCounts[category.name] = 0;
+        nextCoverage[category.name] = false;
+      }
+
+      for (final item in categories) {
+        final slug = _readText(item['categorySlug']);
+        final rawName = _readText(item['categoryName']);
+        final appName = slug == null
+            ? _normalizeCoverageCategoryName(rawName)
+            : _categoryNameForSlug(slug);
+        if (appName == null) {
+          continue;
+        }
+        final count = item['proCount'] is num
+            ? (item['proCount'] as num).toInt()
+            : int.tryParse(item['proCount']?.toString() ?? '') ?? 0;
+        nextCounts[appName] = count;
+        nextCoverage[appName] = item['available'] == true || count > 0;
+        if (appName == 'Home Security') {
+          nextCounts['Smart Home'] = count;
+          nextCoverage['Smart Home'] = item['available'] == true || count > 0;
+        }
+        if (appName == 'Concrete & Masonry') {
+          nextCounts['Concrete'] = count;
+          nextCoverage['Concrete'] = item['available'] == true || count > 0;
+        }
+      }
+
+      final city = _readText(coverage['city']) ?? 'Home';
+      final returnedZip = _readText(coverage['zip']) ?? zip;
+
+      if (!mounted) {
+        _categoryCounts
+          ..clear()
+          ..addAll(nextCounts);
+        _categoryCoverage
+          ..clear()
+          ..addAll(nextCoverage);
+        _selectedZip = returnedZip;
+        _applyLocationLabel(city, returnedZip);
+        return;
+      }
+
+      setState(() {
+        _categoryCounts
+          ..clear()
+          ..addAll(nextCounts);
+        _categoryCoverage
+          ..clear()
+          ..addAll(nextCoverage);
+        _selectedZip = returnedZip;
+        _applyLocationLabel(city, returnedZip);
+        _isLoadingCoverage = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isLoadingCoverage = false);
+    }
+  }
+
+  String? _normalizeCoverageCategoryName(String? rawName) {
+    if (rawName == null) {
+      return null;
+    }
+    switch (rawName) {
+      case 'Handyman & General Repairs':
+        return 'Handyman';
+      case 'Landscaping & Lawn Care':
+        return 'Landscaping';
+      case 'Junk Removal & Hauling':
+        return 'Junk Removal';
+      case 'Moving & Hauling':
+        return 'Moving';
+      case 'Remodeling & Construction':
+        return 'Remodeling';
+      case 'Screen Repair & Enclosures':
+        return 'Screen Repair';
+      case 'Home Security & Smart Home':
+        return 'Home Security';
+      case 'Insulation & Weatherization':
+        return 'Insulation';
+      default:
+        return rawName;
+    }
+  }
+
+  int _proCountForCategory(_BrowseCategory category) {
+    return _categoryCounts[category.name] ?? 0;
+  }
+
+  bool _isCategoryCovered(_BrowseCategory category) {
+    return _categoryCoverage[category.name] ?? false;
+  }
+
+  int get _allProsCount {
+    if (_categoryCounts.isEmpty) {
+      return 0;
+    }
+    return _categoryCounts.values.fold<int>(0, (sum, value) => sum + value);
   }
 
   void _handleFocusChange() {
@@ -108,12 +427,12 @@ class _SearchTabState extends State<SearchTab> {
         if (_searchController.text.trim().isEmpty) {
           _view = _BrowseView.searchFocused;
         } else if (_committedQuery == _searchController.text.trim()) {
-          _view = _resolveSearchView(_searchController.text.trim());
+          _view = _livePros.isEmpty ? _BrowseView.noCoverage : _BrowseView.results;
         } else {
           _view = _BrowseView.typeAhead;
         }
       } else if (_committedQuery != null) {
-        _view = _resolveSearchView(_committedQuery!);
+        _view = _livePros.isEmpty ? _BrowseView.noCoverage : _BrowseView.results;
       } else if (_selectedCategory == 'All') {
         _view = _BrowseView.browse;
       } else {
@@ -134,19 +453,65 @@ class _SearchTabState extends State<SearchTab> {
     setState(() => _view = _BrowseView.searchFocused);
   }
 
-  void _submitSearch([String? rawQuery]) {
+  Future<void> _applyLocationInput(String raw) async {
+    final normalized = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final nextZip = _extractZip(normalized) ?? _selectedZip;
+    final cityLabel = normalized.isEmpty
+        ? 'Home'
+        : RegExp(r'^\d{5}$').hasMatch(normalized)
+            ? 'Home'
+            : normalized
+                .replaceAll(RegExp(r'\b\d{5}\b'), '')
+                .replaceAll(RegExp(r'\s+·\s+'), ' ')
+                .replaceAll(RegExp(r'^[,\s]+|[,\s]+$'), '')
+                .trim();
+
+    if (!mounted) {
+      _selectedZip = nextZip;
+      _applyLocationLabel(cityLabel, nextZip);
+      return;
+    }
+
+    setState(() {
+      _selectedZip = nextZip;
+      _applyLocationLabel(cityLabel, nextZip);
+    });
+    await _refreshZipCoverage();
+
+    if (_committedQuery != null && _committedQuery!.isNotEmpty) {
+      await _runQuerySearch(_committedQuery!);
+    } else if (_selectedCategory != 'All') {
+      await _runCategorySearch(_selectedCategory);
+    }
+  }
+
+  Future<void> _submitSearch([String? rawQuery]) async {
     final query = (rawQuery ?? _searchController.text).trim();
     _committedQuery = query.isEmpty ? null : query;
+    if (_committedQuery != null) {
+      await _saveRecentSearch(_committedQuery!);
+    }
     setState(() {
       _view = _committedQuery == null
           ? (_selectedCategory == 'All'
               ? _BrowseView.browse
               : _BrowseView.results)
-          : _resolveSearchView(_committedQuery!);
+          : _BrowseView.results;
     });
     if (_searchFocusNode.hasFocus) {
       _searchFocusNode.unfocus();
     }
+
+    if (_committedQuery == null) {
+      if (_selectedCategory == 'All') {
+        await _runAllServicesSearch();
+      } else {
+        await _runCategorySearch(_selectedCategory);
+      }
+      return;
+    }
+
+    await _runQuerySearch(_committedQuery!);
   }
 
   void _openAllCategories() {
@@ -157,11 +522,14 @@ class _SearchTabState extends State<SearchTab> {
       _view = _BrowseView.allCategories;
     });
     _searchFocusNode.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureSelectedRailVisible();
+    });
   }
 
   void _selectCategory(String category) {
     if (category == 'All') {
-      _openAllCategories();
+      _runAllServicesSearch();
       return;
     }
     setState(() {
@@ -170,14 +538,444 @@ class _SearchTabState extends State<SearchTab> {
       _view = _BrowseView.browse;
     });
     _searchFocusNode.unfocus();
+    _runCategorySearch(category);
+    _queueSelectedRailVisibility();
+  }
+
+  List<_BrowseCategory> get _categoriesWithLivePros {
+    final live = _allCategories
+        .where((category) =>
+            _categorySlugForName(category.name) != null &&
+            _proCountForCategory(category) > 0)
+        .toList();
+    if (live.isNotEmpty) {
+      return live;
+    }
+    return _visibleRailCategories;
+  }
+
+  Future<void> _runAllServicesSearch() async {
+    final categories = _categoriesWithLivePros;
+    if (!mounted) return;
+    setState(() {
+      _selectedCategory = 'All';
+      _committedQuery = null;
+      _searchController.clear();
+      _isLoadingResults = true;
+      _resultsError = null;
+      _view = _BrowseView.browse;
+    });
+    _searchFocusNode.unfocus();
+
+    final mergedPros = <_BrowsePro>[];
+    final seen = <String>{};
+    String? firstError;
+
+    for (final category in categories) {
+      final slug = _categorySlugForName(category.name);
+      if (slug == null) continue;
+      try {
+        final response = await HomeownerService.instance.searchPros(
+          zip: _selectedZip,
+          categorySlug: slug,
+        );
+        final results = (response['results'] as List? ?? const [])
+            .whereType<Map>()
+            .map((result) => _BrowsePro.fromApi(
+                  Map<String, dynamic>.from(result),
+                  category: category.name,
+                ));
+        for (final pro in results) {
+          final key = [
+            pro.contractorId,
+            pro.slug,
+            pro.category,
+            pro.name,
+          ].where((part) => part.trim().isNotEmpty).join('|').toLowerCase();
+          if (seen.add(key)) {
+            mergedPros.add(pro);
+          }
+        }
+      } catch (e) {
+        firstError ??= e.toString().replaceAll('Exception: ', '');
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _livePros
+        ..clear()
+        ..addAll(mergedPros);
+      _isLoadingResults = false;
+      _resultsError = mergedPros.isEmpty ? firstError : null;
+      _view = mergedPros.isEmpty ? _BrowseView.noCoverage : _BrowseView.browse;
+    });
+    _queueSelectedRailVisibility();
   }
 
   _BrowseView _resolveSearchView(String query) {
-    final matches = _matchesQuery(query);
-    if (matches.isEmpty) {
-      return _BrowseView.noCoverage;
+    if (query.trim().isEmpty) {
+      return _BrowseView.searchFocused;
     }
-    return _BrowseView.results;
+    return _livePros.isEmpty ? _BrowseView.noCoverage : _BrowseView.results;
+  }
+
+  Future<void> _runQuerySearch(String query) async {
+    try {
+      final intakeData = await IntakeService.instance.assist(
+        text: query,
+        zip: _selectedZip,
+      );
+      final resolution = IntakeResolution.fromApi(intakeData);
+
+      if (resolution.outcome == 'life_safety') {
+        if (!mounted) return;
+        setState(() {
+          _livePros.clear();
+          _resultsError =
+              'This issue may be life-safety related. Contact local emergency services first.';
+          _view = _BrowseView.noCoverage;
+          _isLoadingResults = false;
+        });
+        return;
+      }
+
+      if (resolution.outcome == 'clarify') {
+        if (!mounted) return;
+        setState(() {
+          _livePros.clear();
+          _resultsError = resolution.clarifyingQuestion ??
+              'Please describe the issue a little more clearly.';
+          _view = _BrowseView.noCoverage;
+          _isLoadingResults = false;
+        });
+        return;
+      }
+
+      final resolvedCategory = resolution.categorySlug != null
+          ? _categoryNameForSlug(resolution.categorySlug!)
+          : _resolveSearchCategory(query);
+      if (resolvedCategory == null) {
+        throw Exception('AI intake could not resolve this request to a supported category.');
+      }
+
+      await _runCategorySearch(
+        resolvedCategory,
+        overrideQuery: resolution.scopedDescription ?? query,
+        urgency: resolution.suggestedUrgency,
+        forcedSlug: resolution.categorySlug,
+      );
+    } catch (e) {
+      final resolvedCategory = _resolveSearchCategory(query);
+      if (resolvedCategory == null) {
+        if (!mounted) return;
+        setState(() {
+          _livePros.clear();
+          _resultsError = e.toString().replaceAll('Exception: ', '');
+          _view = _BrowseView.noCoverage;
+          _isLoadingResults = false;
+        });
+        return;
+      }
+
+      await _runCategorySearch(
+        resolvedCategory,
+        overrideQuery: query,
+      );
+    }
+  }
+
+  Future<void> _runCategorySearch(
+    String category, {
+    String? overrideQuery,
+    String urgency = 'standard',
+    String? forcedSlug,
+  }) async {
+    final slug = forcedSlug ?? _categorySlugForName(category);
+    if (slug == null) {
+      if (!mounted) return;
+      setState(() {
+        _livePros.clear();
+        _resultsError = 'This category is not connected to live search yet.';
+        _view = _BrowseView.noCoverage;
+        _isLoadingResults = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _selectedCategory = category;
+      _isLoadingResults = true;
+      _resultsError = null;
+      _view = overrideQuery == null ? _BrowseView.browse : _BrowseView.results;
+    });
+
+    try {
+      final response = await HomeownerService.instance.searchPros(
+        zip: _selectedZip,
+        categorySlug: slug,
+        urgency: urgency,
+      );
+      final results = (response['results'] as List? ?? const [])
+          .whereType<Map>()
+          .map((result) => _BrowsePro.fromApi(
+                Map<String, dynamic>.from(result),
+                category: category,
+              ))
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _livePros
+          ..clear()
+          ..addAll(results);
+        _categoryCounts[category] =
+            response['count'] is num
+                ? (response['count'] as num).toInt()
+                : results.length;
+        _categoryCoverage[category] =
+            response['covered'] == true || results.isNotEmpty;
+        _isLoadingResults = false;
+        _resultsError = null;
+        _view = results.isEmpty ? _BrowseView.noCoverage : _view;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _livePros.clear();
+        _isLoadingResults = false;
+        _resultsError = e.toString().replaceAll('Exception: ', '');
+        _view = _BrowseView.noCoverage;
+      });
+    }
+  }
+
+  String? _resolveSearchCategory(String query) {
+    final normalized = _normalizeSearchText(query);
+    if (normalized.isEmpty) {
+      return _selectedCategory == 'All' ? 'HVAC' : _selectedCategory;
+    }
+
+    for (final service in _serviceCatalog) {
+      final serviceName = _normalizeSearchText(service.name);
+      if (serviceName.contains(normalized) || normalized.contains(serviceName)) {
+        return service.category;
+      }
+    }
+
+    for (final category in _allCategories) {
+      final categoryName = _normalizeSearchText(category.name);
+      if (categoryName.contains(normalized) || normalized.contains(categoryName)) {
+        return category.name;
+      }
+    }
+
+    final keywordMap = <String, String>{
+      'ac': 'HVAC',
+      'air': 'HVAC',
+      'cooling': 'HVAC',
+      'heating': 'HVAC',
+      'furnace': 'HVAC',
+      'thermostat': 'HVAC',
+      'plumb': 'Plumbing',
+      'drain': 'Plumbing',
+      'toilet': 'Plumbing',
+      'pipe': 'Plumbing',
+      'water heater': 'Plumbing',
+      'outlet': 'Electrical',
+      'breaker': 'Electrical',
+      'panel': 'Electrical',
+      'fan': 'Electrical',
+      'switch': 'Electrical',
+      'appliance': 'Appliance Repair',
+      'washer': 'Appliance Repair',
+      'dryer': 'Appliance Repair',
+      'fridge': 'Appliance Repair',
+      'garage': 'Garage Doors',
+      'door': 'Windows & Doors',
+      'window': 'Windows & Doors',
+      'roof': 'Roofing',
+      'fence': 'Fencing & Decks',
+      'deck': 'Fencing & Decks',
+      'lock': 'Locksmith',
+      'clean': 'Cleaning',
+      'lawn': 'Landscaping',
+      'landscap': 'Landscaping',
+      'handyman': 'Handyman',
+      'tree': 'Tree Service',
+      'water softener': 'Water Treatment',
+      'filtration': 'Water Treatment',
+      'moving': 'Moving',
+      'junk': 'Junk Removal',
+    };
+
+    for (final entry in keywordMap.entries) {
+      if (normalized.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+
+    return null;
+  }
+
+  String _normalizeSearchText(String value) {
+    return value.toLowerCase().replaceAll('&', ' ').replaceAll('-', ' ').trim();
+  }
+
+  String? _categorySlugForName(String category) {
+    switch (category) {
+      case 'Handyman':
+        return 'handyman-general-repairs';
+      case 'HVAC':
+        return 'hvac';
+      case 'Air Duct & Vent':
+        return 'air-duct-vent-services';
+      case 'Plumbing':
+        return 'plumbing';
+      case 'Electrical':
+        return 'electrical';
+      case 'Pool & Spa':
+        return 'pool-spa';
+      case 'Cleaning':
+        return 'cleaning';
+      case 'Landscaping':
+        return 'landscaping-lawn-care';
+      case 'Tree Service':
+        return 'tree-service';
+      case 'Pest Control':
+        return 'pest-control';
+      case 'Pressure Washing':
+        return 'pressure-washing-exterior-cleaning';
+      case 'Flooring':
+        return 'flooring';
+      case 'Painting':
+        return 'painting';
+      case 'Drywall & Plaster':
+        return 'drywall-plaster';
+      case 'Roofing':
+        return 'roofing';
+      case 'Gutters':
+        return 'gutters';
+      case 'Siding':
+        return 'siding';
+      case 'Water Treatment':
+        return 'water-treatment';
+      case 'Garage Doors':
+        return 'garage-doors';
+      case 'Moving':
+        return 'moving-hauling';
+      case 'Appliance Repair':
+        return 'appliance-repair';
+      case 'Locksmith':
+        return 'locksmith';
+      case 'Windows & Doors':
+        return 'windows-doors';
+      case 'Screen Repair':
+        return 'screen-repair-enclosures';
+      case 'Fencing & Decks':
+        return 'fencing-decks';
+      case 'Concrete':
+      case 'Concrete & Masonry':
+        return 'concrete-masonry';
+      case 'Remodeling':
+        return 'remodeling-construction';
+      case 'Home Security':
+      case 'Smart Home':
+        return 'home-security-smart-home';
+      case 'Insulation':
+        return 'insulation-weatherization';
+      case 'Junk Removal':
+        return 'junk-removal-hauling';
+      case 'Fireplace & Chimney':
+        return 'fireplace-chimney';
+      default:
+        return null;
+    }
+  }
+
+  String? _categoryNameForSlug(String slug) {
+    switch (slug) {
+      case 'handyman-general-repairs':
+        return 'Handyman';
+      case 'hvac':
+        return 'HVAC';
+      case 'air-duct-vent-services':
+        return 'Air Duct & Vent';
+      case 'plumbing':
+        return 'Plumbing';
+      case 'electrical':
+        return 'Electrical';
+      case 'pool-spa':
+        return 'Pool & Spa';
+      case 'cleaning':
+        return 'Cleaning';
+      case 'landscaping-lawn-care':
+        return 'Landscaping';
+      case 'tree-service':
+        return 'Tree Service';
+      case 'pest-control':
+        return 'Pest Control';
+      case 'pressure-washing-exterior-cleaning':
+        return 'Pressure Washing';
+      case 'flooring':
+        return 'Flooring';
+      case 'painting':
+        return 'Painting';
+      case 'drywall-plaster':
+        return 'Drywall & Plaster';
+      case 'roofing':
+        return 'Roofing';
+      case 'gutters':
+        return 'Gutters';
+      case 'siding':
+        return 'Siding';
+      case 'water-treatment':
+        return 'Water Treatment';
+      case 'garage-doors':
+        return 'Garage Doors';
+      case 'moving-hauling':
+        return 'Moving';
+      case 'appliance-repair':
+        return 'Appliance Repair';
+      case 'locksmith':
+        return 'Locksmith';
+      case 'windows-doors':
+        return 'Windows & Doors';
+      case 'screen-repair-enclosures':
+        return 'Screen Repair';
+      case 'fencing-decks':
+        return 'Fencing & Decks';
+      case 'concrete-masonry':
+        return 'Concrete & Masonry';
+      case 'remodeling-construction':
+        return 'Remodeling';
+      case 'home-security-smart-home':
+        return 'Home Security';
+      case 'insulation-weatherization':
+        return 'Insulation';
+      case 'junk-removal-hauling':
+        return 'Junk Removal';
+      case 'fireplace-chimney':
+        return 'Fireplace & Chimney';
+      default:
+        return null;
+    }
+  }
+
+  String? _readText(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
+      return null;
+    }
+    return text;
+  }
+
+  String? _extractZip(dynamic value) {
+    final text = _readText(value);
+    if (text == null) return null;
+    final match = RegExp(r'\b(\d{5})\b').firstMatch(text);
+    return match?.group(1);
   }
 
   List<_BrowseCategory> get _allCategories => const [
@@ -442,11 +1240,22 @@ class _SearchTabState extends State<SearchTab> {
         _BrowseService('Smart thermostat install', 'HVAC'),
       ];
 
-  List<String> get _recentSearches => const [
-        'AC repair',
-        'Leak under sink',
-        'Ceiling fan install',
-      ];
+  List<_BrowseService> get _serviceCatalog {
+    final ordered = <_BrowseService>[];
+    final seen = <String>{};
+
+    void addService(_BrowseService service) {
+      final key = service.name.toLowerCase();
+      if (seen.add(key)) {
+        ordered.add(service);
+      }
+    }
+
+    for (final service in _popularServices) {
+      addService(service);
+    }
+    return ordered;
+  }
 
   List<_BrowsePro> get _pros => const [
         _BrowsePro(
@@ -720,7 +1529,7 @@ class _SearchTabState extends State<SearchTab> {
   List<_BrowsePro> _matchesQuery(String query) {
     final lower = query.toLowerCase().trim();
     if (lower.isEmpty) return const [];
-    final matches = _pros.where((pro) {
+    final matches = _livePros.where((pro) {
       final haystacks = <String>[
         pro.name,
         pro.category,
@@ -732,23 +1541,16 @@ class _SearchTabState extends State<SearchTab> {
     }).toList();
 
     if (matches.isNotEmpty) return matches;
-
-    final categoryMatches = _allCategories
-        .where((cat) =>
-            cat.name.toLowerCase().contains(lower) ||
-            cat.name.toLowerCase().replaceAll(' & ', ' ').contains(lower))
-        .map((cat) => _pros.firstWhere(
-              (pro) => pro.category == cat.name,
-              orElse: () => _pros.first,
-            ))
-        .toList();
-    return categoryMatches;
+    return const [];
   }
 
   Map<String, dynamic> _toProMap(_BrowsePro pro) {
     return {
       'slug': pro.slug,
-      'id': pro.slug,
+      'profileSlug': pro.slug,
+      'contractorId': pro.contractorId,
+      'contractor_id': pro.contractorId,
+      'userId': pro.userId,
       'businessName': pro.name,
       'business_name': pro.name,
       'verifiedRating': pro.rating,
@@ -763,6 +1565,8 @@ class _SearchTabState extends State<SearchTab> {
       'nextAvailable': pro.nextAvailable,
       'summary': pro.summary,
       'services': pro.services,
+      'photoUrl': pro.photoUrl,
+      'profile_image_url': pro.photoUrl,
       'media': List.generate(pro.mediaCount, (index) => {'id': index}),
     };
   }
@@ -778,9 +1582,7 @@ class _SearchTabState extends State<SearchTab> {
 
   @override
   Widget build(BuildContext context) {
-    final visiblePros = _selectedCategory == 'All'
-        ? _pros
-        : _pros.where((pro) => pro.category == _selectedCategory).toList();
+    final visiblePros = _livePros;
     final searchQuery = _searchController.text.trim();
     final activeTypeAhead = _matchesQuery(searchQuery);
 
@@ -796,16 +1598,18 @@ class _SearchTabState extends State<SearchTab> {
         body = _buildTypeAhead(activeTypeAhead);
         break;
       case _BrowseView.results:
-        body = _buildResults(activeTypeAhead.isEmpty
-            ? _matchesQuery(_committedQuery ?? searchQuery)
-            : activeTypeAhead);
+        body = _buildResults(_livePros);
         break;
       case _BrowseView.noCoverage:
         body = _buildNoCoverage();
         break;
       case _BrowseView.browse:
       default:
-        body = visiblePros.isEmpty ? _buildNoCoverage() : _buildBrowseDefault(visiblePros);
+        body = (visiblePros.isEmpty &&
+                !_isLoadingResults &&
+                _resultsError == null)
+            ? _buildNoCoverage()
+            : _buildBrowseDefault(visiblePros);
         break;
     }
 
@@ -821,11 +1625,6 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildBrowseDefault(List<_BrowsePro> visiblePros) {
-    final filteredCategories = _allCategories
-        .where((cat) => cat.covered)
-        .take(9)
-        .toList();
-
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
       children: [
@@ -835,13 +1634,13 @@ class _SearchTabState extends State<SearchTab> {
           onSearchTap: _setFocusSearch,
         ),
         const SizedBox(height: 14),
-        _buildRail(filteredCategories),
+        _buildRail(_railCategoriesForCurrentSelection),
         const SizedBox(height: 20),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: const [
+          children: [
             Text(
-              '15 vetted pros',
+              '${visiblePros.length} vetted pros',
               style: TextStyle(
                 color: AppTheme.navy700,
                 fontSize: 16,
@@ -859,10 +1658,22 @@ class _SearchTabState extends State<SearchTab> {
           ],
         ),
         const SizedBox(height: 12),
-        ...visiblePros.map((pro) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _buildBrowseCard(pro),
-            )),
+        if (_isLoadingResults)
+          const Padding(
+            padding: EdgeInsets.only(top: 28),
+            child: Center(
+              child: CircularProgressIndicator(color: AppTheme.orange500),
+            ),
+          )
+        else if (_resultsError != null)
+          _buildInlineState(_resultsError!)
+        else if (visiblePros.isEmpty)
+          _buildInlineState('No live contractors were returned for $_selectedZip.')
+        else
+          ...visiblePros.map((pro) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildBrowseCard(pro),
+              )),
       ],
     );
   }
@@ -872,7 +1683,7 @@ class _SearchTabState extends State<SearchTab> {
       children: [
         if (widget.showSectionBackButton)
           _buildTopBar(
-            title: 'All categories',
+            title: 'All services',
             onBack: () => setState(() => _view = _BrowseView.browse),
           )
         else
@@ -882,11 +1693,11 @@ class _SearchTabState extends State<SearchTab> {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
             children: [
               Row(
-                children: const [
+                children: [
                   Expanded(
                     child: Text(
-                      'Serving 33578',
-                      style: TextStyle(
+                      'Serving $_selectedZip',
+                      style: const TextStyle(
                         color: AppTheme.gray,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -894,7 +1705,7 @@ class _SearchTabState extends State<SearchTab> {
                     ),
                   ),
                   Text(
-                    '31 categories · 164 services',
+                    '${_allProsCount} live pros · 31 categories',
                     style: TextStyle(
                       color: AppTheme.gray,
                       fontSize: 12,
@@ -904,29 +1715,27 @@ class _SearchTabState extends State<SearchTab> {
                 ],
               ),
               const SizedBox(height: 14),
-              GridView.builder(
-                itemCount: _allCategories.length,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.95,
-                ),
-                itemBuilder: (context, index) {
-                  final category = _allCategories[index];
-                  return _CategoryGridTile(
+              ..._allCategories.map(
+                (category) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _AllServicesRow(
                     category: category,
+                    services: _servicesForCategory(category.name),
                     onTap: () {
-                      if (!category.covered) {
-                        setState(() => _view = _BrowseView.noCoverage);
+                      if (!_isCategoryCovered(category)) {
+                        setState(() {
+                          _selectedCategory = category.name;
+                          _view = _BrowseView.noCoverage;
+                        });
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _ensureSelectedRailVisible();
+                        });
                         return;
                       }
                       _selectCategory(category.name);
                     },
-                  );
-                },
+                  ),
+                ),
               ),
             ],
           ),
@@ -939,11 +1748,7 @@ class _SearchTabState extends State<SearchTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
       children: [
-        _buildWireframePills(
-          focused: true,
-          placeholder: 'What service do you need?',
-          onSearchTap: _setFocusSearch,
-        ),
+        _buildTopSearchBar(),
         const SizedBox(height: 18),
         _buildSectionHeader('Recent searches'),
         const SizedBox(height: 10),
@@ -961,7 +1766,7 @@ class _SearchTabState extends State<SearchTab> {
         const SizedBox(height: 18),
         _buildSectionHeader('Popular services'),
         const SizedBox(height: 10),
-        ..._popularServices.map((service) => _buildListChipRow(
+        ..._serviceCatalog.take(8).map((service) => _buildListChipRow(
               title: service.name,
               trailing: service.category,
               onTap: () {
@@ -1034,10 +1839,12 @@ class _SearchTabState extends State<SearchTab> {
                       onTap: () => _selectCategory(category.name),
                     ),
                   ),
-              const SizedBox(height: 14),
-              _buildSectionHeader('Pros near you'),
-              const SizedBox(height: 10),
-              ...matches.take(3).map(_buildMiniProRow),
+              if (matches.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                _buildSectionHeader('Pros near you'),
+                const SizedBox(height: 10),
+                ...matches.take(3).map(_buildMiniProRow),
+              ],
             ],
           ),
         ),
@@ -1046,7 +1853,6 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildResults(List<_BrowsePro> matches) {
-    final filtered = matches.isEmpty ? _pros.take(3).toList() : matches;
     return Column(
       children: [
         _buildTopSearchBar(collapsed: true),
@@ -1054,10 +1860,22 @@ class _SearchTabState extends State<SearchTab> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
             children: [
-              ...filtered.map((pro) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildEnrichedCard(pro),
-                  )),
+              if (_isLoadingResults)
+                const Padding(
+                  padding: EdgeInsets.only(top: 40),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppTheme.orange500),
+                  ),
+                )
+              else if (_resultsError != null)
+                _buildInlineState(_resultsError!)
+              else if (matches.isEmpty)
+                _buildInlineState('No live contractors matched this search.')
+              else
+                ...matches.map((pro) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildEnrichedCard(pro),
+                    )),
             ],
           ),
         ),
@@ -1070,10 +1888,12 @@ class _SearchTabState extends State<SearchTab> {
       children: [
         _buildTopSearchBar(collapsed: true),
         Expanded(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Container(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
+              _buildRail(_railCategoriesForCurrentSelection),
+              const SizedBox(height: 24),
+              Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
@@ -1103,11 +1923,24 @@ class _SearchTabState extends State<SearchTab> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'We do not have vetted pros for this service in 33578 yet.',
+                    Text(
+                      _selectedCategory == 'All'
+                          ? 'We do not have vetted pros for this service in $_selectedZip yet.'
+                          : 'We do not have vetted pros for $_selectedCategory in $_selectedZip yet.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: AppTheme.gray, fontSize: 13),
+                      style: const TextStyle(color: AppTheme.gray, fontSize: 13),
                     ),
+                    if (_resultsError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        _resultsError!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: AppTheme.gray,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: _openAllCategories,
@@ -1124,7 +1957,7 @@ class _SearchTabState extends State<SearchTab> {
                   ],
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ],
@@ -1186,37 +2019,7 @@ class _SearchTabState extends State<SearchTab> {
   }) {
     return Column(
       children: [
-        GestureDetector(
-          onTap: onSearchTap,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: focused ? AppTheme.orangeTint : Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: focused ? AppTheme.orange500 : AppTheme.line,
-                width: 1.4,
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.search, color: AppTheme.gray, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    placeholder,
-                    style: TextStyle(
-                      color: focused ? AppTheme.navy700 : AppTheme.gray,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        _buildSearchInputPill(collapsed: !focused),
         const SizedBox(height: 10),
         _buildLocationPill(),
       ],
@@ -1224,78 +2027,61 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildSearchInputPill({bool collapsed = false}) {
-    return GestureDetector(
-      onTap: _setFocusSearch,
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: collapsed ? 12 : 14),
-        decoration: BoxDecoration(
-          color: _searchFocusNode.hasFocus
-              ? AppTheme.orangeTint
-              : AppTheme.pageAlt,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: _searchFocusNode.hasFocus ? AppTheme.orange500 : AppTheme.line,
-            width: 1.4,
-          ),
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: collapsed ? 12 : 14),
+      decoration: BoxDecoration(
+        color: _searchFocusNode.hasFocus ? AppTheme.orangeTint : AppTheme.pageAlt,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: _searchFocusNode.hasFocus ? AppTheme.orange500 : AppTheme.line,
+          width: 1.4,
         ),
-        child: Row(
-          children: [
-            const Icon(Icons.search, color: AppTheme.gray, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _searchFocusNode.hasFocus
-                  ? TextField(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
-                      textInputAction: TextInputAction.search,
-                      onChanged: (value) {
-                        setState(() {
-                          if (value.trim().isEmpty) {
-                            _committedQuery = null;
-                            _view = _BrowseView.searchFocused;
-                          } else {
-                            _view = _BrowseView.typeAhead;
-                          }
-                        });
-                      },
-                      onSubmitted: _submitSearch,
-                      cursorColor: AppTheme.orange500,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        border: InputBorder.none,
-                        hintText: 'What service do you need?',
-                        hintStyle: const TextStyle(color: AppTheme.gray),
-                      ),
-                      style: const TextStyle(
-                        color: AppTheme.navy700,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    )
-                  : Text(
-                      _searchController.text.isEmpty
-                          ? 'Search a service or pro'
-                          : _searchController.text,
-                      style: TextStyle(
-                        color: _searchController.text.isEmpty
-                            ? AppTheme.gray
-                            : AppTheme.navy700,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-            ),
-            if (_searchController.text.isNotEmpty)
-              InkWell(
-                onTap: _clearSearch,
-                child: const Padding(
-                  padding: EdgeInsets.only(left: 6),
-                  child: Icon(Icons.close, color: AppTheme.gray, size: 18),
-                ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, color: AppTheme.gray, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              textInputAction: TextInputAction.search,
+              onTap: _setFocusSearch,
+              onChanged: (value) {
+                setState(() {
+                  if (value.trim().isEmpty) {
+                    _committedQuery = null;
+                    _view = _BrowseView.searchFocused;
+                  } else {
+                    _view = _BrowseView.typeAhead;
+                  }
+                });
+              },
+              onSubmitted: _submitSearch,
+              cursorColor: AppTheme.orange500,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Search a service or pro',
+                hintStyle: TextStyle(color: AppTheme.gray),
               ),
-          ],
-        ),
+              style: const TextStyle(
+                color: AppTheme.navy700,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            InkWell(
+              onTap: _clearSearch,
+              child: const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Icon(Icons.close, color: AppTheme.gray, size: 18),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1321,13 +2107,10 @@ class _SearchTabState extends State<SearchTab> {
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _locationController.text = controller.text.trim().isEmpty
-                          ? 'Home · 33578'
-                          : controller.text.trim();
-                    });
+                  onPressed: () async {
+                    final raw = controller.text.trim();
                     Navigator.pop(context);
+                    await _applyLocationInput(raw);
                   },
                   child: const Text('Save'),
                 ),
@@ -1377,14 +2160,20 @@ class _SearchTabState extends State<SearchTab> {
     final chips = <Widget>[
       _RailChip(
         label: 'All',
-        meta: '15 pros',
+        meta: _isLoadingCoverage ? '...' : '${_allProsCount} pros',
+        icon: Icons.apps_rounded,
+        accent: AppTheme.orange500,
         selected: _selectedCategory == 'All',
-        onTap: _openAllCategories,
+        onTap: _runAllServicesSearch,
       ),
       ...categories.map(
         (category) => _RailChip(
           label: category.name,
-          meta: '${category.prosCount} pros',
+          meta: _isLoadingCoverage
+              ? '...'
+              : '${_proCountForCategory(category)} pros',
+          icon: category.icon,
+          accent: category.color,
           selected: _selectedCategory == category.name,
           onTap: () => _selectCategory(category.name),
         ),
@@ -1394,6 +2183,7 @@ class _SearchTabState extends State<SearchTab> {
     return SizedBox(
       height: 90,
       child: ListView.separated(
+        controller: _railController,
         scrollDirection: Axis.horizontal,
         itemBuilder: (context, index) => chips[index],
         separatorBuilder: (_, __) => const SizedBox(width: 10),
@@ -1452,6 +2242,26 @@ class _SearchTabState extends State<SearchTab> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineState(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.line),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: AppTheme.gray,
+          fontSize: 13,
         ),
       ),
     );
@@ -1810,8 +2620,8 @@ class _SearchTabState extends State<SearchTab> {
 
   List<_BrowseService> _serviceMatches() {
     final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) return _popularServices;
-    return _popularServices
+    if (query.isEmpty) return _serviceCatalog;
+    return _serviceCatalog
         .where((service) =>
             service.name.toLowerCase().contains(query) ||
             service.category.toLowerCase().contains(query))
@@ -1853,6 +2663,14 @@ class _SearchTabState extends State<SearchTab> {
         return AppTheme.navy700;
     }
   }
+
+  List<String> _servicesForCategory(String categoryName) {
+    return _serviceCatalog
+        .where((service) => service.category == categoryName)
+        .map((service) => service.name)
+        .take(3)
+        .toList();
+  }
 }
 
 class _BrowseCategory {
@@ -1881,7 +2699,11 @@ class _BrowseService {
 }
 
 class _BrowsePro {
+  final String contractorId;
+  final String userId;
+  final String apiSlug;
   final String name;
+  final String? photoUrl;
   final String initials;
   final String category;
   final String trade;
@@ -1900,7 +2722,11 @@ class _BrowsePro {
   final String responseTime;
 
   const _BrowsePro({
+    this.contractorId = '',
+    this.userId = '',
+    this.apiSlug = '',
     required this.name,
+    this.photoUrl,
     required this.initials,
     required this.category,
     required this.trade,
@@ -1919,18 +2745,131 @@ class _BrowsePro {
     required this.responseTime,
   });
 
-  String get slug => name.toLowerCase().replaceAll(' ', '-');
+  factory _BrowsePro.fromApi(
+    Map<String, dynamic> map, {
+    required String category,
+  }) {
+    String read(dynamic value, [String fallback = '']) {
+      final text = value?.toString().trim() ?? '';
+      return text.isEmpty || text.toLowerCase() == 'null' ? fallback : text;
+    }
+
+    double readDouble(dynamic value, [double fallback = 0]) {
+      if (value is num) return value.toDouble();
+      return double.tryParse(read(value)) ?? fallback;
+    }
+
+    int readInt(dynamic value, [int fallback = 0]) {
+      if (value is num) return value.toInt();
+      return int.tryParse(read(value)) ?? fallback;
+    }
+
+    final businessName = read(map['businessName'], 'Service Pro');
+    final initials = businessName
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part[0].toUpperCase())
+        .join();
+    final rating = readDouble(map['verifiedRating'], 0);
+    final reviews = readInt(map['verifiedCount'], 0);
+    final distance = readDouble(map['distanceMiles'], 0);
+    final price = readDouble(map['fromPrice'], 0).round();
+    final completedWorkOrders = readInt(map['completedWorkOrders'], reviews);
+    final nextAvailableRaw = read(map['nextAvailable']);
+    String defaultTradeForCategory(String categoryName) {
+      switch (categoryName.toLowerCase()) {
+        case 'hvac':
+          return 'Heating & Cooling';
+        case 'plumbing':
+          return 'Repair & Install';
+        case 'electrical':
+          return 'Repair & Install';
+        case 'cleaning':
+          return 'Home Cleaning';
+        case 'roofing':
+          return 'Roof Repair';
+        case 'lawn':
+        case 'landscaping':
+          return 'Lawn Care';
+        case 'handyman':
+          return 'Home Repairs';
+        case 'appliances':
+        case 'appliance repair':
+          return 'Repair';
+        default:
+          return 'Service';
+      }
+    }
+
+    String titleCase(String value) {
+      if (value.trim().isEmpty) return value;
+      return value
+          .split(RegExp(r'\s+'))
+          .map((word) => word.isEmpty
+              ? word
+              : '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
+          .join(' ');
+    }
+
+    final trade = read(
+      map['trade'],
+      read(map['specialty'], defaultTradeForCategory(category)),
+    );
+    final priceLabel = titleCase(read(map['fromUnit'], 'Upfront price'));
+    final selectedCertified =
+        map['selectedCertified'] == true || map['isSelectCertified'] == true;
+
+    final ratingLabel = rating >= 4.9
+        ? 'Exceptional'
+        : rating >= 4.7
+            ? 'Great'
+            : rating > 0
+                ? 'Good'
+                : 'New';
+
+    return _BrowsePro(
+      contractorId: read(map['contractorId'], read(map['id'])),
+      userId: read(map['userId']),
+      apiSlug: read(map['slug']),
+      name: businessName,
+      photoUrl: read(map['photoUrl']).isEmpty ? null : read(map['photoUrl']),
+      initials: initials.isEmpty ? 'SP' : initials,
+      category: category,
+      trade: trade,
+      ratingLabel: ratingLabel,
+      rating: rating == 0 ? 5.0 : rating,
+      reviews: reviews,
+      distanceMiles: distance,
+      completedWorkOrders: completedWorkOrders,
+      nextAvailable: nextAvailableRaw.isEmpty ? 'Availability pending' : nextAvailableRaw,
+      price: price,
+      priceLabel: priceLabel,
+      summary: read(map['tagline'], read(map['summary'], 'Vetted local pro')),
+      selectedCertified: selectedCertified,
+      services: const [],
+      mediaCount: 0,
+      responseTime: 'Availability synced from backend',
+    );
+  }
+
+  String get slug =>
+      apiSlug.isNotEmpty ? apiSlug : name.toLowerCase().replaceAll(' ', '-');
 }
 
 class _RailChip extends StatelessWidget {
   final String label;
   final String meta;
+  final IconData icon;
+  final Color accent;
   final bool selected;
   final VoidCallback onTap;
 
   const _RailChip({
     required this.label,
     required this.meta,
+    required this.icon,
+    required this.accent,
     required this.selected,
     required this.onTap,
   });
@@ -1944,18 +2883,33 @@ class _RailChip extends StatelessWidget {
         width: 92,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? AppTheme.navy700 : AppTheme.pageAlt,
+          color: selected
+              ? accent
+              : accent == AppTheme.navy700
+                  ? AppTheme.navyTint
+                  : accent == AppTheme.orange500
+                      ? AppTheme.orangeTint
+                      : AppTheme.tealTint,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: selected ? Colors.transparent : AppTheme.line,
+            color: selected ? Colors.transparent : accent.withOpacity(0.25),
           ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: accent.withOpacity(0.22),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              selected ? Icons.category : Icons.category_outlined,
-              color: selected ? Colors.white : AppTheme.navy700,
+              selected ? icon : icon,
+              color: selected ? Colors.white : accent,
               size: 20,
             ),
             const SizedBox(height: 5),
@@ -1974,12 +2928,115 @@ class _RailChip extends StatelessWidget {
             Text(
               meta,
               style: TextStyle(
-                color: selected ? Colors.white70 : AppTheme.gray,
+                color: selected ? Colors.white.withOpacity(0.82) : AppTheme.gray,
                 fontSize: 9.5,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AllServicesRow extends StatelessWidget {
+  final _BrowseCategory category;
+  final List<String> services;
+  final VoidCallback onTap;
+
+  const _AllServicesRow({
+    required this.category,
+    required this.services,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = category.color == AppTheme.navy700
+        ? AppTheme.navyTint
+        : category.color == AppTheme.orange500
+            ? AppTheme.orangeTint
+            : AppTheme.tealTint;
+    final dimmed = !category.covered;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Opacity(
+        opacity: dimmed ? 0.45 : 1,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppTheme.line),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: tint,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(category.icon, color: category.color, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            category.name,
+                            style: const TextStyle(
+                              color: AppTheme.navy700,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          dimmed ? 'No pros' : '${category.prosCount} pros',
+                          style: TextStyle(
+                            color: dimmed ? AppTheme.gray : category.color,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${category.serviceCount} services',
+                      style: const TextStyle(
+                        color: AppTheme.gray,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      services.isEmpty
+                          ? 'Browse this category'
+                          : services.join(' · '),
+                      style: const TextStyle(
+                        color: AppTheme.ink,
+                        fontSize: 12.5,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right, color: AppTheme.gray),
+            ],
+          ),
         ),
       ),
     );

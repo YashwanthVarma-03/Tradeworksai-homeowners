@@ -4,8 +4,6 @@ import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
-import '../utils/app_error_utils.dart';
-import '../widgets/offline_state.dart';
 import 'book_flow.dart';
 import 'chat_screen.dart';
 
@@ -31,7 +29,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
 
   Future<void> _fetchProfile() async {
     try {
-      final slug = _text(widget.pro['slug'], _text(widget.pro['id']));
+      final slug = _profileSlug(widget.pro);
       if (slug.isEmpty) {
         setState(() => _isLoading = false);
         return;
@@ -47,7 +45,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = AppErrorUtils.friendlyMessage(e);
+        _errorMessage = e.toString();
         _isLoading = false;
       });
     }
@@ -72,6 +70,30 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   num? _number(dynamic value) {
     if (value is num) return value;
     return num.tryParse(_text(value));
+  }
+
+  String _profileSlug(Map<String, dynamic> source) {
+    final direct = _text(
+      source['slug'],
+      _text(source['profileSlug']),
+    );
+    if (direct.isNotEmpty) {
+      return direct;
+    }
+
+    final businessName = _text(
+      source['business_name'],
+      _text(source['businessName']),
+    );
+    if (businessName.isEmpty) {
+      return '';
+    }
+
+    return businessName
+        .toLowerCase()
+        .trim()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
   }
 
   Map<String, dynamic> get _displayPro =>
@@ -271,11 +293,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
           children: [
             _buildProfileAppBar(),
             if (_isLoading) const LinearProgressIndicator(minHeight: 2),
-            if (_errorMessage != null && _profile == null)
-              OfflineState(
-                onRetry: _fetchProfile,
-                message: _errorMessage,
-              ),
+            if (_errorMessage != null && _profile == null) _buildProfileFallbackNote(),
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
@@ -360,6 +378,22 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
             icon: const Icon(Icons.ios_share, color: AppTheme.navy700),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProfileFallbackNote() {
+    return Container(
+      width: double.infinity,
+      color: AppTheme.orangeTint,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: const Text(
+        'Showing saved contractor details while live profile data loads.',
+        style: TextStyle(
+          color: AppTheme.navy700,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

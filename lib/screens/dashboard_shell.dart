@@ -3,12 +3,12 @@ import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
+import 'book_flow.dart';
 import 'home_tab.dart';
 import 'search_tab.dart';
 import 'bookings_tab.dart';
 import 'reward_tab.dart';
 import 'profile_tab.dart';
-import 'booking_stepper.dart';
 import 'category_guides_screen.dart';
 import 'onboarding_slider.dart';
 import '../services/auth_service.dart';
@@ -30,50 +30,53 @@ class _DashboardShellState extends State<DashboardShell> {
     super.initState();
   }
 
-  void _showBookingModal(Map<String, String> pro) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return BookingStepper(
-          proDetails: pro,
-          onBookingComplete: () {
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.white),
-                    SizedBox(width: 8),
-                    Text('Booking confirmed!'),
-                  ],
-                ),
-                backgroundColor: AppTheme.success,
-                duration: const Duration(seconds: 4),
-                action: SnackBarAction(
-                  label: 'View Booking',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      _bookingsInitialSegment = 1;
-                      _currentIndex = 2; // Switch to Bookings Tab
-                      _bookingsTabKey = UniqueKey();
-                    });
-                  },
-                ),
-              ),
-            );
-            // Default behavior if not explicitly clicking 'View Booking':
+  Future<void> _openBookingFlow(
+    Map<String, dynamic> pro, {
+    bool popCurrentRouteOnSuccess = false,
+  }) async {
+    final booked = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BookFlowScreen(pro: Map<String, dynamic>.from(pro)),
+      ),
+    );
+
+    if (booked != true || !mounted) return;
+    if (popCurrentRouteOnSuccess && Navigator.canPop(context)) {
+      Navigator.pop(context, true);
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white),
+            SizedBox(width: 8),
+            Text('Booking confirmed!'),
+          ],
+        ),
+        backgroundColor: AppTheme.success,
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'View Booking',
+          textColor: Colors.white,
+          onPressed: () {
             setState(() {
-              _bookingsInitialSegment = 1; // It goes to scheduled by default too if you want, or stay 0. We'll set 1 for convenience since it's the latest booking.
+              _bookingsInitialSegment = 1;
               _currentIndex = 2;
               _bookingsTabKey = UniqueKey();
             });
           },
-        );
-      },
+        ),
+      ),
     );
+
+    setState(() {
+      _bookingsInitialSegment = 1;
+      _currentIndex = 2;
+      _bookingsTabKey = UniqueKey();
+    });
   }
 
   Future<void> _openCategoryGuides() async {
@@ -117,7 +120,7 @@ class _DashboardShellState extends State<DashboardShell> {
           }
         },
         onJobTap: (job) {
-          _showBookingModal(job);
+          _openBookingFlow(job);
         },
         onInboxTap: () {
           setState(() {
@@ -148,6 +151,7 @@ class _DashboardShellState extends State<DashboardShell> {
             MaterialPageRoute(
               builder: (context) => BrowseScreen(
                 initialCategory: cat,
+                initialAllShowsCategories: cat == 'All',
                 showAppBar: true,
               ),
             ),
@@ -491,12 +495,14 @@ class _DashboardShellState extends State<DashboardShell> {
 class BrowseScreen extends StatelessWidget {
   final String? initialSearchQuery;
   final String? initialCategory;
+  final bool initialAllShowsCategories;
   final bool showAppBar;
 
   const BrowseScreen({
     super.key,
     this.initialSearchQuery,
     this.initialCategory,
+    this.initialAllShowsCategories = false,
     this.showAppBar = false,
   });
 
@@ -530,24 +536,21 @@ class BrowseScreen extends StatelessWidget {
         child: SafeArea(
           top: !showAppBar,
           child: SearchTab(
-            onBookPro: (pro) {
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (context) {
-                  return BookingStepper(
-                    proDetails: pro,
-                    onBookingComplete: () {
-                      Navigator.pop(context);
-                      Navigator.pop(context, true);
-                    },
-                  );
-                },
+            onBookPro: (pro) async {
+              final booked = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      BookFlowScreen(pro: Map<String, dynamic>.from(pro)),
+                ),
               );
+              if (booked == true && context.mounted) {
+                Navigator.pop(context, true);
+              }
             },
             initialSearchQuery: initialSearchQuery,
             initialCategory: initialCategory,
+            initialAllShowsCategories: initialAllShowsCategories,
             showSectionBackButton: !showAppBar,
           ),
         ),

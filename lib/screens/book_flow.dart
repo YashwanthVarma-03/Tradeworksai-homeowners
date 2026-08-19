@@ -8,10 +8,12 @@ import '../services/homeowner_service.dart';
 import '../theme.dart';
 import 'account/manage_addresses.dart';
 import 'booking_success_screen.dart';
+import 'login_page.dart';
 
 enum _BookingPage {
   service,
   details,
+  pricing,
   urgency,
   schedule,
   location,
@@ -31,7 +33,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   late final PageController _pageController;
   final _issueController = TextEditingController();
   final _accessNotesController = TextEditingController();
+  final _onsiteNotesController = TextEditingController();
   final _picker = ImagePicker();
+  final Set<String> _selectedDetailChips = <String>{};
 
   final List<XFile> _selectedPhotos = [];
   final List<dynamic> _addresses = [];
@@ -56,6 +60,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   List<String> _dates = [];
   Map<String, List<Map<String, dynamic>>> _slotsByDate = {};
 
+  String? get _selectedPropertyZip =>
+      _string(_selectedAddressObj?['zip']) ??
+      _string(widget.pro['zip']) ??
+      _string(widget.pro['address_zip']);
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +79,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     _pageController.dispose();
     _issueController.dispose();
     _accessNotesController.dispose();
+    _onsiteNotesController.dispose();
     super.dispose();
   }
 
@@ -165,6 +175,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return <_BookingPage>[
       _BookingPage.service,
       _BookingPage.details,
+      if (_pricingChoices.length > 1) _BookingPage.pricing,
       _BookingPage.urgency,
       _BookingPage.schedule,
       _BookingPage.location,
@@ -182,18 +193,18 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   Future<void> _loadProfileAndAvailability() async {
     try {
-      final slug = _string(widget.pro['slug']) ??
-          _string(widget.pro['id']) ??
-          _string(widget.pro['businessName']) ??
-          _string(widget.pro['business_name']);
+      final slug = _profileSlug();
       if (slug != null && slug.isNotEmpty) {
         final data = await HomeownerService.instance.getContractorProfile(slug);
         if (mounted) {
+          final profile = data['profile'] as Map<String, dynamic>? ?? data;
+          final resolvedId = _extractContractorId(profile) ??
+              _string(widget.pro['contractorId']) ??
+              _string(widget.pro['contractor_id']) ??
+              await _resolveContractorIdForBooking(slug);
           setState(() {
-            _contractorProfile = data['profile'] as Map<String, dynamic>? ?? data;
-            _contractorId = _extractContractorId(_contractorProfile ?? data) ??
-                _string(widget.pro['contractorId']) ??
-                _string(widget.pro['id']);
+            _contractorProfile = profile;
+            _contractorId = resolvedId;
             _issueController.text = _fallbackDescription;
           });
         }
@@ -203,13 +214,98 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       await _refreshAvailability();
     } catch (_) {
       if (mounted) {
+        final fallbackSlug = _profileSlug();
+        final resolvedId = fallbackSlug == null
+            ? null
+            : await _resolveContractorIdForBooking(fallbackSlug);
         setState(() {
           _contractorId = _string(widget.pro['contractorId']) ??
-              _string(widget.pro['id']);
+              _string(widget.pro['contractor_id']) ??
+              resolvedId;
         });
       }
       await _refreshAvailability();
     }
+  }
+
+  Future<String?> _resolveContractorIdForBooking(String slug) async {
+    final normalizedSlug = slug.trim().toLowerCase();
+    if (normalizedSlug.isEmpty) return null;
+
+    final zip = _string(_selectedAddressObj?['zip']) ??
+        _string(widget.pro['zip']) ??
+        _string(widget.pro['address_zip']) ??
+        '33578';
+    final categorySlug = _categorySlugForSearch(
+      _string(widget.pro['category']) ?? _proTrade,
+    );
+    if (categorySlug == null) return null;
+
+    try {
+      final searchResult = await HomeownerService.instance.searchPros(
+        zip: zip,
+        categorySlug: categorySlug,
+      );
+      final results = searchResult['results'] as List? ?? const [];
+      for (final result in results) {
+        if (result is! Map) continue;
+        final map = Map<String, dynamic>.from(result);
+        final resultSlug = _string(map['slug'])?.toLowerCase();
+        final businessSlug = _string(map['businessName'])
+            ?.toLowerCase()
+            .replaceAll(' ', '-');
+        if (resultSlug == normalizedSlug || businessSlug == normalizedSlug) {
+          return _string(map['contractorId']) ??
+              _string(map['contractor_id']) ??
+              _string(map['id']);
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  String? _categorySlugForSearch(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('hvac') ||
+        lower.contains('air') ||
+        lower.contains('cool') ||
+        lower.contains('heat')) {
+      return 'hvac';
+    }
+    if (lower.contains('plumb') ||
+        lower.contains('drain') ||
+        lower.contains('water')) {
+      return 'plumbing';
+    }
+    if (lower.contains('electr') ||
+        lower.contains('outlet') ||
+        lower.contains('fan') ||
+        lower.contains('panel')) {
+      return 'electrical';
+    }
+    if (lower.contains('handyman')) {
+      return 'handyman';
+    }
+    if (lower.contains('roof')) {
+      return 'roofing';
+    }
+    if (lower.contains('lawn') || lower.contains('landscap')) {
+      return 'landscaping';
+    }
+    if (lower.contains('appliance')) {
+      return 'appliance-repair';
+    }
+    if (lower.contains('water treatment')) {
+      return 'water-treatment';
+    }
+    if (lower.contains('window') || lower.contains('door')) {
+      return 'windows-doors';
+    }
+    if (lower.contains('lock')) {
+      return 'locksmith';
+    }
+    return null;
   }
 
   Future<void> _loadAddresses() async {
@@ -221,6 +317,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           _readList(profileResp['profile']?['addresses']) ??
           [];
       if (mounted) {
+        final shouldRefreshAvailability =
+            _contractorId != null && _contractorId!.isNotEmpty;
         setState(() {
           _addresses
             ..clear()
@@ -233,6 +331,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             );
           }
         });
+        if (shouldRefreshAvailability) {
+          await _refreshAvailability();
+        }
       }
     } catch (_) {
       if (mounted) {
@@ -243,7 +344,14 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   Future<void> _refreshAvailability() async {
     final contractorId = _contractorId;
-    if (contractorId == null || contractorId.isEmpty) return;
+    if (contractorId == null || contractorId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _slotsError = 'This contractor is missing booking details right now.';
+        });
+      }
+      return;
+    }
     if (!mounted) return;
 
     setState(() {
@@ -264,6 +372,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         urgency: _selectedUrgency.urgencySlug,
         fromDate: fromDate,
         toDate: toDate,
+        propertyZip: _selectedPropertyZip,
+        durationMinutes: _selectedService.durationMinutes,
+        serviceName: _selectedService.title,
+        serviceCategory: _proTrade,
+        workOrderType: _selectedPricingChoice.workOrderType,
       );
 
       final slotsList = _readList(data['slots']) ?? [];
@@ -284,6 +397,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   void _buildSlots(List<dynamic> slotsList) {
     _dates = [];
     _slotsByDate = {};
+    final seenSlotKeys = <String>{};
 
     for (final slot in slotsList) {
       if (slot is! Map) continue;
@@ -292,7 +406,16 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       try {
         final dt = DateTime.parse(startStr).toLocal();
         final dateKey = _formatDate(dt);
-        final timeLabel = _formatTime(dt);
+        final endStr = _string(slot['end']);
+        final endDt = endStr != null
+            ? DateTime.tryParse(endStr)?.toLocal()
+            : dt.add(const Duration(hours: 2));
+        final timeLabel =
+            _formatArrivalWindow(dt, endDt ?? dt.add(const Duration(hours: 2)));
+        final slotKey = '$dateKey|$timeLabel';
+        if (!seenSlotKeys.add(slotKey)) {
+          continue;
+        }
         _dates.add(dateKey);
         _slotsByDate.putIfAbsent(dateKey, () => []);
         _slotsByDate[dateKey]!.add({
@@ -342,6 +465,13 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     }
   }
 
+  void _dismissWithDrag(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity > 500) {
+      Navigator.maybePop(context);
+    }
+  }
+
   Future<void> _autoAdvance() async {
     await Future.delayed(const Duration(milliseconds: 180));
     if (mounted) {
@@ -356,8 +486,10 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     try {
       final contractorId = _contractorId ??
           _string(widget.pro['contractorId']) ??
-          _string(widget.pro['id']) ??
-          '1';
+          _string(widget.pro['contractor_id']);
+      if (contractorId == null || contractorId.isEmpty) {
+        throw Exception('This contractor is missing booking details right now.');
+      }
       final service = _selectedService;
       final selectedPricing = _selectedPricingChoice;
 
@@ -437,9 +569,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         } catch (_) {}
         _showVerificationDialog();
       } else if (mounted) {
-        final message = HomeownerService.instance.bookingErrorMessage(e);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message), backgroundColor: AppTheme.error),
+          SnackBar(content: Text(errStr), backgroundColor: AppTheme.error),
         );
       }
     } finally {
@@ -590,31 +721,51 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         _goBack();
       },
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.pageAlt,
         body: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(),
-              _buildProgress(),
-              Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: _pages.length,
-                  onPageChanged: (index) {
-                    if (index != _pageIndex) {
-                      setState(() => _pageIndex = index);
-                    }
-                  },
-                  itemBuilder: (context, index) {
-                    return SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                      child: _buildStepFor(_pages[index]),
-                    );
-                  },
+          child: Container(
+            margin: const EdgeInsets.only(top: 8),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                GestureDetector(
+                  onVerticalDragEnd: _dismissWithDrag,
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    margin: const EdgeInsets.only(top: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD4DAE2),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
-              ),
-              _buildFooter(),
-            ],
+                _buildHeader(),
+                _buildProgress(),
+                Expanded(
+                  child: PageView.builder(
+                    controller: _pageController,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _pages.length,
+                    onPageChanged: (index) {
+                      if (index != _pageIndex) {
+                        setState(() => _pageIndex = index);
+                      }
+                    },
+                    itemBuilder: (context, index) {
+                      return SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                        child: _buildStepFor(_pages[index]),
+                      );
+                    },
+                  ),
+                ),
+                _buildFooter(),
+              ],
+            ),
           ),
         ),
       ),
@@ -656,16 +807,20 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: AppTheme.orangeTint,
-              borderRadius: BorderRadius.circular(8),
+          if (_currentPage == _BookingPage.review)
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: AppTheme.orangeTint,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.verified,
+                color: AppTheme.orange500,
+                size: 16,
+              ),
             ),
-            child: const Icon(Icons.verified, color: AppTheme.orange500, size: 16),
-          ),
         ],
       ),
     );
@@ -699,6 +854,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         return _buildServiceStep();
       case _BookingPage.details:
         return _buildDetailsStep();
+      case _BookingPage.pricing:
+        return _buildPricingStep();
       case _BookingPage.urgency:
         return _buildUrgencyStep();
       case _BookingPage.schedule:
@@ -729,6 +886,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                     ? service.subtitle
                     : _fallbackDescription;
               });
+              _refreshAvailability();
               _autoAdvance();
             },
             title: service.title,
@@ -764,11 +922,20 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             children: chips
                 .map(
                   (label) => ChoiceChip(
-                    selected: false,
+                    selected: _selectedDetailChips.contains(label),
                     label: Text(label),
-                    onSelected: (_) {},
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedDetailChips.add(label);
+                        } else {
+                          _selectedDetailChips.remove(label);
+                        }
+                      });
+                    },
                     side: const BorderSide(color: AppTheme.line),
                     backgroundColor: Colors.white,
+                    selectedColor: AppTheme.tealTint,
                     labelStyle: const TextStyle(
                       color: AppTheme.navy700,
                       fontWeight: FontWeight.w600,
@@ -858,6 +1025,32 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     );
   }
 
+  Widget _buildPricingStep() {
+    return _stepShell(
+      title: 'How this is priced',
+      subtitle:
+          'Choose the pricing path for this service. You will always see the full amount or approval rule before you confirm.',
+      child: Column(
+        children: _pricingChoices.asMap().entries.map((entry) {
+          final index = entry.key;
+          final pricing = entry.value;
+          final selected = index == _selectedPricingIndex;
+          return _selectionCard(
+            selected: selected,
+            onTap: () {
+              setState(() => _selectedPricingIndex = index);
+              _autoAdvance();
+            },
+            title: pricing.label,
+            subtitle: pricing.detail,
+            trailing: pricing.priceText,
+            trailingSub: pricing.secondaryText,
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildUrgencyStep() {
     return _stepShell(
       title: 'How soon do you need this?',
@@ -904,7 +1097,28 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               child: Center(child: CircularProgressIndicator(color: AppTheme.orange500)),
             )
           else if (_slotsError != null)
-            Text(_slotsError!, style: const TextStyle(color: AppTheme.error))
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_slotsError!, style: const TextStyle(color: AppTheme.error)),
+                if (_slotsError!.toLowerCase().contains('unauthenticated') &&
+                    !AuthService.instance.isAuthenticated) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const LoginPage()),
+                      );
+                      if (mounted) {
+                        _refreshAvailability();
+                      }
+                    },
+                    child: const Text('Sign in to see live slots'),
+                  ),
+                ],
+              ],
+            )
           else if (_dates.isEmpty)
             const Text('No arrival windows are available.')
           else
@@ -1079,12 +1293,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           const SizedBox(height: 14),
           _fieldLabel('Getting in & on-site notes'),
           _textField(
-            controller: TextEditingController(
-              text: 'Parking, pets, where the unit is...',
-            ),
+            controller: _onsiteNotesController,
             hint: 'Parking, pets, where the unit is...',
             maxLines: 2,
-            readOnly: true,
           ),
           const SizedBox(height: 14),
           _fieldLabel('Photos'),
@@ -1176,6 +1387,12 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             '${_issueController.text.trim().isEmpty ? _selectedService.subtitle : _issueController.text.trim()}${_selectedPhotos.isNotEmpty ? '\n${_selectedPhotos.length} photos' : ''}',
             multiline: true,
           ),
+          if (_onsiteNotesController.text.trim().isNotEmpty)
+            _summaryRow(
+              'Access',
+              _onsiteNotesController.text.trim(),
+              multiline: true,
+            ),
           const SizedBox(height: 14),
           Container(
             width: double.infinity,
@@ -1569,13 +1786,16 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return '${weekdays[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
   }
 
-  String _formatTime(DateTime dt) {
-    var hour = dt.hour;
-    final isPm = hour >= 12;
-    if (hour > 12) hour -= 12;
-    if (hour == 0) hour = 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    return '$hour:$minute ${isPm ? 'PM' : 'AM'}';
+  String _formatArrivalWindow(DateTime start, DateTime end) {
+    String format(DateTime dt) {
+      var hour = dt.hour;
+      final isPm = hour >= 12;
+      if (hour > 12) hour -= 12;
+      if (hour == 0) hour = 12;
+      return '$hour${isPm ? ' PM' : ' AM'}';
+    }
+
+    return '${format(start)}-${format(end)}';
   }
 
   List<String> _detailChipsForTrade(String trade) {
@@ -1603,6 +1823,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           priceLabel: 'From \$149',
           pricingLabel: 'Upfront price',
           pricingDetail: 'Best for routine, pre-priced work.',
+          durationMinutes: 120,
           pricingChoices: [
             _PricingChoice(
               label: 'Upfront price',
@@ -1645,6 +1866,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           priceLabel: 'From \$119',
           pricingLabel: 'Upfront price',
           pricingDetail: 'Common plumbing repairs',
+          durationMinutes: 90,
           pricingChoices: [
             _PricingChoice(
               label: 'Upfront price',
@@ -1677,6 +1899,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         priceLabel: 'From \$${_readInt(widget.pro['fromPrice']) ?? 149}',
         pricingLabel: 'Upfront price',
         pricingDetail: 'See the full price before you confirm.',
+        durationMinutes: 120,
         pricingChoices: [
           _PricingChoice(
             label: 'Upfront price',
@@ -1715,14 +1938,35 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     for (final key in const [
       'contractorId',
       'contractor_id',
-      'id',
-      'userId',
-      'user_id',
+      'proId',
+      'pro_id',
+      'assignedContractorId',
+      'assigned_contractor_id',
     ]) {
       final value = _string(source[key]);
       if (value != null) return value;
     }
     return null;
+  }
+
+  String? _profileSlug() {
+    final direct = _string(widget.pro['slug']) ?? _string(widget.pro['profileSlug']);
+    if (direct != null && direct.isNotEmpty) {
+      return direct;
+    }
+
+    final businessName =
+        _string(widget.pro['businessName']) ?? _string(widget.pro['business_name']);
+    if (businessName == null || businessName.isEmpty) {
+      return null;
+    }
+
+    final normalized = businessName
+        .toLowerCase()
+        .trim()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    return normalized.isEmpty ? null : normalized;
   }
 }
 
@@ -1733,6 +1977,7 @@ class _ServiceOption {
   final String priceLabel;
   final String pricingLabel;
   final String pricingDetail;
+  final int? durationMinutes;
   final List<_PricingChoice> pricingChoices;
 
   const _ServiceOption({
@@ -1742,6 +1987,7 @@ class _ServiceOption {
     required this.priceLabel,
     required this.pricingLabel,
     required this.pricingDetail,
+    required this.durationMinutes,
     required this.pricingChoices,
   });
 
@@ -1755,6 +2001,7 @@ class _ServiceOption {
         priceLabel: 'From \$149',
         pricingLabel: 'Upfront price',
         pricingDetail: 'See the price before you book.',
+        durationMinutes: 120,
         pricingChoices: const [
           _PricingChoice(
             label: 'Upfront price',
@@ -1775,6 +2022,7 @@ class _ServiceOption {
       priceLabel: 'From \$129',
       pricingLabel: 'Upfront price',
       pricingDetail: 'See the price before you book.',
+      durationMinutes: 120,
       pricingChoices: const [
         _PricingChoice(
           label: 'Upfront price',
@@ -1815,6 +2063,9 @@ class _ServiceOption {
 
     final price = _parseInt(map['fromPrice'] ?? map['price'] ?? map['amount']);
     final workOrderType = _string(map['workOrderType']) ?? 'rate_card';
+    final durationMinutes = _parseInt(
+      map['duration_minutes'] ?? map['durationMinutes'] ?? map['duration'],
+    );
     final title = _string(map['name']) ??
         _string(map['title']) ??
         _string(map['service_name']) ??
@@ -1869,6 +2120,7 @@ class _ServiceOption {
       pricingDetail: _string(map['pricing_detail']) ??
           _string(map['pricingDetail']) ??
           choices.first.detail,
+      durationMinutes: durationMinutes,
       pricingChoices: choices,
     );
   }

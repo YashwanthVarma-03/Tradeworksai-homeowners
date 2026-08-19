@@ -1,15 +1,40 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'api_config.dart';
 import 'auth_service.dart';
-import '../utils/app_error_utils.dart';
 
 class HomeownerService {
   static final HomeownerService instance = HomeownerService._internal();
   HomeownerService._internal();
 
-  static const String baseUrl =
-      'https://us-central1-tradeworksai-senthil-dev-env.cloudfunctions.net/';
+  static const String _workOrdersListPath = 'homeowner/work-orders-list';
+  static const String _legacyWorkOrdersListPath =
+      'homeowner-work-orders-list-v2-supabase';
+  static const String _workOrdersActionPath = 'homeowner/work-orders-action';
+  static const String _legacyWorkOrdersActionPath =
+      'homeowner-work-orders-action-v2-supabase';
+  static const String _bookingCommitPath = 'homeowner/booking-commit';
+  static const String _legacyBookingCommitPath = 'booking-commit-v2-supabase';
+  static const String _reviewActionPath = 'homeowner/review-action';
+  static const String _legacyReviewActionPath =
+      'homeowner-review-action-v2-supabase';
+  static const String _profilePath = 'homeowner/profile';
+  static const String _legacyProfilePath = 'homeowner-profile-v2-supabase';
+  static const String _rewardsPath = 'homeowner/rewards';
+  static const String _legacyRewardsPath = 'homeowner-rewards-v2-supabase';
+  static const String _verifyPath = 'homeowner/verify';
+  static const String _legacyVerifyPath = 'homeowner-verify-v2-supabase';
+  static const String _contractorProfilePath = 'public/contractor-profile-get';
+  static const String _legacyContractorProfilePath =
+      'public-contractor-profile-get-v2-supabase';
+  static const String _contractorSearchPath = 'public/contractor-search';
+  static const String _legacyContractorSearchPath =
+      'public-contractor-search-v2-supabase';
+  static const String _zipCoveragePath = 'public/zip-coverage-get';
+  static const String _availabilityPath = 'contractor/availability-get';
+  static const String _legacyAvailabilityPath =
+      'contractor-availability-get-v2-supabase';
 
   // Mock State
   final List<Map<String, dynamic>> _mockWorkOrders = [];
@@ -121,14 +146,6 @@ class HomeownerService {
     return text;
   }
 
-  String bookingErrorMessage(Object error) {
-    final message = AppErrorUtils.friendlyMessage(error).trim();
-    if (message.contains('booking_cap')) {
-      return 'You already have the maximum number of open bookings. Please complete or cancel one before placing another booking.';
-    }
-    return message.isEmpty ? 'Booking failed. Please try again.' : message;
-  }
-
   String? _extractContractorIdFromNode(dynamic node) {
     if (node == null) return null;
     if (node is Map) {
@@ -140,10 +157,6 @@ class HomeownerService {
         'assigned_contractor_id',
         'proId',
         'pro_id',
-        'contractorUserId',
-        'contractor_user_id',
-        'proUserId',
-        'pro_user_id',
       ]) {
         final value = _readRawString(map[key]);
         if (value != null) {
@@ -164,8 +177,8 @@ class HomeownerService {
             'contractorId',
             'contractor_id',
             'id',
-            'userId',
-            'user_id',
+            'proId',
+            'pro_id',
           ]) {
             final nestedValue = _readRawString(nestedMap[nestedKey]);
             if (nestedValue != null) {
@@ -220,6 +233,158 @@ class HomeownerService {
       }
     }
     return null;
+  }
+
+  List<Map<String, dynamic>> _extractAvailabilitySlots(
+    Map<String, dynamic> data,
+  ) {
+    List<Map<String, dynamic>> asMaps(dynamic value) {
+      if (value is List) {
+        return value
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+      }
+      return const [];
+    }
+
+    String? readSlotValue(Map<String, dynamic> slot, List<String> keys) {
+      for (final key in keys) {
+        final value = _readRawString(slot[key]);
+        if (value != null) {
+          return value;
+        }
+      }
+      return null;
+    }
+
+    String? joinDateAndTime(String? date, String? time) {
+      if (date == null || time == null) {
+        return null;
+      }
+      final cleanedTime = time.contains('T') ? time.split('T').last : time;
+      if (cleanedTime.isEmpty) {
+        return null;
+      }
+      return '${date}T$cleanedTime';
+    }
+
+    final directSlots = [
+      ...asMaps(data['slots']),
+      ...asMaps(data['availability']),
+      ...asMaps(data['windows']),
+      ...asMaps(data['arrivalWindows']),
+      ...asMaps(data['arrival_windows']),
+      ...asMaps(data['results']),
+    ];
+    if (directSlots.isNotEmpty) {
+      return directSlots
+          .map((slot) {
+            final date = readSlotValue(
+              slot,
+              const ['date', 'day', 'dateKey'],
+            );
+            final start = readSlotValue(slot, const [
+                  'start',
+                  'startsAt',
+                  'starts_at',
+                  'start_at',
+                  'windowStart',
+                  'window_start',
+                  'startLocal',
+                  'start_local',
+                ]) ??
+                joinDateAndTime(
+                  date,
+                  readSlotValue(slot, const ['startTime', 'start_time']),
+                );
+            final end = readSlotValue(slot, const [
+                  'end',
+                  'endsAt',
+                  'ends_at',
+                  'end_at',
+                  'windowEnd',
+                  'window_end',
+                  'endLocal',
+                  'end_local',
+                ]) ??
+                joinDateAndTime(
+                  date,
+                  readSlotValue(slot, const ['endTime', 'end_time']),
+                );
+            return {
+              ...slot,
+              if (start != null) 'start': start,
+              if (end != null) 'end': end,
+            };
+          })
+          .where((slot) => _readRawString(slot['start']) != null)
+          .toList();
+    }
+
+    final dayGroups = [
+      ...asMaps(data['days']),
+      ...asMaps(data['availabilityDays']),
+      ...asMaps(data['calendar']?['days']),
+    ];
+    if (dayGroups.isEmpty) {
+      return const [];
+    }
+
+    final flattened = <Map<String, dynamic>>[];
+    for (final day in dayGroups) {
+      final date = _readRawString(day['date']) ??
+          _readRawString(day['day']) ??
+          _readRawString(day['dateKey']);
+      final windows = [
+        ...asMaps(day['slots']),
+        ...asMaps(day['windows']),
+        ...asMaps(day['availability']),
+        ...asMaps(day['arrivalWindows']),
+        ...asMaps(day['arrival_windows']),
+        ...asMaps(day['timeWindows']),
+        ...asMaps(day['time_windows']),
+      ];
+      for (final window in windows) {
+        final start = readSlotValue(window, const [
+              'start',
+              'startsAt',
+              'starts_at',
+              'start_at',
+              'windowStart',
+              'window_start',
+              'startLocal',
+              'start_local',
+            ]) ??
+            joinDateAndTime(
+              date,
+              readSlotValue(window, const ['startTime', 'start_time']),
+            );
+        final end = readSlotValue(window, const [
+              'end',
+              'endsAt',
+              'ends_at',
+              'end_at',
+              'windowEnd',
+              'window_end',
+              'endLocal',
+              'end_local',
+            ]) ??
+            joinDateAndTime(
+              date,
+              readSlotValue(window, const ['endTime', 'end_time']),
+            );
+        if (start == null) {
+          continue;
+        }
+        flattened.add({
+          ...window,
+          'start': start,
+          if (end != null) 'end': end,
+        });
+      }
+    }
+    return flattened;
   }
 
   Future<String?> resolveContractorIdForWorkOrder(int workOrderId) async {
@@ -297,7 +462,6 @@ class HomeownerService {
                   );
                   final results = searchResult['results'] as List?;
                   if (results != null) {
-                    bool found = false;
                     for (final res in results) {
                       if (res is Map) {
                         final resSlug = _readRawString(res['slug']);
@@ -323,7 +487,8 @@ class HomeownerService {
   }
 
   String? get _userId => AuthService.instance.userId;
-  bool get _isDemo => AuthService.instance.isTesting;
+  // Demo-mode fallbacks are disabled so homeowner flows only use backend data.
+  bool get _isDemo => false;
 
   void _invalidateProfileCache() {
     _cachedProfile = null;
@@ -335,15 +500,39 @@ class HomeownerService {
     _cachedWorkOrdersAt = null;
   }
 
+  Future<Map<String, String>> _jsonHeaders() async {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+    };
+    final token = AuthService.instance.accessToken;
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
+
+  Future<http.Response> _postRaw(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    final headers = await _jsonHeaders();
+    return http.post(
+      Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+      headers: headers,
+      body: jsonEncode(body),
+    );
+  }
+
   Future<Map<String, dynamic>> _post(
-      String endpoint, Map<String, dynamic> body) async {
-    final url = Uri.parse('$baseUrl$endpoint');
+    String endpoint,
+    Map<String, dynamic> body, {
+    String? fallbackEndpoint,
+  }) async {
     try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
+      var response = await _postRaw(endpoint, body);
+      if (response.statusCode == 404 && fallbackEndpoint != null) {
+        response = await _postRaw(fallbackEndpoint, body);
+      }
 
       if (response.body.isEmpty) {
         throw Exception('Received empty response from server.');
@@ -352,6 +541,14 @@ class HomeownerService {
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>) {
         throw Exception('Invalid response format.');
+      }
+
+      if (response.statusCode >= 400) {
+        final error = data['error'] ??
+            data['reason'] ??
+            data['message'] ??
+            'Request failed (${response.statusCode})';
+        throw Exception(error);
       }
 
       final success = (data['success'] != false && data['ok'] != false);
@@ -369,7 +566,7 @@ class HomeownerService {
       if (kDebugMode) {
         print('HomeownerService POST Error on $endpoint: $e');
       }
-      throw Exception(AppErrorUtils.friendlyMessage(e));
+      rethrow;
     }
   }
 
@@ -397,7 +594,11 @@ class HomeownerService {
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
     final future =
-        _post('homeowner-work-orders-list-v2-supabase', {'userId': uid})
+        _post(
+          _workOrdersListPath,
+          {'userId': uid},
+          fallbackEndpoint: _legacyWorkOrdersListPath,
+        )
             .then(_withNormalizedTabs);
     _workOrdersInFlight = future;
     try {
@@ -461,7 +662,11 @@ class HomeownerService {
       ...?extra,
     };
     final result =
-        await _post('homeowner-work-orders-action-v2-supabase', body);
+        await _post(
+          _workOrdersActionPath,
+          body,
+          fallbackEndpoint: _legacyWorkOrdersActionPath,
+        );
     _invalidateWorkOrderCache();
     return result;
   }
@@ -514,7 +719,11 @@ class HomeownerService {
         'reason': reason,
       };
     }
-    final result = await _post('booking-commit-v2-supabase', body);
+    final result = await _post(
+      _bookingCommitPath,
+      body,
+      fallbackEndpoint: _legacyBookingCommitPath,
+    );
     _invalidateWorkOrderCache();
     return result;
   }
@@ -550,7 +759,11 @@ class HomeownerService {
       'reviewText': text,
       if (displayName != null) 'displayName': displayName,
     };
-    final result = await _post('homeowner-review-action-v2-supabase', body);
+    final result = await _post(
+      _reviewActionPath,
+      body,
+      fallbackEndpoint: _legacyReviewActionPath,
+    );
     _invalidateWorkOrderCache();
     return result;
   }
@@ -570,18 +783,20 @@ class HomeownerService {
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
-    return await _post('homeowner-review-action-v2-supabase', {
-      'action': 'get_review_eligibility',
-      'workOrderId': workOrderId,
-      'work_order_id': workOrderId,
-      'requesterUserId': uid,
-      'requester_user_id': uid,
-    });
+    return await _post(
+      _reviewActionPath,
+      {
+        'action': 'get_review_eligibility',
+        'workOrderId': workOrderId,
+        'work_order_id': workOrderId,
+        'requesterUserId': uid,
+        'requester_user_id': uid,
+      },
+      fallbackEndpoint: _legacyReviewActionPath,
+    );
   }
 
   Future<Map<String, dynamic>> getContractorProfile(String slug) async {
-    final url =
-        Uri.parse('${baseUrl}public-contractor-profile-get-v2-supabase');
     try {
       final cached = _contractorProfileCache[slug];
       final cachedAt = _contractorProfileCacheAt[slug];
@@ -594,18 +809,22 @@ class HomeownerService {
       final inFlight = _contractorProfileInFlight[slug];
       if (inFlight != null) return inFlight;
 
-      final future = http
-          .post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'slug': slug}),
-      )
-          .then((response) {
+      final future = () async {
+        var response = await _postRaw(_contractorProfilePath, {'slug': slug});
+        if (response.statusCode == 404) {
+          response =
+              await _postRaw(_legacyContractorProfilePath, {'slug': slug});
+        }
         if (response.body.isEmpty) throw Exception('Empty response');
         final data = jsonDecode(response.body);
         if (data is! Map<String, dynamic>) throw Exception('Invalid response');
+        if (data['success'] == false || data['ok'] == false) {
+          throw Exception(
+            data['error'] ?? data['reason'] ?? data['message'] ?? 'Failed to load profile.',
+          );
+        }
         return data;
-      });
+      }();
       _contractorProfileInFlight[slug] = future;
       final data = await future;
       _contractorProfileCache[slug] = data;
@@ -627,6 +846,11 @@ class HomeownerService {
     String urgency = 'standard',
     required String fromDate,
     required String toDate,
+    String? propertyZip,
+    int? durationMinutes,
+    String? serviceName,
+    String? serviceCategory,
+    String? workOrderType,
   }) async {
     if (_isDemo) {
       await Future.delayed(const Duration(milliseconds: 100));
@@ -651,27 +875,44 @@ class HomeownerService {
       return {'success': true, 'slots': slots};
     }
 
-    final url = Uri.parse('${baseUrl}contractor-availability-get-v2-supabase');
     try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'contractorId': contractorId,
-          'urgency': urgency,
-          'fromDate': fromDate,
-          'toDate': toDate,
-        }),
-      );
+      final payload = {
+        'contractorId': contractorId,
+        'urgency': urgency,
+        'fromDate': fromDate,
+        'toDate': toDate,
+        if (propertyZip != null && propertyZip.isNotEmpty)
+          'propertyZip': propertyZip,
+        if (durationMinutes != null && durationMinutes > 0)
+          'durationMinutes': durationMinutes,
+        if (serviceName != null && serviceName.isNotEmpty)
+          'serviceName': serviceName,
+        if (serviceCategory != null && serviceCategory.isNotEmpty)
+          'serviceCategory': serviceCategory,
+        if (workOrderType != null && workOrderType.isNotEmpty)
+          'workOrderType': workOrderType,
+      };
+      var response = await _postRaw(_availabilityPath, payload);
+      if (response.statusCode == 404) {
+        response = await _postRaw(_legacyAvailabilityPath, payload);
+      }
       if (response.body.isEmpty) throw Exception('Empty response');
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>) throw Exception('Invalid response');
-      return data;
+      if (data['success'] == false || data['ok'] == false) {
+        throw Exception(
+          data['error'] ?? data['reason'] ?? data['message'] ?? "Couldn't load availability.",
+        );
+      }
+      return {
+        ...data,
+        'slots': _extractAvailabilitySlots(data),
+      };
     } catch (e) {
       if (kDebugMode) {
         print('Error fetching contractor availability: $e');
       }
-      throw Exception("Couldn\'t load availability.");
+      rethrow;
     }
   }
 
@@ -689,7 +930,11 @@ class HomeownerService {
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
-    final resp = await _post('homeowner-rewards-v2-supabase', {'userId': uid});
+    final resp = await _post(
+      _rewardsPath,
+      {'userId': uid},
+      fallbackEndpoint: _legacyRewardsPath,
+    );
     return resp;
   }
 
@@ -725,10 +970,14 @@ class HomeownerService {
 
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
-    final future = _post('homeowner-profile-v2-supabase', {
-      'action': 'get',
-      'userId': uid,
-    });
+    final future = _post(
+      _profilePath,
+      {
+        'action': 'get',
+        'userId': uid,
+      },
+      fallbackEndpoint: _legacyProfilePath,
+    );
     _profileInFlight = future;
     try {
       final resp = await future;
@@ -757,17 +1006,21 @@ class HomeownerService {
 
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
-    final result = await _post('homeowner-profile-v2-supabase', {
-      'action': 'update_profile',
-      'userId': uid,
-      'givenName': givenName,
-      'familyName': familyName,
-      'phone': phone,
-      'email': email,
-      'userName': userName,
-      'preferredContact': preferredContact,
-      'marketingConsent': marketingConsent,
-    });
+    final result = await _post(
+      _profilePath,
+      {
+        'action': 'update_profile',
+        'userId': uid,
+        'givenName': givenName,
+        'familyName': familyName,
+        'phone': phone,
+        'email': email,
+        'userName': userName,
+        'preferredContact': preferredContact,
+        'marketingConsent': marketingConsent,
+      },
+      fallbackEndpoint: _legacyProfilePath,
+    );
     _invalidateProfileCache();
     return result;
   }
@@ -812,7 +1065,8 @@ class HomeownerService {
       if (address['unit'] != null) 'unit': address['unit'],
     };
 
-    final result = await _post('homeowner-profile-v2-supabase', body);
+    final result =
+        await _post(_profilePath, body, fallbackEndpoint: _legacyProfilePath);
     if (result['success'] == true && result['addresses'] != null) {
       _mockAddresses = result['addresses'];
     }
@@ -858,7 +1112,8 @@ class HomeownerService {
       if (address['unit'] != null) 'unit': address['unit'],
     };
 
-    final result = await _post('homeowner-profile-v2-supabase', body);
+    final result =
+        await _post(_profilePath, body, fallbackEndpoint: _legacyProfilePath);
     if (result['success'] == true && result['addresses'] != null) {
       _mockAddresses = result['addresses'];
     }
@@ -880,11 +1135,15 @@ class HomeownerService {
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
-    final result = await _post('homeowner-profile-v2-supabase', {
-      'action': 'set_default_address',
-      'userId': uid,
-      'addressId': addressId,
-    });
+    final result = await _post(
+      _profilePath,
+      {
+        'action': 'set_default_address',
+        'userId': uid,
+        'addressId': addressId,
+      },
+      fallbackEndpoint: _legacyProfilePath,
+    );
     if (result['success'] == true && result['addresses'] != null) {
       _mockAddresses = result['addresses'];
     }
@@ -902,11 +1161,15 @@ class HomeownerService {
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
-    final result = await _post('homeowner-profile-v2-supabase', {
-      'action': 'remove_address',
-      'userId': uid,
-      'addressId': addressId,
-    });
+    final result = await _post(
+      _profilePath,
+      {
+        'action': 'remove_address',
+        'userId': uid,
+        'addressId': addressId,
+      },
+      fallbackEndpoint: _legacyProfilePath,
+    );
     if (result['success'] == true && result['addresses'] != null) {
       _mockAddresses = result['addresses'];
     }
@@ -973,22 +1236,21 @@ class HomeownerService {
       'booking': bookingPayload,
       if (startsAt != null) 'startsAt': startsAt,
       if (endsAt != null) 'endsAt': endsAt,
-      'propertyZip': booking['address_zip'],
+      if (action == 'commit' && booking['address_zip'] != null)
+        'propertyZip': booking['address_zip'],
     };
 
-    final url = Uri.parse('${baseUrl}booking-commit-v2-supabase');
     try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
+      var response = await _postRaw(_bookingCommitPath, body);
+      if (response.statusCode == 404) {
+        response = await _postRaw(_legacyBookingCommitPath, body);
+      }
       if (response.body.isEmpty) throw Exception('Empty response');
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>)
         throw Exception('Invalid response format');
 
-      if (data['ok'] != true) {
+      if (response.statusCode >= 400 || data['ok'] == false || data['success'] == false) {
         throw Exception(
             data['reason'] ?? data['error'] ?? 'Booking commit failed');
       }
@@ -1008,20 +1270,24 @@ class HomeownerService {
     required String categorySlug,
     String urgency = 'standard',
   }) async {
-    final url = Uri.parse('${baseUrl}public-contractor-search-v2-supabase');
     try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'zip': zip,
-          'categorySlug': categorySlug,
-          'urgency': urgency,
-        }),
-      );
+      final payload = {
+        'zip': zip,
+        'categorySlug': categorySlug,
+        'urgency': urgency,
+      };
+      var response = await _postRaw(_contractorSearchPath, payload);
+      if (response.statusCode == 404) {
+        response = await _postRaw(_legacyContractorSearchPath, payload);
+      }
       if (response.body.isEmpty) throw Exception('Empty response');
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>) throw Exception('Invalid response');
+      if (data['success'] == false && data['covered'] != false) {
+        throw Exception(
+          data['error'] ?? data['reason'] ?? data['message'] ?? 'Search failed.',
+        );
+      }
       return data;
     } catch (e) {
       if (kDebugMode) {
@@ -1031,45 +1297,64 @@ class HomeownerService {
     }
   }
 
+  Future<Map<String, dynamic>> getZipCoverage({
+    required String zip,
+  }) async {
+    try {
+      final response = await _postRaw(_zipCoveragePath, {'zip': zip});
+      if (response.body.isEmpty) {
+        throw Exception('Empty response');
+      }
+      final data = jsonDecode(response.body);
+      if (data is! Map<String, dynamic>) {
+        throw Exception('Invalid response');
+      }
+      if (response.statusCode >= 400 || data['success'] == false) {
+        throw Exception(
+          data['error'] ?? data['reason'] ?? data['message'] ?? 'ZIP coverage lookup failed.',
+        );
+      }
+      return data;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading ZIP coverage: $e');
+      }
+      throw Exception('ZIP coverage lookup failed.');
+    }
+  }
+
   // Email verification endpoints
   Future<Map<String, dynamic>> sendVerificationEmail(String email) async {
-    return await _post('homeowner-verify-v2-supabase', {
-      'action': 'send',
-      'email': email,
-    });
+    return await _post(
+      _verifyPath,
+      {
+        'action': 'send',
+        'email': email,
+      },
+      fallbackEndpoint: _legacyVerifyPath,
+    );
   }
 
   Future<Map<String, dynamic>> confirmVerification(String token) async {
     final uid = _userId;
-    return await _post('homeowner-verify-v2-supabase', {
-      'action': 'confirm',
-      if (uid != null) 'userId': uid,
-      'token': token,
-    });
+    return await _post(
+      _verifyPath,
+      {
+        'action': 'confirm',
+        if (uid != null) 'userId': uid,
+        'token': token,
+      },
+      fallbackEndpoint: _legacyVerifyPath,
+    );
   }
 
   // ALIASES for mocked screens
   Future<Map<String, dynamic>> getProfile() => fetchProfile();
 
   Future<void> createWorkOrder(Map<String, dynamic> reqBody) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    _mockIdCounter++;
-    _mockWorkOrders.add({
-      'id': _mockIdCounter,
-      'status': 'active',
-      'workOrderType': reqBody['workOrderType'] ?? 'Flat/Hourly',
-      'createdAt': DateTime.now().toIso8601String(),
-      'startsAt': reqBody['startsAt'] ??
-          DateTime.now().add(const Duration(days: 1)).toIso8601String(),
-      'description': reqBody['issueDescription'] ?? 'New Service Request',
-      'address': reqBody['address'] ?? {},
-      'contractor': {
-        'id': reqBody['proId'] ?? '1',
-        'businessName': 'Mocked Contractor',
-        'profilePhotoUrl': null,
-      },
-    });
-    _invalidateWorkOrderCache();
+    throw UnsupportedError(
+      'createWorkOrder is not connected to the live backend. Use commitBooking instead.',
+    );
   }
 
   Future<Map<String, dynamic>?> getReview(int workOrderId) async {

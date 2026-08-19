@@ -1,8 +1,10 @@
-import 'dart:convert';
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'stream_service.dart';
 
 class AuthService extends ChangeNotifier {
@@ -11,9 +13,6 @@ class AuthService extends ChangeNotifier {
   AuthService._internal();
 
   bool isTesting = false;
-
-  static const String baseUrl =
-      'https://us-central1-tradeworksai-senthil-dev-env.cloudfunctions.net/';
   static const String googleClientId =
       '71668222585-50stjb9s6ias4g5su87fsmdiaikh4iec.apps.googleusercontent.com';
 
@@ -23,8 +22,8 @@ class AuthService extends ChangeNotifier {
   );
 
   SharedPreferences? _prefs;
+  StreamSubscription<AuthState>? _authSubscription;
 
-  // Cached state variables
   bool _isAuthenticated = false;
   String? _userId;
   String? _userEmail;
@@ -33,13 +32,13 @@ class AuthService extends ChangeNotifier {
   String? _familyName;
   String? _pictureUrl;
   String? _googleSub;
+  String? _accessToken;
   String? _roleAssigned;
   String? _agentId;
   String? _assignedPhoneNumber;
   bool? _textMessage;
   bool? _whatsapp;
 
-  // Getters
   bool get isAuthenticated => _isAuthenticated;
   String? get userId => _userId;
   String? get userEmail => _userEmail;
@@ -48,186 +47,95 @@ class AuthService extends ChangeNotifier {
   String? get familyName => _familyName;
   String? get pictureUrl => _pictureUrl;
   String? get googleSub => _googleSub;
+  String? get accessToken => _accessToken;
   String? get roleAssigned => _roleAssigned;
   String? get agentId => _agentId;
   String? get assignedPhoneNumber => _assignedPhoneNumber;
   bool? get textMessage => _textMessage;
   bool? get whatsapp => _whatsapp;
 
-  // Initialize and load session from SharedPreferences
+  SupabaseClient get _client => Supabase.instance.client;
+
   Future<void> loadSession() async {
     _prefs = await SharedPreferences.getInstance();
-
-    _isAuthenticated = _prefs?.getBool('isAuthenticated') ?? false;
-    _userId = _prefs?.getString('userId');
-    _userEmail = _prefs?.getString('userEmail');
-    _userName = _prefs?.getString('userName');
-    _givenName = _prefs?.getString('givenName');
-    _familyName = _prefs?.getString('familyName');
-    _pictureUrl = _prefs?.getString('pictureUrl');
-    _googleSub = _prefs?.getString('google_sub');
-    _roleAssigned = _prefs?.getString('role_assigned');
-    _agentId = _prefs?.getString('agentId');
-    _assignedPhoneNumber = _prefs?.getString('assigned_phone_number');
-    _textMessage = _prefs?.getBool('text_message');
-    _whatsapp = _prefs?.getBool('whatsapp');
-
-    notifyListeners();
+    await _syncFromSession(_client.auth.currentSession);
+    _bindAuthListener();
   }
 
-  // Handle common HTTP POST requests with standard headers
-  Future<Map<String, dynamic>> _post(
-      String path, Map<String, dynamic> body) async {
-    final url = Uri.parse('$baseUrl$path');
-    try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
-
-      if (response.body.isEmpty) {
-        throw Exception('Received empty response from server.');
+  void _bindAuthListener() {
+    _authSubscription ??= _client.auth.onAuthStateChange.listen((state) async {
+      if (state.event == AuthChangeEvent.signedOut || state.session == null) {
+        await _clearSession(notify: true);
+        return;
       }
-
-      final data = jsonDecode(response.body);
-      if (data is! Map<String, dynamic>) {
-        throw Exception('Invalid response format.');
-      }
-
-      return data;
-    } catch (e) {
-      if (kDebugMode) {
-        print('Auth POST Error on $path: $e');
-      }
-      throw Exception(
-          'Network error. Please check your connection and try again.');
-    }
+      await _syncFromSession(state.session);
+    });
   }
 
-  // Sign up — `/email-signup-v2-supabase`
   Future<void> signUp({
     required String name,
     required String email,
     required String password,
   }) async {
-    final response = await _post('email-signup-v2-supabase', {
-      'name': name,
-      'email': email,
-      'password': password,
-    });
+    final response = await _client.auth.signUp(
+      email: email,
+      password: password,
+      data: {
+        'name': name,
+        'full_name': name,
+      },
+    );
 
-    if (response['success'] != true) {
-      throw Exception(response['error'] ?? 'Sign up failed.');
+    if (response.user == null) {
+      throw Exception('Sign up failed.');
     }
 
-    String? id = response['userId']?.toString() ?? response['id']?.toString();
+    if (response.session != null) {
+      await _syncFromSession(response.session);
+      return;
+    }
 
-    // Gotcha fallback (Section 4.1 of guide):
-    // If signup success but userId is omitted, immediately perform a login call.
-    if (id == null) {
-      await login(email: email, password: password);
-    } else {
-      // Save session details from signup response
-      await _saveSession(
-        userId: id,
-        email: email,
-        name: response['name'] ?? name,
-        agentId: response['agentId']?.toString(),
-        roleAssigned: 'homeowner', // Default role for signup
+    final signInResponse = await _client.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
+    if (signInResponse.session == null) {
+      throw Exception(
+        'Account created, but no session was returned. Please verify your email and log in.',
       );
     }
+    await _syncFromSession(signInResponse.session);
   }
 
-  // Log in — `/email-signin-v2-supabase`
   Future<void> login({
     required String email,
     required String password,
   }) async {
-    final response = await _post('email-signin-v2-supabase', {
-      'email': email,
-      'password': password,
-    });
-
-    if (response['success'] != true) {
-      throw Exception(response['error'] ?? 'Invalid email or password.');
-    }
-
-    // Resolve userId defensively (Section 4.2 of guide)
-    final id = response['userId']?.toString() ??
-        response['id']?.toString() ??
-        response['data']?['userId']?.toString();
-
-    if (id == null) {
-      throw Exception('User ID could not be resolved from auth response.');
-    }
-
-    // Resolve roles
-    String role = 'homeowner';
-    final roles = response['role_assigned'];
-    if (roles is List && roles.isNotEmpty) {
-      role = roles.first.toString();
-    } else if (roles != null) {
-      role = roles.toString();
-    }
-
-    await _saveSession(
-      userId: id,
-      email: response['email'] ?? email,
-      name: response['name'] ?? response['given_name'] ?? 'Homeowner',
-      givenName: response['given_name'],
-      familyName: response['family_name'],
-      pictureUrl: response['picture_url'],
-      googleSub: response['google_sub']?.toString(),
-      roleAssigned: role,
-      agentId: response['agentId']?.toString(),
-      assignedPhoneNumber: response['assigned_phone_number']?.toString(),
-      textMessage: response['text_message'] == true,
-      whatsapp: response['whatsapp'] == true,
+    final response = await _client.auth.signInWithPassword(
+      email: email,
+      password: password,
     );
+
+    if (response.session == null) {
+      throw Exception('Invalid email or password.');
+    }
+
+    await _syncFromSession(response.session);
   }
 
-  // Google Sign-In — `/google-signup-v2-supabase`
-  Future<void> googleSignIn(String credential) async {
-    final response = await _post('google-signup-v2-supabase', {
-      'credential': credential,
-    });
-
-    if (response['success'] != true) {
-      throw Exception(response['error'] ?? 'Google Sign-In failed.');
-    }
-
-    // Nested fields under "data" (Section 4.3 of guide)
-    final data = response['data'];
-    if (data == null || data is! Map<String, dynamic>) {
-      throw Exception('Google Sign-In response did not contain user data.');
-    }
-
-    final id = data['userId']?.toString() ?? data['id']?.toString();
-    if (id == null) {
-      throw Exception(
-          'User ID could not be resolved from Google auth response.');
-    }
-
-    String role = 'homeowner';
-    final roles = data['role_assigned'];
-    if (roles is List && roles.isNotEmpty) {
-      role = roles.first.toString();
-    }
-
-    await _saveSession(
-      userId: id,
-      email: data['email'],
-      name: data['name'] ?? 'Google User',
-      pictureUrl: data['picture_url'],
-      googleSub: data['google_sub']?.toString(),
-      roleAssigned: role,
-      agentId: data['elevenlabs_agent_id']?.toString() ??
-          data['agentId']?.toString(),
-      assignedPhoneNumber: data['assigned_phone_number']?.toString(),
-      textMessage: data['text_message'] == true,
-      whatsapp: data['whatsapp'] == true,
+  Future<void> googleSignIn({
+    required String idToken,
+    required String accessToken,
+  }) async {
+    final response = await _client.auth.signInWithIdToken(
+      provider: OAuthProvider.google,
+      idToken: idToken,
+      accessToken: accessToken,
     );
+    if (response.session == null) {
+      throw Exception('Google Sign-In did not return a session.');
+    }
+    await _syncFromSession(response.session);
   }
 
   Future<void> signInWithGoogleInteractive() async {
@@ -235,86 +143,71 @@ class AuthService extends ChangeNotifier {
     if (account == null) {
       throw Exception('Google sign-in was cancelled.');
     }
+
     final auth = await account.authentication;
+    final accessToken = auth.accessToken;
     final idToken = auth.idToken;
+
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('Google did not return an access token.');
+    }
     if (idToken == null || idToken.isEmpty) {
       throw Exception('Google did not return an ID token.');
     }
-    await googleSignIn(idToken);
-  }
 
-  // Simulate successful Google Sign-in for demo bypass
-  Future<void> simulateGoogleSignInSuccess() async {
-    await _saveSession(
-      userId: '999',
-      email: 'demo.homeowner@gmail.com',
-      name: 'Demo Homeowner',
-      pictureUrl: 'https://lh3.googleusercontent.com/a/default-user=s96-c',
-      roleAssigned: 'homeowner',
-      assignedPhoneNumber: '(813) 555-9999',
-      textMessage: true,
-      whatsapp: false,
+    await googleSignIn(
+      idToken: idToken,
+      accessToken: accessToken,
     );
   }
 
-  // Request Password Reset Link — `/wix-password-reset-request-v2-supabase`
-  Future<String> requestPasswordReset(String email) async {
-    final response = await _post('wix-password-reset-request-v2-supabase', {
-      'email': email,
-    });
-
-    if (response['success'] != true) {
-      throw Exception(
-          response['message'] ?? 'Failed to send password reset link.');
-    }
-
-    return response['message'] ?? 'Password reset link sent. Check your email.';
+  Future<void> simulateGoogleSignInSuccess() async {
+    throw UnsupportedError(
+      'Demo sign-in is disabled. Use the real Supabase-backed sign-in flow.',
+    );
   }
 
-  // Perform Password Reset — `/wix-perform-password-reset-v2-supabase`
+  Future<String> requestPasswordReset(String email) async {
+    await storePendingPasswordResetEmail(email);
+    await _client.auth.resetPasswordForEmail(email);
+    return 'Password reset email sent. Check your inbox for the verification code or reset link.';
+  }
+
   Future<String> performPasswordReset({
     required String token,
     required String password,
   }) async {
-    final response = await _post('wix-perform-password-reset-v2-supabase', {
-      'token': token,
-      'password': password,
-    });
-
-    if (response['success'] != true) {
-      throw Exception(response['message'] ?? 'Password reset failed.');
+    final email = _prefs?.getString('pendingPasswordResetEmail');
+    if (email == null || email.isEmpty) {
+      throw Exception('Request a reset link first so the app knows which email to verify.');
     }
 
-    return response['message'] ??
-        'Your password has been reset. You can now log in.';
+    final response = await _client.auth.verifyOTP(
+      type: OtpType.recovery,
+      token: token,
+      email: email,
+    );
+    if (response.session == null) {
+      throw Exception('Reset code is invalid or expired.');
+    }
+
+    await _client.auth.updateUser(
+      UserAttributes(password: password),
+    );
+    await _syncFromSession(_client.auth.currentSession);
+    await _prefs?.remove('pendingPasswordResetEmail');
+    return 'Your password has been reset. You can now log in.';
   }
 
-  // Logout
   Future<void> logout() async {
-    _isAuthenticated = false;
-    _userId = null;
-    _userEmail = null;
-    _userName = null;
-    _givenName = null;
-    _familyName = null;
-    _pictureUrl = null;
-    _googleSub = null;
-    _roleAssigned = null;
-    _agentId = null;
-    _assignedPhoneNumber = null;
-    _textMessage = null;
-    _whatsapp = null;
-
-    if (_prefs != null) {
-      await _prefs!.clear();
-    }
-
+    await _clearSession(notify: false);
+    try {
+      await _client.auth.signOut();
+    } catch (_) {}
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
-
     await StreamService.instance.disconnect();
-
     notifyListeners();
   }
 
@@ -337,65 +230,81 @@ class AuthService extends ChangeNotifier {
       await _prefs!.setString('assigned_phone_number', phone);
       await _prefs!.setString('userEmail', email);
       await _prefs!.setString('userName', userName);
+      await _prefs!.setString('email', email);
+      await _prefs!.setString('name', userName);
     }
     notifyListeners();
   }
 
-  // Save session to SharedPreferences
-  Future<void> _saveSession({
-    required String userId,
-    required String email,
-    required String name,
-    String? givenName,
-    String? familyName,
-    String? pictureUrl,
-    String? googleSub,
-    required String roleAssigned,
-    String? agentId,
-    String? assignedPhoneNumber,
-    bool textMessage = false,
-    bool whatsapp = false,
-  }) async {
-    _isAuthenticated = true;
-    _userId = userId;
-    _userEmail = email;
-    _userName = name;
-    _givenName = givenName ?? name.split(' ').first;
-    _familyName =
-        familyName ?? (name.split(' ').length > 1 ? name.split(' ').last : '');
-    _pictureUrl = pictureUrl;
-    _googleSub = googleSub;
-    _roleAssigned = roleAssigned;
-    _agentId = agentId;
-    _assignedPhoneNumber = assignedPhoneNumber;
-    _textMessage = textMessage;
-    _whatsapp = whatsapp;
+  Future<void> storePendingPasswordResetEmail(String email) async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString('pendingPasswordResetEmail', email);
+  }
 
-    if (_prefs != null) {
-      await _prefs!.setBool('isAuthenticated', true);
-      await _prefs!.setString('userId', userId);
-      await _prefs!.setString('userEmail', email);
-      await _prefs!.setString('userName', name);
-      await _prefs!.setString('givenName', _givenName!);
-      await _prefs!.setString('familyName', _familyName!);
-      if (pictureUrl != null) {
-        await _prefs!.setString('pictureUrl', pictureUrl);
-      }
-      if (googleSub != null) {
-        await _prefs!.setString('google_sub', googleSub);
-      }
-      await _prefs!.setString('role_assigned', roleAssigned);
-      if (agentId != null) {
-        await _prefs!.setString('agentId', agentId);
-      }
-      if (assignedPhoneNumber != null) {
-        await _prefs!.setString('assigned_phone_number', assignedPhoneNumber);
-      }
-      await _prefs!.setBool('text_message', textMessage);
-      await _prefs!.setBool('whatsapp', whatsapp);
-      await _prefs!
-          .setString('loginTimestamp', DateTime.now().toIso8601String());
+  Future<void> _syncFromSession(Session? session) async {
+    _prefs ??= await SharedPreferences.getInstance();
+    if (session == null) {
+      await _clearSession(notify: true);
+      return;
     }
+
+    final user = session.user;
+    final appMeta = user.appMetadata;
+    final userMeta = user.userMetadata ?? const {};
+
+    final resolvedUserId = _readString(appMeta['legacy_id']) ??
+        _readString(userMeta['legacy_id']) ??
+        user.id;
+    final resolvedEmail = user.email ?? _prefs?.getString('userEmail') ?? '';
+    final resolvedName = _readString(userMeta['name']) ??
+        _readString(userMeta['full_name']) ??
+        _prefs?.getString('userName') ??
+        resolvedEmail.split('@').first;
+    final resolvedRoles = _readRoles(appMeta['roles']);
+    final givenName = _readString(userMeta['given_name']) ??
+        (resolvedName.contains(' ') ? resolvedName.split(' ').first : resolvedName);
+    final familyName = _readString(userMeta['family_name']) ??
+        (resolvedName.contains(' ') ? resolvedName.split(' ').skip(1).join(' ') : '');
+    final avatarUrl = _readString(userMeta['picture']) ??
+        _readString(userMeta['picture_url']) ??
+        _readString(userMeta['avatar_url']);
+    final googleSub = _readString(userMeta['sub']);
+    final phone = _readString(user.phone) ??
+        _readString(userMeta['phone']) ??
+        _prefs?.getString('assigned_phone_number');
+
+    _isAuthenticated = true;
+    _userId = resolvedUserId;
+    _userEmail = resolvedEmail;
+    _userName = resolvedName;
+    _givenName = givenName;
+    _familyName = familyName;
+    _pictureUrl = avatarUrl;
+    _googleSub = googleSub;
+    _accessToken = session.accessToken;
+    _roleAssigned = resolvedRoles.isEmpty ? 'homeowner' : resolvedRoles.first;
+    _agentId = _readString(appMeta['agent_id']) ??
+        _readString(appMeta['agentId']) ??
+        _prefs?.getString('agentId');
+    _assignedPhoneNumber = phone;
+    _textMessage = _readBool(userMeta['text_message']) ?? _textMessage;
+    _whatsapp = _readBool(userMeta['whatsapp']) ?? _whatsapp;
+
+    await _persistLegacySessionKeys(
+      userId: resolvedUserId,
+      email: resolvedEmail,
+      name: resolvedName,
+      givenName: givenName,
+      familyName: familyName,
+      pictureUrl: avatarUrl,
+      googleSub: googleSub,
+      accessToken: session.accessToken,
+      roles: resolvedRoles,
+      agentId: _agentId,
+      assignedPhoneNumber: phone,
+      textMessage: _textMessage ?? false,
+      whatsapp: _whatsapp ?? false,
+    );
 
     if (!isTesting) {
       try {
@@ -408,5 +317,126 @@ class AuthService extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  Future<void> _persistLegacySessionKeys({
+    required String userId,
+    required String email,
+    required String name,
+    required String givenName,
+    required String familyName,
+    String? pictureUrl,
+    String? googleSub,
+    String? accessToken,
+    required List<String> roles,
+    String? agentId,
+    String? assignedPhoneNumber,
+    required bool textMessage,
+    required bool whatsapp,
+  }) async {
+    if (_prefs == null) return;
+    await _prefs!.setBool('isAuthenticated', true);
+    await _prefs!.setString('userId', userId);
+    await _prefs!.setString('email', email);
+    await _prefs!.setString('userEmail', email);
+    await _prefs!.setString('name', name);
+    await _prefs!.setString('userName', name);
+    await _prefs!.setString('givenName', givenName);
+    await _prefs!.setString('familyName', familyName);
+    await _prefs!.setString('role_assigned', roles.isEmpty ? 'homeowner' : roles.first);
+    await _prefs!.setString('userRoles', roles.toString());
+    await _prefs!.setString('loginTimestamp', DateTime.now().toIso8601String());
+    if (pictureUrl != null && pictureUrl.isNotEmpty) {
+      await _prefs!.setString('pictureUrl', pictureUrl);
+    } else {
+      await _prefs!.remove('pictureUrl');
+    }
+    if (googleSub != null && googleSub.isNotEmpty) {
+      await _prefs!.setString('google_sub', googleSub);
+    } else {
+      await _prefs!.remove('google_sub');
+    }
+    if (accessToken != null && accessToken.isNotEmpty) {
+      await _prefs!.setString('accessToken', accessToken);
+    } else {
+      await _prefs!.remove('accessToken');
+    }
+    if (agentId != null && agentId.isNotEmpty) {
+      await _prefs!.setString('agentId', agentId);
+    }
+    if (assignedPhoneNumber != null && assignedPhoneNumber.isNotEmpty) {
+      await _prefs!.setString('assigned_phone_number', assignedPhoneNumber);
+    }
+    await _prefs!.setBool('text_message', textMessage);
+    await _prefs!.setBool('whatsapp', whatsapp);
+  }
+
+  Future<void> _clearSession({required bool notify}) async {
+    _isAuthenticated = false;
+    _userId = null;
+    _userEmail = null;
+    _userName = null;
+    _givenName = null;
+    _familyName = null;
+    _pictureUrl = null;
+    _googleSub = null;
+    _accessToken = null;
+    _roleAssigned = null;
+    _agentId = null;
+    _assignedPhoneNumber = null;
+    _textMessage = null;
+    _whatsapp = null;
+
+    if (_prefs != null) {
+      await _prefs!.remove('isAuthenticated');
+      await _prefs!.remove('userId');
+      await _prefs!.remove('email');
+      await _prefs!.remove('userEmail');
+      await _prefs!.remove('name');
+      await _prefs!.remove('userName');
+      await _prefs!.remove('givenName');
+      await _prefs!.remove('familyName');
+      await _prefs!.remove('pictureUrl');
+      await _prefs!.remove('google_sub');
+      await _prefs!.remove('accessToken');
+      await _prefs!.remove('role_assigned');
+      await _prefs!.remove('userRoles');
+      await _prefs!.remove('agentId');
+      await _prefs!.remove('assigned_phone_number');
+      await _prefs!.remove('text_message');
+      await _prefs!.remove('whatsapp');
+      await _prefs!.remove('loginTimestamp');
+    }
+
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  List<String> _readRoles(dynamic value) {
+    if (value is List) {
+      return value.map((item) => item.toString()).where((item) => item.isNotEmpty).toList();
+    }
+    final single = _readString(value);
+    if (single == null || single.isEmpty) {
+      return const ['homeowner'];
+    }
+    return [single];
+  }
+
+  String? _readString(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
+      return null;
+    }
+    return text;
+  }
+
+  bool? _readBool(dynamic value) {
+    if (value is bool) return value;
+    final text = _readString(value)?.toLowerCase();
+    if (text == 'true') return true;
+    if (text == 'false') return false;
+    return null;
   }
 }
