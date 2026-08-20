@@ -569,8 +569,19 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         } catch (_) {}
         _showVerificationDialog();
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errStr), backgroundColor: AppTheme.error),
+        final message = HomeownerService.instance.bookingErrorMessage(e);
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Booking Error'),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
         );
       }
     } finally {

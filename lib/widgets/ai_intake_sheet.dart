@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../services/intake_service.dart';
 import '../theme.dart';
+import '../utils/app_error_utils.dart';
 
 class AiIntakeResult {
   const AiIntakeResult({
@@ -31,29 +34,43 @@ class AiIntakeSheet extends StatefulWidget {
   State<AiIntakeSheet> createState() => _AiIntakeSheetState();
 }
 
-class _AiIntakeSheetState extends State<AiIntakeSheet> {
-  final _textController = TextEditingController();
+class _AiIntakeSheetState extends State<AiIntakeSheet>
+    with SingleTickerProviderStateMixin {
   final _picker = ImagePicker();
   final _speech = stt.SpeechToText();
   final List<Map<String, String>> _priorTurns = [];
   final List<String> _photoRefs = [];
+  final List<XFile> _localPhotos = [];
 
+  String _spokenText = '';
   bool _isSubmitting = false;
   bool _isUploadingPhoto = false;
   bool _speechReady = false;
   bool _isListening = false;
   String? _message;
+  String? _clarifyingQuestion;
+
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
     super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.18).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
     unawaited(_prepare());
   }
 
   @override
   void dispose() {
+    _pulseController.dispose();
     _speech.stop();
-    _textController.dispose();
     super.dispose();
   }
 
@@ -80,11 +97,8 @@ class _AiIntakeSheetState extends State<AiIntakeSheet> {
         onResult: (result) {
           if (!mounted) return;
           setState(() {
-            _textController.text = result.recognizedWords;
-            _textController.selection = TextSelection.fromPosition(
-              TextPosition(offset: _textController.text.length),
-            );
-            _isListening = result.finalResult ? false : true;
+            _spokenText = result.recognizedWords;
+            _isListening = !result.finalResult;
           });
         },
       );
@@ -112,39 +126,60 @@ class _AiIntakeSheetState extends State<AiIntakeSheet> {
     await _startVoiceCapture();
   }
 
-  Future<void> _capturePhoto() async {
+  Future<void> _pickPhoto(ImageSource source) async {
     if (_isUploadingPhoto) return;
     try {
       final file = await _picker.pickImage(
-        source: ImageSource.camera,
+        source: source,
         imageQuality: 85,
       );
       if (file == null || !mounted) return;
       setState(() {
         _isUploadingPhoto = true;
         _message = 'Uploading photo...';
+        _localPhotos.add(file);
       });
       final photoRef = await IntakeService.instance.uploadPhoto(file: file);
       if (!mounted) return;
       setState(() {
         _photoRefs.add(photoRef);
         _isUploadingPhoto = false;
-        _message = 'Photo attached.';
+        _message = null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isUploadingPhoto = false;
-        _message = e.toString().replaceAll('Exception: ', '');
+        _message = AppErrorUtils.friendlyMessage(e);
+      });
+    }
+  }
+
+  void _removePhoto(int index) {
+    if (index >= 0 && index < _localPhotos.length) {
+      setState(() {
+        _localPhotos.removeAt(index);
+        if (index < _photoRefs.length) {
+          _photoRefs.removeAt(index);
+        }
       });
     }
   }
 
   Future<void> _submit() async {
-    final query = _textController.text.trim();
-    if (query.isEmpty && _photoRefs.isEmpty) {
+    final isVoiceMode = widget.initialMode == 'voice';
+    final query = _spokenText.trim();
+
+    if (isVoiceMode && query.isEmpty) {
       setState(() {
-        _message = 'Add a short description or a photo first.';
+        _message = 'Please tap the mic and speak your issue first.';
+      });
+      return;
+    }
+
+    if (!isVoiceMode && _photoRefs.isEmpty && _localPhotos.isEmpty) {
+      setState(() {
+        _message = 'Please take or choose at least one photo first.';
       });
       return;
     }
@@ -155,8 +190,12 @@ class _AiIntakeSheetState extends State<AiIntakeSheet> {
     });
 
     try {
+      final sendText = query.isNotEmpty
+          ? query
+          : 'Diagnostic and repair request for home service';
+
       final response = await IntakeService.instance.assist(
-        text: query,
+        text: sendText,
         zip: widget.initialZip ?? '',
         photoRefs: _photoRefs,
         priorTurns: _priorTurns,
@@ -181,18 +220,20 @@ class _AiIntakeSheetState extends State<AiIntakeSheet> {
               'Please share one more detail so we can match the right service.';
           setState(() {
             _isSubmitting = false;
+            _clarifyingQuestion = clarifyMessage;
             _message = clarifyMessage;
+            _spokenText = '';
           });
           _priorTurns.add({
             'role': 'assistant',
             'content': clarifyMessage,
           });
-          _textController.clear();
           return;
         case 'resolved':
-          final resolvedQuery = resolution.scopedDescription?.trim().isNotEmpty == true
-              ? resolution.scopedDescription!.trim()
-              : query;
+          final resolvedQuery =
+              resolution.scopedDescription?.trim().isNotEmpty == true
+                  ? resolution.scopedDescription!.trim()
+                  : (query.isNotEmpty ? query : (resolution.label ?? 'Home Repair'));
           Navigator.of(context).pop(
             AiIntakeResult(
               query: resolvedQuery,
@@ -201,16 +242,20 @@ class _AiIntakeSheetState extends State<AiIntakeSheet> {
           );
           return;
         default:
-          setState(() {
-            _isSubmitting = false;
-            _message = 'The AI layer returned an unsupported response.';
-          });
+          final fallbackLabel = resolution.label ?? (query.isNotEmpty ? query : 'Home Service');
+          Navigator.of(context).pop(
+            AiIntakeResult(
+              query: fallbackLabel,
+              resolution: resolution,
+            ),
+          );
+          return;
       }
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
-        _message = e.toString().replaceAll('Exception: ', '');
+        _message = AppErrorUtils.friendlyMessage(e);
       });
     }
   }
@@ -218,113 +263,55 @@ class _AiIntakeSheetState extends State<AiIntakeSheet> {
   @override
   Widget build(BuildContext context) {
     final isVoiceMode = widget.initialMode == 'voice';
+
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(
           left: 20,
           right: 20,
-          top: 16,
+          top: 14,
           bottom: MediaQuery.of(context).viewInsets.bottom + 20,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Center(
-              child: Container(
-                width: 44,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: AppTheme.line,
-                  borderRadius: BorderRadius.circular(999),
-                ),
+            Container(
+              width: 44,
+              height: 5,
+              decoration: BoxDecoration(
+                color: AppTheme.line,
+                borderRadius: BorderRadius.circular(999),
               ),
             ),
             const SizedBox(height: 18),
-            Text(
-              isVoiceMode ? 'Voice intake' : 'Camera intake',
-              style: const TextStyle(
-                color: AppTheme.navy700,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                isVoiceMode ? 'Voice intake' : 'Camera intake',
+                style: const TextStyle(
+                  color: AppTheme.navy700,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              isVoiceMode
-                  ? 'Describe the issue in your own words and we will route you to the right pros.'
-                  : 'Take a photo, add a short note, and we will match the job to the right service.',
-              style: const TextStyle(
-                color: AppTheme.gray,
-                fontSize: 13,
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _textController,
-              minLines: 3,
-              maxLines: 5,
-              decoration: InputDecoration(
-                hintText: 'What is going on at home?',
-                filled: true,
-                fillColor: const Color(0xFFF7FAFD),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: const BorderSide(color: AppTheme.line),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: const BorderSide(color: AppTheme.line),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: const BorderSide(color: AppTheme.teal500),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                isVoiceMode
+                    ? 'Describe what you need done in your own words and our AI will match the right pro.'
+                    : 'Take or choose photos of the problem area to match with the right service.',
+                style: const TextStyle(
+                  color: AppTheme.gray,
+                  fontSize: 13,
+                  height: 1.45,
                 ),
               ),
             ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isUploadingPhoto || _isSubmitting ? null : _capturePhoto,
-                    icon: _isUploadingPhoto
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.photo_camera_outlined),
-                    label: Text(_photoRefs.isEmpty ? 'Add photo' : 'Photo attached'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: const BorderSide(color: AppTheme.line),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isSubmitting ? null : _toggleVoiceCapture,
-                    icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
-                    label: Text(_isListening
-                        ? 'Listening...'
-                        : (_speechReady || !isVoiceMode ? 'Use voice' : 'Enable voice')),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: const BorderSide(color: AppTheme.line),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            const SizedBox(height: 24),
+            if (isVoiceMode) _buildVoiceSection() else _buildCameraSection(),
             if (_message != null) ...[
               const SizedBox(height: 14),
               Container(
@@ -333,22 +320,25 @@ class _AiIntakeSheetState extends State<AiIntakeSheet> {
                 decoration: BoxDecoration(
                   color: AppTheme.navyTint,
                   borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTheme.line),
                 ),
                 child: Text(
                   _message!,
+                  textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: AppTheme.navy700,
                     fontSize: 13,
                     height: 1.4,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
             ],
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _isSubmitting ? null : _submit,
+                onPressed: _isSubmitting || _isUploadingPhoto ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.orange500,
                   foregroundColor: AppTheme.navy700,
@@ -356,25 +346,374 @@ class _AiIntakeSheetState extends State<AiIntakeSheet> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
+                  elevation: 0,
                 ),
                 child: _isSubmitting
                     ? const SizedBox(
-                        width: 20,
-                        height: 20,
+                        width: 22,
+                        height: 22,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2.2,
+                          strokeWidth: 2.4,
                           color: AppTheme.navy700,
                         ),
                       )
                     : const Text(
                         'Find pros',
-                        style: TextStyle(fontWeight: FontWeight.w800),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
                       ),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildVoiceSection() {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: _isSubmitting ? null : _toggleVoiceCapture,
+          child: AnimatedBuilder(
+            animation: _pulseAnimation,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: _isListening ? _pulseAnimation.value : 1.0,
+                child: Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isListening ? AppTheme.orange500 : AppTheme.orangeTint,
+                    border: Border.all(
+                      color: AppTheme.orange500.withOpacity(_isListening ? 0.8 : 0.3),
+                      width: 3,
+                    ),
+                    boxShadow: _isListening
+                        ? [
+                            BoxShadow(
+                              color: AppTheme.orange500.withOpacity(0.35),
+                              blurRadius: 24,
+                              spreadRadius: 4,
+                            )
+                          ]
+                        : null,
+                  ),
+                  child: Icon(
+                    _isListening ? Icons.mic : Icons.mic_none_rounded,
+                    size: 44,
+                    color: _isListening ? Colors.white : AppTheme.orange500,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          _isListening
+              ? 'Listening... Speak now'
+              : (_spokenText.isNotEmpty
+                  ? 'Voice recorded. Tap mic to re-record.'
+                  : 'Tap the microphone to start speaking'),
+          style: TextStyle(
+            color: _isListening ? AppTheme.orange500 : AppTheme.navy700,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        if (_spokenText.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7FAFD),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.line),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.format_quote_rounded,
+                    color: AppTheme.teal500, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _spokenText,
+                    style: const TextStyle(
+                      color: AppTheme.navy700,
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18, color: AppTheme.gray),
+                  onPressed: () {
+                    setState(() {
+                      _spokenText = '';
+                    });
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCameraSection() {
+    return Column(
+      children: [
+        if (_localPhotos.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7FAFD),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: AppTheme.line,
+                style: BorderStyle.solid,
+              ),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.navyTint,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.add_a_photo_outlined,
+                    color: AppTheme.teal500,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Add photos of what needs fixing',
+                  style: TextStyle(
+                    color: AppTheme.navy700,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isUploadingPhoto
+                            ? null
+                            : () => _pickPhoto(ImageSource.camera),
+                        icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                        label: const Text('Take Photo'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.navy700,
+                          side: const BorderSide(color: AppTheme.line),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isUploadingPhoto
+                            ? null
+                            : () => _pickPhoto(ImageSource.gallery),
+                        icon: const Icon(Icons.photo_library_outlined, size: 18),
+                        label: const Text('Gallery'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.navy700,
+                          side: const BorderSide(color: AppTheme.line),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          )
+        else ...[
+          SizedBox(
+            height: 110,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _localPhotos.length + 1,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                if (index == _localPhotos.length) {
+                  return InkWell(
+                    onTap: _isUploadingPhoto
+                        ? null
+                        : () => _showPhotoSourceSheet(),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      width: 100,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7FAFD),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppTheme.line),
+                      ),
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_rounded,
+                              size: 28, color: AppTheme.teal500),
+                          SizedBox(height: 4),
+                          Text(
+                            'Add more',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.navy700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                final photo = _localPhotos[index];
+                return Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: SizedBox(
+                        width: 100,
+                        height: 110,
+                        child: kIsWeb
+                            ? Image.network(photo.path, fit: BoxFit.cover)
+                            : Image.file(File(photo.path), fit: BoxFit.cover),
+                      ),
+                    ),
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                        onTap: () => _removePhoto(index),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              TextButton.icon(
+                onPressed: _isUploadingPhoto
+                    ? null
+                    : () => _pickPhoto(ImageSource.camera),
+                icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                label: const Text('Take another'),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: _isUploadingPhoto
+                    ? null
+                    : () => _pickPhoto(ImageSource.gallery),
+                icon: const Icon(Icons.photo_library_outlined, size: 16),
+                label: const Text('From gallery'),
+              ),
+            ],
+          ),
+        ],
+        if (_isUploadingPhoto) ...[
+          const SizedBox(height: 12),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Uploading photo...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.gray,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _showPhotoSourceSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined,
+                      color: AppTheme.navy700),
+                  title: const Text('Take a photo'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickPhoto(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined,
+                      color: AppTheme.navy700),
+                  title: const Text('Choose from gallery'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickPhoto(ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

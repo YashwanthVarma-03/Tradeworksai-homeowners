@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../utils/app_error_utils.dart';
 import 'api_config.dart';
 import 'auth_service.dart';
 
@@ -1408,5 +1409,28 @@ class HomeownerService {
       'reviewText': reviewText?.toString() ?? '',
       'displayName': displayName?.toString(),
     };
+  }
+
+  String bookingErrorMessage(Object error) {
+    final raw = error.toString().replaceAll('Exception: ', '').trim().toLowerCase();
+    if (raw.contains('booking_cap')) {
+      return 'You have reached the maximum number of open bookings. Please complete or cancel an existing booking before creating a new one.';
+    }
+    if (raw.contains('verification_required')) {
+      return 'Email verification is required before booking.';
+    }
+    if (raw.contains('out_of_coverage') || raw.contains('invalid_zip')) {
+      return 'This contractor is not currently serving the selected ZIP code.';
+    }
+    if (raw.contains('slot_unavailable') || raw.contains('conflict')) {
+      return 'The selected time slot is no longer available. Please choose another time.';
+    }
+    if (raw.contains('contractor_unavailable')) {
+      return 'The selected contractor is currently unavailable. Please choose another pro or time.';
+    }
+    return AppErrorUtils.friendlyMessage(
+      error,
+      fallback: 'Unable to complete your booking right now. Please try again.',
+    );
   }
 }

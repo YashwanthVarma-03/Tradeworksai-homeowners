@@ -41,3 +41,14 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Binaries and local artifacts
+*.apk
+*.zip
+.android-downloads/
+.android-user/
+.website-ref/
+scratch/
+test_api.dart
+.gradle/
+**/android/.gradle/
