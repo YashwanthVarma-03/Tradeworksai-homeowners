@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../services/auth_service.dart';
-import '../widgets/custom_widgets.dart';
 import '../services/homeowner_service.dart';
 import 'work_orders/work_order_detail.dart';
 import 'work_orders/quote_review.dart';
-import 'work_orders/receipt.dart';
+import 'work_orders/leave_review.dart';
 
 class BookingsTab extends StatefulWidget {
   final VoidCallback onBookNowTap;
@@ -22,7 +21,7 @@ class BookingsTab extends StatefulWidget {
 }
 
 class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
-  int _activeSegment = 0; // 0: Active, 1: Scheduled, 2: History
+  int _activeSegment = 0; // 0: Upcoming, 1: History
 
   bool _isLoading = true;
   bool _isRefreshing = false;
@@ -35,7 +34,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    _activeSegment = widget.initialSegment;
+    _activeSegment = _normalizeSegment(widget.initialSegment);
     WidgetsBinding.instance.addObserver(this);
     _fetchJobs(showLoading: true);
   }
@@ -60,7 +59,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     // Actually, to guarantee refresh, we can just trigger fetch when initialSegment changes.
     if (oldWidget.initialSegment != widget.initialSegment) {
       setState(() {
-        _activeSegment = widget.initialSegment;
+        _activeSegment = _normalizeSegment(widget.initialSegment);
       });
       _fetchJobs(showLoading: false);
     } else {
@@ -116,27 +115,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           _isLoading = false;
         });
 
-        // Background pre-check for review eligibility to toggle "Edit review" / "Leave review" buttons
-        for (final job in _historyJobs) {
-          if (job is Map) {
-            final typedJob = Map<String, dynamic>.from(job);
-            final jobId = _resolveWorkOrderId(typedJob);
-            if (jobId > 0 && !_localReviews.containsKey(jobId)) {
-              HomeownerService.instance.getReviewEligibility(workOrderId: jobId).then((eligibility) {
-                if (eligibility['eligible'] == false && eligibility['reason'] == 'already_reviewed') {
-                  if (mounted) {
-                    setState(() {
-                      _localReviews[jobId] = {
-                        'rating': 5,
-                        'reviewText': 'Already reviewed',
-                      };
-                    });
-                  }
-                }
-              }).catchError((_) {});
-            }
-          }
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -148,6 +126,120 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     } finally {
       _isRefreshing = false;
     }
+  }
+
+  int _normalizeSegment(int segment) {
+    if (segment == 2) return 1;
+    if (segment <= 0) return 0;
+    return 1;
+  }
+
+  List<Map<String, dynamic>> get _upcomingJobs {
+    return [
+      ..._activeJobs.whereType<Map>().map((job) => Map<String, dynamic>.from(job)),
+      ..._scheduledJobs.whereType<Map>().map((job) => Map<String, dynamic>.from(job)),
+    ];
+  }
+
+  String? _string(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
+      return null;
+    }
+    return text;
+  }
+
+  String _jobProName(Map<String, dynamic> job) {
+    final pro = job['pro'];
+    if (pro is Map) {
+      return _string(pro['businessName']) ??
+          _string(pro['business_name']) ??
+          _string(pro['name']) ??
+          'Assigning Pro...';
+    }
+    return _string(job['proName']) ??
+        _string(job['pro_name']) ??
+        _string(job['businessName']) ??
+        'Assigning Pro...';
+  }
+
+  String _jobService(Map<String, dynamic> job) {
+    return _string(job['serviceCategory']) ??
+        _string(job['service_category']) ??
+        _string(job['serviceName']) ??
+        _string(job['service_name']) ??
+        _string(job['trade']) ??
+        'Service Request';
+  }
+
+  String _jobAddress(Map<String, dynamic> job) {
+    final address = job['address'];
+    if (address is Map) {
+      final street = _string(address['street']) ??
+          _string(address['line1']) ??
+          _string(address['addressLine1']);
+      final city = _string(address['city']);
+      if (street != null && city != null) return '$street, $city';
+      return street ?? city ?? 'Home';
+    }
+    return _string(job['address']) ?? 'Home';
+  }
+
+  String _jobPriority(Map<String, dynamic> job) {
+    return _string(job['priority']) ??
+        _string(job['urgency']) ??
+        _string(job['serviceLevel']) ??
+        'Standard';
+  }
+
+  String _jobInitials(String name) {
+    final parts = name
+        .split(RegExp(r'\s+'))
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+    final initials = parts
+        .map((part) => part.trim()[0])
+        .take(2)
+        .join()
+        .toUpperCase();
+    return initials.isEmpty ? 'P' : initials;
+  }
+
+  int _jobRating(Map<String, dynamic> job) {
+    final jobId = _resolveWorkOrderId(job);
+    final localReview = _localReviews[jobId];
+    final rawRating = localReview?['rating'] ??
+        job['rating'] ??
+        job['review']?['rating'] ??
+        job['homeownerReview']?['rating'] ??
+        job['homeowner_review']?['rating'] ??
+        job['reviews']?['rating'];
+    if (rawRating is num) return rawRating.round().clamp(0, 5);
+    return int.tryParse(rawRating?.toString() ?? '')?.clamp(0, 5) ?? 0;
+  }
+
+  bool _jobHasReview(Map<String, dynamic> job) {
+    final jobId = _resolveWorkOrderId(job);
+    final localReview = _localReviews[jobId];
+    final localText = localReview?['reviewText']?.toString().trim();
+    final reviewText = localText == 'Already reviewed'
+        ? ''
+        : localText ??
+            (job['reviewText'] ??
+                    job['review']?['text'] ??
+                    job['review']?['reviewText'] ??
+                    job['homeownerReview']?['text'] ??
+                    job['homeownerReview']?['reviewText'] ??
+                    job['homeowner_review']?['text'] ??
+                    job['homeowner_review']?['reviewText'] ??
+                    job['reviews']?['text'] ??
+                    '')
+                .toString()
+                .trim();
+    return job['reviewed'] == true ||
+        localReview != null ||
+        reviewText.isNotEmpty ||
+        _jobRating(job) > 0;
   }
 
   String? _resolveContractorId(Map<String, dynamic> job) {
@@ -207,40 +299,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return 0;
   }
 
-  String _formatDateTimeString(String? isoString) {
-    if (isoString == null) return 'TBD';
-    try {
-      final dt = DateTime.parse(isoString);
-      final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      final months = [
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec'
-      ];
-      final wd = weekdays[dt.weekday - 1];
-      final month = months[dt.month - 1];
-      final day = dt.day;
-
-      int hour = dt.hour;
-      final ampm = hour >= 12 ? 'PM' : 'AM';
-      hour = hour % 12;
-      if (hour == 0) hour = 12;
-      final min =
-          dt.minute == 0 ? '' : ':${dt.minute.toString().padLeft(2, '0')}';
-
-      return '$wd, $month $day · $hour$min $ampm';
-    } catch (_) {
-      return isoString;
-    }
+  DateTime? _parseDateTime(String? isoString) {
+    if (isoString == null) return null;
+    return DateTime.tryParse(isoString);
   }
 
   void _reviewQuoteDialog(Map<String, dynamic> job) async {
@@ -260,6 +321,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       contractorId =
           await HomeownerService.instance.resolveContractorIdForWorkOrder(woId);
     }
+    if (!mounted) return;
     if (contractorId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -571,7 +633,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   action: 'cancel',
                   extra: {'reason': 'homeowner_cancelled'},
                 );
-                ScaffoldMessenger.of(context).showSnackBar(
+                if (!mounted) return;
+                ScaffoldMessenger.of(this.context).showSnackBar(
                   const SnackBar(
                     content: Text('Booking cancelled successfully.'),
                     backgroundColor: AppTheme.error,
@@ -579,7 +642,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                 );
                 _fetchJobs(showLoading: false);
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                if (!mounted) return;
+                ScaffoldMessenger.of(this.context).showSnackBar(
                   SnackBar(
                       content: Text('Cancel failed: ${e.toString()}'),
                       backgroundColor: AppTheme.error),
@@ -595,13 +659,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     );
   }
 
-  void _leaveReviewDialog(Map<String, dynamic> job) {
+  void _leaveReviewDialog(Map<String, dynamic> job) async {
     final jobId = _resolveWorkOrderId(job);
     final localReview = _localReviews[jobId];
-    final statusLower = (job['status']?.toString() ?? '').toLowerCase();
-    final isCompleted = statusLower == 'completed' ||
-        statusLower == 'complete' ||
-        job['timeline']?['completedAt'] != null;
     // Don't use placeholder text as actual review text
     final localReviewText = localReview?['reviewText']?.toString() ?? '';
     final isPlaceholder = localReviewText == 'Already reviewed';
@@ -628,267 +688,365 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         localReview != null ||
         existingReviewText.toString().trim().isNotEmpty;
 
-    double selectedRating = (existingRating as num).toDouble();
-    final controller = TextEditingController(
-      text: isPlaceholder ? '' : existingReviewText.toString(),
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LeaveReviewScreen(
+          job: job,
+          jobId: jobId,
+          initialRating: (existingRating as num).toDouble(),
+          initialReviewText: isPlaceholder ? '' : existingReviewText.toString(),
+          isEdit: isEdit,
+        ),
+      ),
     );
 
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(builder: (context, setModalState) {
-        return AlertDialog(
-          title: Text(isEdit ? 'Edit Review' : 'Leave a Review',
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('How did ${job['pro']?['businessName'] ?? 'Pro'} do?'),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (index) {
-                  final isFilled = index < selectedRating;
-                  return IconButton(
-                    icon: Icon(
-                      isFilled ? Icons.star : Icons.star_border,
-                      color: Colors.amber,
-                      size: 32,
-                    ),
-                    onPressed: () {
-                      setModalState(() {
-                        selectedRating = index + 1.0;
-                      });
-                    },
-                  );
-                }),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: 'Share your experience with the pro...',
-                  hintStyle:
-                      const TextStyle(color: AppTheme.gray, fontSize: 12.5),
-                  filled: true,
-                  fillColor: AppTheme.pageAlt,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  final reviewText = controller.text.trim();
-                  if (jobId == 0) {
-                    throw Exception(
-                        'Unable to resolve the booking for review.');
-                  }
-                  if (!isCompleted) {
-                    throw Exception('Only completed services can be reviewed.');
-                  }
-                  if (reviewText.length < 10) {
-                    throw Exception('Please enter at least 10 characters.');
-                  }
-                  if (!isEdit) {
-                    final eligibility =
-                        await HomeownerService.instance.getReviewEligibility(
-                      workOrderId: jobId,
-                    );
-                    if (eligibility['eligible'] == false) {
-                      throw Exception(
-                        eligibility['reason']?.toString() ?? 'not_eligible',
-                      );
-                    }
-                  }
-                  await HomeownerService.instance.submitReview(
-                    workOrderId: jobId,
-                    rating: selectedRating.roundToDouble(),
-                    text: reviewText,
-                    displayName: AuthService.instance.userName,
-                  );
-                  if (jobId != 0) {
-                    _localReviews[jobId] = {
-                      'rating': selectedRating,
-                      'reviewText': reviewText,
-                    };
-                    job['reviewed'] = true;
-                    job['rating'] = selectedRating;
-                    job['reviewText'] = reviewText;
-                  }
-                  if (mounted) Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(isEdit
-                          ? 'Review updated successfully.'
-                          : 'Review submitted successfully.'),
-                      backgroundColor: AppTheme.success,
-                    ),
-                  );
-                  _fetchJobs(showLoading: false);
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content:
-                            Text('Failed to submit review: ${e.toString()}'),
-                        backgroundColor: AppTheme.error),
-                  );
-                }
-              },
-              child: Text(isEdit ? 'Update Review' : 'Submit Review'),
-            ),
-          ],
-        );
-      }),
+    if (result == null || !mounted) return;
+    final selectedRating = (result['rating'] as num?)?.toDouble() ?? 5;
+    final reviewText = result['reviewText']?.toString() ?? '';
+    if (jobId != 0) {
+      _localReviews[jobId] = {
+        'rating': selectedRating,
+        'reviewText': reviewText,
+      };
+      job['reviewed'] = true;
+      job['rating'] = selectedRating;
+      job['reviewText'] = reviewText;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(isEdit
+            ? 'Review updated successfully.'
+            : 'Review submitted successfully.'),
+        backgroundColor: AppTheme.success,
+      ),
     );
+    _fetchJobs(showLoading: false);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppTheme.orange500),
-      );
-    }
-    if (_errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          _buildBookingsHeader(),
+          Expanded(
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF4F6FA),
+                border: Border(
+                  top: BorderSide(color: Color(0xFFE0E5EC), width: 1),
+                ),
+              ),
+              child: RefreshIndicator(
+                onRefresh: () => _fetchJobs(showLoading: false),
+                color: AppTheme.orange500,
+                child: _buildJobsList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookingsHeader() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: Row(
             children: [
-              const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
-              const SizedBox(height: 12),
-              Text(_errorMessage!,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 14),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => _fetchJobs(showLoading: true),
-                child: const Text('Try Again'),
+              const Expanded(
+                child: Text(
+                  'Bookings',
+                  style: TextStyle(
+                    color: AppTheme.navy700,
+                    fontSize: 24,
+                    height: 1.05,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: IconButton(
+                  tooltip: 'Filter bookings',
+                  onPressed: () {},
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFFF4F6FA),
+                    foregroundColor: AppTheme.navy700,
+                    shape: const CircleBorder(),
+                  ),
+                  icon: const Icon(Icons.tune_rounded, size: 20),
+                ),
               ),
             ],
           ),
         ),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: () => _fetchJobs(showLoading: false),
-      color: AppTheme.orange500,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            _buildHeaderControls(),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _buildJobsList(),
-            ),
-          ],
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 18),
+          child: _buildHeaderControls(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeaderControls() {
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F4F8),
+        borderRadius: BorderRadius.circular(44),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemWidth = constraints.maxWidth / 2;
+          return Stack(
+            children: [
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                left: _activeSegment * itemWidth,
+                top: 2,
+                bottom: 2,
+                width: itemWidth,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.navy700,
+                    borderRadius: BorderRadius.circular(25),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.navy900.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  _buildSegmentTap(
+                    index: 0,
+                    label: 'Upcoming',
+                    count: _upcomingJobs.length,
+                  ),
+                  _buildSegmentTap(
+                    index: 1,
+                    label: 'History',
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSegmentTap({
+    required int index,
+    required String label,
+    int? count,
+  }) {
+    final selected = _activeSegment == index;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(40),
+        onTap: () => setState(() => _activeSegment = index),
+        child: Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 160),
+                style: TextStyle(
+                  color: selected ? Colors.white : const Color(0xFF66758C),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                ),
+                child: Text(label),
+              ),
+              if (selected && count != null && count > 0) ...[
+                const SizedBox(width: 7),
+                Container(
+                  width: 24,
+                  height: 24,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.orange500,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    count.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildHeaderControls() {
-    int activeCount = _activeJobs.length;
-    int scheduledCount = _scheduledJobs.length;
-
-    return SlidingSegmentControl(
-      currentIndex: _activeSegment,
-      activeColor: const Color(0xFF1B3C6E),
-      items: [
-        SegmentItem(label: 'Active', count: activeCount),
-        SegmentItem(label: 'Scheduled', count: scheduledCount),
-        const SegmentItem(label: 'History'),
-      ],
-      onSegmentChanged: (index) {
-        setState(() {
-          _activeSegment = index;
-        });
-      },
-    );
-  }
-
   Widget _buildJobsList() {
-    List<dynamic> jobs = [];
-    if (_activeSegment == 0) jobs = _activeJobs;
-    if (_activeSegment == 1) jobs = _scheduledJobs;
-    if (_activeSegment == 2) jobs = _historyJobs;
+    if (_isLoading) {
+      return const CustomScrollView(
+        physics: AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: CircularProgressIndicator(color: AppTheme.orange500),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_errorMessage != null) {
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: _buildErrorState(),
+          ),
+        ],
+      );
+    }
+
+    final jobs = _activeSegment == 0
+        ? _upcomingJobs
+        : _historyJobs
+            .whereType<Map>()
+            .map((job) => Map<String, dynamic>.from(job))
+            .toList();
 
     if (jobs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.history_toggle_off,
-                size: 48, color: AppTheme.gray),
-            const SizedBox(height: 12),
-            const Text('No bookings here',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-            const SizedBox(height: 4),
-            const Text('Tap below to schedule a vetted pro.',
-                style: TextStyle(color: AppTheme.gray, fontSize: 12)),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: widget.onBookNowTap,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.orange500,
-                  foregroundColor: Colors.white),
-              child: const Text('Book a Service'),
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: _buildEmptyBookingsState(),
+          ),
+        ],
+      );
+    }
+
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate(
+              _activeSegment == 0
+                  ? _buildUpcomingItems(jobs)
+                  : _buildHistoryItems(jobs),
             ),
-          ],
+          ),
         ),
-      );
-    }
-
-    if (_activeSegment == 1) {
-      final groups = <String, List<dynamic>>{};
-      for (final job in jobs) {
-        final dg = _getDayGroup(job['scheduledStart']);
-        groups.putIfAbsent(dg, () => []).add(job);
-      }
-
-      return ListView(
-        children: groups.entries.expand((entry) {
-          return [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
-              child: Text(
-                entry.key,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11.5,
-                    color: AppTheme.gray,
-                    letterSpacing: 0.04),
-              ),
-            ),
-            ...entry.value.map((job) => _buildJobCard(job)),
-          ];
-        }).toList(),
-      );
-    }
-
-    return ListView.builder(
-      itemCount: jobs.length,
-      itemBuilder: (context, index) {
-        final job = jobs[index];
-        return _buildJobCard(job);
-      },
+      ],
     );
   }
 
-  Widget _buildJobCard(Map<String, dynamic> job) {
+  Widget _buildErrorState() {
+    return Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 46, color: AppTheme.error),
+          const SizedBox(height: 14),
+          Text(
+            _errorMessage!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.ink,
+              fontSize: 15,
+              height: 1.35,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 18),
+          _buildOutlineAction(
+            label: 'Try again',
+            onPressed: () => _fetchJobs(showLoading: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildUpcomingItems(List<Map<String, dynamic>> jobs) {
+    final items = <Widget>[];
+    for (var i = 0; i < jobs.length; i++) {
+      final job = jobs[i];
+      if (i > 0 && _isTomorrow(job) && !_isTomorrow(jobs[i - 1])) {
+        items.add(const _BookingSectionLabel('TOMORROW'));
+      }
+      items.add(_buildUpcomingJobCard(job));
+      if (i != jobs.length - 1) {
+        items.add(const SizedBox(height: 12));
+      }
+    }
+    return items;
+  }
+
+  List<Widget> _buildHistoryItems(List<Map<String, dynamic>> jobs) {
+    final lastWeek = <Map<String, dynamic>>[];
+    final earlier = <Map<String, dynamic>>[];
+    for (final job in jobs) {
+      (_isLastWeek(job) ? lastWeek : earlier).add(job);
+    }
+
+    final visibleLastWeek = lastWeek.isEmpty && earlier.isNotEmpty
+        ? earlier.take(2).toList()
+        : lastWeek;
+    final visibleEarlier = lastWeek.isEmpty && earlier.length > 2
+        ? earlier.skip(2).toList()
+        : earlier;
+
+    return [
+      if (visibleLastWeek.isNotEmpty) ...[
+        const _BookingSectionLabel('LAST WEEK'),
+        ..._withSpacing(visibleLastWeek.map(_buildHistoryJobCard)),
+      ],
+      if (visibleEarlier.isNotEmpty) ...[
+        const _BookingSectionLabel('EARLIER'),
+        ..._withSpacing(visibleEarlier.map(_buildHistoryJobCard)),
+      ],
+    ];
+  }
+
+  List<Widget> _withSpacing(Iterable<Widget> cards) {
+    final result = <Widget>[];
+    final list = cards.toList();
+    for (var i = 0; i < list.length; i++) {
+      result.add(list[i]);
+      if (i != list.length - 1) {
+        result.add(const SizedBox(height: 12));
+      }
+    }
+    return result;
+  }
+
+  Widget _buildUpcomingJobCard(Map<String, dynamic> job) {
     final status = job['status']?.toString() ?? 'Active';
     final statusLower = status.toLowerCase();
     final isAlert =
@@ -900,22 +1058,11 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         statusLower == 'canceled' ||
         statusLower == 'cancel';
 
-    final proName = job['pro']?['businessName'] ?? 'Assigning Pro...';
-    final service = job['serviceCategory'] ?? 'Service Request';
-    final dateStr = _formatDateTimeString(job['scheduledStart']);
-    final addressStr = job['address']?['street'] ?? 'Home';
-    final tier = job['priority'] ?? 'Standard';
-
-    String initials = 'P';
-    if (proName.isNotEmpty) {
-      final parts = proName.split(' ');
-      initials = parts
-          .map((p) => p.isNotEmpty ? p[0] : '')
-          .take(2)
-          .join()
-          .toUpperCase();
-      if (initials.isEmpty) initials = 'P';
-    }
+    final proName = _jobProName(job);
+    final service = _jobService(job);
+    final addressStr = _jobAddress(job);
+    final tier = _jobPriority(job);
+    final initials = _jobInitials(proName);
 
     return GestureDetector(
       onTap: () {
@@ -924,447 +1071,608 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           MaterialPageRoute(
             builder: (context) => WorkOrderDetailScreen(job: job),
           ),
-        );
+        ).then((_) => _fetchJobs(showLoading: false));
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isAlert ? AppTheme.orange500 : const Color(0xFFE2E8F0),
-            width: isAlert ? 1.5 : 1.0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0F172A).withOpacity(0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFDDE3EA)),
+        ),
+        child: Stack(
+          children: [
+            if (isAlert)
+              const Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                child: SizedBox(
+                  width: 4,
+                  child: ColoredBox(color: AppTheme.orange500),
+                ),
+              ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(isAlert ? 14 : 12, 12, 12, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          service,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF202B3D),
+                            fontSize: 15,
+                            height: 1.15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      _buildStatusBadge(status),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _buildProviderRow(
+                    initials: initials,
+                    proName: proName,
+                    priority: tier,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildInfoLine(
+                    icon: Icons.insert_drive_file_outlined,
+                    label: _formatUpcomingLine(job, isAlert: isAlert),
+                  ),
+                  const SizedBox(height: 6),
+                  _buildInfoLine(
+                    icon: Icons.location_on_outlined,
+                    label: addressStr,
+                  ),
+                  if (isLive) ...[
+                    const SizedBox(height: 12),
+                    const Divider(height: 1, color: Color(0xFFE1E6ED)),
+                    const SizedBox(height: 12),
+                    _buildProgressTracker(statusLower),
+                  ],
+                  const SizedBox(height: 12),
+                  if (isAlert)
+                    _buildPrimaryAction(
+                      label: 'Review & approve',
+                      onPressed: () => _reviewQuoteDialog(job),
+                    )
+                  else if (isLive)
+                    _buildLiveActions(job)
+                  else if (!isCancelled)
+                    _buildScheduledActions(job),
+                ],
+              ),
             ),
           ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(14.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      ),
+    );
+  }
+
+  Widget _buildProviderRow({
+    required String initials,
+    required String proName,
+    required String priority,
+  }) {
+    final avatarColor = _avatarColor(initials);
+
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: avatarColor,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            initials,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Row(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      service,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15.5,
-                          color: AppTheme.navy700),
-                    ),
+              Flexible(
+                child: Text(
+                  proName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF202B3D),
+                    fontSize: 14,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
                   ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(status).withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _getStatusText(status),
-                      style: TextStyle(
-                        color: _getStatusColor(status),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor: AppTheme.navyTint,
-                    child: Text(
-                      initials,
-                      style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.navy700),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    proName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: AppTheme.ink),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: tier == 'Urgent'
-                          ? AppTheme.tealTint
-                          : const Color(0xFFEDF1F7),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      tier,
-                      style: TextStyle(
-                        color:
-                            tier == 'Urgent' ? AppTheme.teal700 : AppTheme.gray,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.description, size: 13, color: AppTheme.gray),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      dateStr,
-                      style:
-                          const TextStyle(fontSize: 12, color: AppTheme.gray),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    width: 3,
-                    height: 3,
-                    decoration: const BoxDecoration(
-                        color: AppTheme.line, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.location_on, size: 13, color: AppTheme.gray),
-                  const SizedBox(width: 4),
-                  Text(
-                    addressStr,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.gray),
-                  ),
-                ],
-              ),
-              if (isLive) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _buildLiveNode(true),
-                    _buildLiveLine(true),
-                    _buildLiveNode(
-                        statusLower == 'en_route' ||
-                            statusLower == 'arrived' ||
-                            statusLower == 'in_progress',
-                        active: statusLower == 'en_route'),
-                    _buildLiveLine(statusLower == 'arrived' ||
-                        statusLower == 'in_progress'),
-                    _buildLiveNode(
-                        statusLower == 'arrived' ||
-                            statusLower == 'in_progress',
-                        active: statusLower == 'arrived'),
-                    _buildLiveLine(statusLower == 'in_progress'),
-                    _buildLiveNode(statusLower == 'in_progress',
-                        active: statusLower == 'in_progress'),
-                    _buildLiveLine(false),
-                    _buildLiveNode(false),
-                    _buildLiveLine(false),
-                    _buildLiveNode(false),
-                  ],
                 ),
-              ],
-              const SizedBox(height: 12),
-              _buildCardActions(job, isAlert, isLive, isCancelled),
+              ),
+              const SizedBox(width: 7),
+              _buildPriorityBadge(priority),
             ],
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPriorityBadge(String priority) {
+    final urgent = priority.toLowerCase().contains('urgent');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: urgent ? const Color(0xFFE2F7F8) : const Color(0xFFF0F3F7),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Text(
+        urgent ? 'URGENT' : 'STANDARD',
+        style: TextStyle(
+          color: urgent ? AppTheme.teal500 : const Color(0xFF66758C),
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          height: 1,
         ),
       ),
     );
   }
 
-  Widget _buildLiveNode(bool done, {bool active = false}) {
+  Widget _buildStatusBadge(String status) {
+    final label = _getStatusText(status);
+    final lower = status.toLowerCase();
+    final isQuote = lower.contains('quote') || lower.contains('review');
+    final isCompleted = lower == 'completed' || lower == 'complete';
+    final isCancelled = lower == 'cancelled' ||
+        lower == 'canceled' ||
+        lower == 'cancel' ||
+        lower == 'declined';
+    final color = isQuote
+        ? AppTheme.orange500
+        : isCompleted
+            ? AppTheme.success
+            : isCancelled
+                ? const Color(0xFFC83A3F)
+                : AppTheme.teal500;
+    final fill = isQuote
+        ? AppTheme.orangeTint
+        : isCompleted
+            ? const Color(0xFFEAFBF4)
+            : isCancelled
+                ? const Color(0xFFFFF1F2)
+                : AppTheme.tealTint;
+    final icon = isCancelled
+        ? Icons.close_rounded
+        : lower == 'en_route'
+            ? Icons.local_shipping_outlined
+            : lower == 'scheduled' || lower == 'booked'
+                ? Icons.calendar_today_outlined
+                : Icons.insert_drive_file_outlined;
+
     return Container(
-      width: active ? 11 : 8,
-      height: active ? 11 : 8,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: active
-            ? Colors.white
-            : done
-                ? AppTheme.teal500
-                : AppTheme.line,
-        border: active ? Border.all(color: AppTheme.teal500, width: 3) : null,
+        color: fill,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color, width: 1.4),
       ),
-    );
-  }
-
-  Widget _buildLiveLine(bool done) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: done ? AppTheme.teal500 : AppTheme.line,
-      ),
-    );
-  }
-
-  Widget _buildCardActions(
-      Map<String, dynamic> job, bool isAlert, bool isLive, bool isCancelled) {
-    if (isAlert) {
-      return HoverButton(
-        text: 'Review & approve',
-        height: 40.0,
-        onPressed: () => _reviewQuoteDialog(job),
-      );
-    }
-
-    if (isLive) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => WorkOrderDetailScreen(job: job)),
-                ).then((_) {
-                  _fetchJobs(showLoading: false);
-                });
-              },
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.line),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                minimumSize: const Size(0, 40),
-              ),
-              child: const Text('Track',
-                  style: TextStyle(
-                      color: AppTheme.navy700,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13.5)),
+          Icon(icon, color: color, size: 13),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              height: 1,
             ),
           ),
-          const SizedBox(width: 12),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoLine({
+    required IconData icon,
+    required String label,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(icon, color: const Color(0xFF66758C), size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF66758C),
+              fontSize: 13,
+              height: 1.25,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProgressTracker(String statusLower) {
+    final currentStep = statusLower == 'en_route'
+        ? 2
+        : statusLower == 'arrived'
+            ? 4
+            : 1;
+
+    return Column(
+      children: [
+        Row(
+          children: List.generate(9, (index) {
+            if (index.isOdd) {
+              final lineStep = (index / 2).floor();
+              return Expanded(
+                child: Container(
+                  height: 3,
+                  color: lineStep < currentStep
+                      ? AppTheme.teal500
+                      : const Color(0xFFE1E6ED),
+                ),
+              );
+            }
+            final step = index ~/ 2;
+            final active = step == currentStep;
+            final done = step <= currentStep;
+            return Container(
+              width: active ? 14 : 12,
+              height: active ? 14 : 12,
+              decoration: BoxDecoration(
+                color: active
+                    ? Colors.white
+                    : done
+                        ? AppTheme.teal500
+                        : const Color(0xFFE1E6ED),
+                shape: BoxShape.circle,
+                border: active
+                    ? Border.all(color: AppTheme.teal500, width: 3)
+                    : null,
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 12),
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Booked',
+              style: TextStyle(
+                color: AppTheme.teal500,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Text(
+              'En route',
+              style: TextStyle(
+                color: AppTheme.teal500,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Text(
+              'Arrived',
+              style: TextStyle(
+                color: Color(0xFF66758C),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLiveActions(Map<String, dynamic> job) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 88,
+          child: _buildOutlineAction(
+            label: 'Track',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => WorkOrderDetailScreen(job: job),
+                ),
+              ).then((_) => _fetchJobs(showLoading: false));
+            },
+          ),
+        ),
+        const Spacer(),
+        Container(
+          width: 8,
+          height: 8,
+          decoration: const BoxDecoration(
+            color: AppTheme.success,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Flexible(
+          child: Text(
+          'Live · updated just now',
+          style: TextStyle(
+            color: Color(0xFF66758C),
+            fontSize: 12,
+            height: 1,
+            fontWeight: FontWeight.w500,
+          ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScheduledActions(Map<String, dynamic> job) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildOutlineAction(
+            label: 'Reschedule',
+            onPressed: () => _rescheduleDialog(job),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildOutlineAction(
+            label: 'Cancel',
+            color: AppTheme.error,
+            onPressed: () => _cancelDialog(job),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyBookingsState() {
+    final history = _activeSegment == 1;
+    final title = history ? 'No history yet' : 'No bookings yet';
+    final subtitle = history
+        ? 'Completed and cancelled work orders will show up here.'
+        : 'When you book a service, your work\norders will show up here.';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 42, 28, 32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildEmptyIllustration(),
+          const SizedBox(height: 24),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.navy700,
+              fontSize: 20,
+              height: 1.05,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF66758C),
+              fontSize: 14,
+              height: 1.28,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: 200,
+            child: _buildPrimaryAction(
+              label: 'Browse services',
+              onPressed: widget.onBookNowTap,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyIllustration() {
+    return SizedBox(
+      width: 76,
+      height: 76,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFE1E6ED)),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.navy900.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDDF0FC),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.calendar_today_outlined,
+              color: AppTheme.navy700,
+              size: 24,
+            ),
+          ),
+          Positioned(
+            right: 6,
+            bottom: 8,
+            child: Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppTheme.orange500,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3),
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryJobCard(Map<String, dynamic> job) {
+    final status = job['status']?.toString() ?? 'completed';
+    final statusLower = status.toLowerCase();
+    final isCancelled = statusLower == 'cancelled' ||
+        statusLower == 'canceled' ||
+        statusLower == 'cancel' ||
+        statusLower == 'declined' ||
+        statusLower == 'pro_no_show' ||
+        statusLower == 'customer_no_show';
+    final proName = _jobProName(job);
+    final service = _jobService(job);
+    final address = _jobAddress(job);
+    final initials = _jobInitials(proName);
+    final reviewed = _jobHasReview(job);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDDE3EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                      color: AppTheme.success, shape: BoxShape.circle)),
-              const SizedBox(width: 6),
-              const Text('Live · updated just now',
-                  style: TextStyle(color: AppTheme.gray, fontSize: 11)),
-            ],
-          ),
-        ],
-      );
-    }
-
-    if (_activeSegment == 1) {
-      return Row(
-        children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => _rescheduleDialog(job),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.line),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                minimumSize: const Size(0, 40),
-              ),
-              child: const Text('Reschedule',
-                  style: TextStyle(
-                      color: AppTheme.navy700,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13.5)),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => _cancelDialog(job),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.error),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                minimumSize: const Size(0, 40),
-              ),
-              child: const Text('Cancel',
-                  style: TextStyle(
-                      color: AppTheme.error,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13.5)),
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (_activeSegment == 2) {
-      final statusLower = (job['status']?.toString() ?? '').toLowerCase();
-      final isCompleted = statusLower == 'completed' ||
-          statusLower == 'complete' ||
-          job['timeline']?['completedAt'] != null;
-      final isCancelledJob = statusLower == 'cancelled' ||
-          statusLower == 'canceled' ||
-          statusLower == 'cancel' ||
-          statusLower == 'declined' ||
-          statusLower == 'pro_no_show' ||
-          statusLower == 'customer_no_show';
-      if (isCancelled || isCancelledJob) {
-        return HoverButton(
-          text: 'Book again',
-          height: 40.0,
-          onPressed: widget.onBookNowTap,
-        );
-      }
-
-      final jobId = _resolveWorkOrderId(job);
-      final reviewed = job['reviewed'] == true ||
-          _localReviews.containsKey(jobId) ||
-          (job['reviewText']?.toString().isNotEmpty == true) ||
-          (job['review']?['text']?.toString().isNotEmpty == true) ||
-          (job['review']?['reviewText']?.toString().isNotEmpty == true) ||
-          (job['homeownerReview']?['text']?.toString().isNotEmpty == true) ||
-          (job['homeownerReview']?['reviewText']?.toString().isNotEmpty ==
-              true) ||
-          (job['homeowner_review']?['text']?.toString().isNotEmpty == true) ||
-          (job['homeowner_review']?['reviewText']?.toString().isNotEmpty ==
-              true);
-
-      if (!isCompleted) {
-        return HoverButton(
-          text: 'Book again',
-          height: 40.0,
-          onPressed: widget.onBookNowTap,
-        );
-      }
-
-      return Row(
-        children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () async {
-                showDialog(
-                  context: this.context,
-                  barrierDismissible: false,
-                  builder: (context) => const Center(
-                    child: CircularProgressIndicator(color: AppTheme.orange500),
+              Expanded(
+                child: Text(
+                  service,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF202B3D),
+                    fontSize: 15,
+                    height: 1.15,
+                    fontWeight: FontWeight.w900,
                   ),
-                );
-                try {
-                  final jobId = _resolveWorkOrderId(job);
-                  final eligibility = await HomeownerService.instance
-                      .getReviewEligibility(workOrderId: jobId);
-                  if (mounted) Navigator.pop(this.context); // Dismiss loading
-                  
-                  if (eligibility['eligible'] == false) {
-                    final reason = eligibility['reason']?.toString();
-                    if (mounted) {
-                      if (reason == 'already_reviewed') {
-                        if (reviewed) {
-                          _leaveReviewDialog(job);
-                          return;
-                        }
-                        ScaffoldMessenger.of(this.context).showSnackBar(
-                          const SnackBar(
-                            content: Text('You have already submitted a review for this service.'),
-                            backgroundColor: AppTheme.error,
-                          ),
-                        );
-                      } else if (reason == 'not_completed') {
-                        ScaffoldMessenger.of(this.context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Only completed services can be reviewed.'),
-                            backgroundColor: AppTheme.error,
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(this.context).showSnackBar(
-                          SnackBar(
-                            content: Text('This service is not eligible for review: ${reason ?? "unknown"}.'),
-                            backgroundColor: AppTheme.error,
-                          ),
-                        );
-                      }
-                    }
-                    return;
-                  }
-                  
-                  if (mounted) {
-                    _leaveReviewDialog(job);
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    Navigator.pop(this.context); // Dismiss loading
-                    ScaffoldMessenger.of(this.context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error checking eligibility: ${e.toString()}'),
-                        backgroundColor: AppTheme.error,
-                      ),
-                    );
-                  }
-                }
-              },
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.orange500),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                minimumSize: const Size(0, 40),
-              ),
-              child: Text(
-                reviewed ? 'Edit review' : 'Leave review',
-                style: const TextStyle(
-                  color: AppTheme.orange500,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
                 ),
               ),
+              const SizedBox(width: 12),
+              _buildStatusBadge(status),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildProviderRow(
+            initials: initials,
+            proName: proName,
+            priority: _jobPriority(job),
+          ),
+          const SizedBox(height: 10),
+          _buildInfoLine(
+            icon: Icons.insert_drive_file_outlined,
+            label: _formatHistoryLine(job, isCancelled: isCancelled),
+          ),
+          const SizedBox(height: 6),
+          _buildInfoLine(
+            icon: Icons.location_on_outlined,
+            label: address,
+          ),
+          const SizedBox(height: 12),
+          _buildHistoryActions(job, reviewed: reviewed, isCancelled: isCancelled),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryActions(
+    Map<String, dynamic> job, {
+    required bool reviewed,
+    required bool isCancelled,
+  }) {
+    if (isCancelled) {
+      return _buildOutlineAction(
+        label: 'Book again',
+        onPressed: widget.onBookNowTap,
+      );
+    }
+
+    if (reviewed) {
+      return Row(
+        children: [
+          const Text(
+            '★ ★ ★ ★ ★',
+            style: TextStyle(
+              color: AppTheme.orange500,
+              fontSize: 14,
+              height: 1,
+              fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => ReceiptScreen(job: job)),
-                );
-              },
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.line),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                minimumSize: const Size(0, 40),
+          const Expanded(
+            child: Text(
+              'Reviewed',
+              style: TextStyle(
+                color: AppTheme.success,
+                fontSize: 14,
+                height: 1,
+                fontWeight: FontWeight.w900,
               ),
-              child: const Text('Receipt',
-                  style: TextStyle(
-                      color: AppTheme.navy700,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13)),
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: ElevatedButton(
+          SizedBox(
+            width: 110,
+            child: _buildOutlineAction(
+              label: 'Book again',
               onPressed: widget.onBookNowTap,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.navy700,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                minimumSize: const Size(0, 40),
-                padding: EdgeInsets.zero,
-              ),
-              child: const Text('Book again',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
             ),
           ),
         ],
@@ -1374,113 +1682,283 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return Row(
       children: [
         Expanded(
-          child: OutlinedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (context) => WorkOrderDetailScreen(job: job)),
-              ).then((_) {
-                _fetchJobs(showLoading: false);
-              });
-            },
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: AppTheme.line),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              minimumSize: const Size(0, 40),
-            ),
-            child: const Text('View details',
-                style: TextStyle(
-                    color: AppTheme.navy700,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13)),
+          child: _buildPrimaryAction(
+            label: 'Leave a review',
+            onPressed: () => _openReviewWhenEligible(job, reviewed: reviewed),
           ),
         ),
-        if (isLive) ...[
-          const SizedBox(width: 8),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () {
-                // Same as view details for now, until Map screen is built
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => WorkOrderDetailScreen(job: job)),
-                ).then((_) {
-                  _fetchJobs(showLoading: false);
-                });
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.orange500,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                minimumSize: const Size(0, 40),
-                padding: EdgeInsets.zero,
-              ),
-              child: const Text('Track',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildOutlineAction(
+            label: 'Book again',
+            onPressed: widget.onBookNowTap,
           ),
-        ],
+        ),
       ],
     );
   }
 
-  String _getDayGroup(String? isoString) {
-    if (isoString == null) return 'UPCOMING';
+  Widget _buildPrimaryAction({
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      height: 40,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.orange500,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOutlineAction({
+    required String label,
+    required VoidCallback onPressed,
+    Color color = AppTheme.navy700,
+  }) {
+    return SizedBox(
+      height: 40,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: color,
+          backgroundColor: Colors.white,
+          side: BorderSide(
+            color: color == AppTheme.navy700
+                ? const Color(0xFFDDE3EA)
+                : color.withOpacity(0.52),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openReviewWhenEligible(
+    Map<String, dynamic> job, {
+    required bool reviewed,
+  }) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: AppTheme.orange500),
+      ),
+    );
+
     try {
-      final dt = DateTime.parse(isoString);
-      final weekdays = [
-        'MONDAY',
-        'TUESDAY',
-        'WEDNESDAY',
-        'THURSDAY',
-        'FRIDAY',
-        'SATURDAY',
-        'SUNDAY'
-      ];
-      final months = [
-        'JAN',
-        'FEB',
-        'MAR',
-        'APR',
-        'MAY',
-        'JUN',
-        'JUL',
-        'AUG',
-        'SEP',
-        'OCT',
-        'NOV',
-        'DEC'
-      ];
-      final wd = weekdays[dt.weekday - 1];
-      final month = months[dt.month - 1];
-      final day = dt.day.toString().padLeft(2, '0');
-      return '$wd, $month $day';
-    } catch (_) {
-      return 'UPCOMING';
+      final jobId = _resolveWorkOrderId(job);
+      final eligibility =
+          await HomeownerService.instance.getReviewEligibility(workOrderId: jobId);
+      if (mounted) Navigator.pop(context);
+
+      if (eligibility['eligible'] == false) {
+        final reason = eligibility['reason']?.toString();
+        if (!mounted) return;
+        if (reason == 'already_reviewed') {
+          if (reviewed) {
+            _leaveReviewDialog(job);
+            return;
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You have already submitted a review for this service.'),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        } else if (reason == 'not_completed') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Only completed services can be reviewed.'),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'This service is not eligible for review: ${reason ?? "unknown"}.',
+              ),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (mounted) _leaveReviewDialog(job);
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error checking eligibility: ${e.toString()}'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
     }
   }
 
-  Color _getStatusColor(String status) {
-    status = status.toLowerCase();
-    if (status.contains('quote') || status.contains('review'))
-      return AppTheme.orange500;
-    if (status == 'en_route') return AppTheme.teal500;
-    if (status == 'in_progress') return AppTheme.navy700;
-    if (status == 'arrived') return AppTheme.teal700;
-    if (status == 'completed' || status == 'complete') return AppTheme.success;
-    if (status == 'cancelled' || status == 'cancel') return AppTheme.error;
-    if (status == 'scheduled' || status == 'booked') return AppTheme.teal500;
-    return AppTheme.gray;
+  Color _avatarColor(String initials) {
+    if (initials == 'CA') return AppTheme.teal500;
+    if (initials == 'SE') return const Color(0xFFE3E9F1);
+    return AppTheme.navy700;
+  }
+
+  bool _isTomorrow(Map<String, dynamic> job) {
+    final start = _parseDateTime(job['scheduledStart']?.toString());
+    if (start == null) return false;
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    return start.year == tomorrow.year &&
+        start.month == tomorrow.month &&
+        start.day == tomorrow.day;
+  }
+
+  bool _isLastWeek(Map<String, dynamic> job) {
+    final start = _parseDateTime(job['scheduledStart']?.toString());
+    if (start == null) return false;
+    final now = DateTime.now();
+    final days = now.difference(start).inDays;
+    return days >= 0 && days <= 7;
+  }
+
+  String _formatUpcomingLine(
+    Map<String, dynamic> job, {
+    required bool isAlert,
+  }) {
+    if (isAlert) return 'Quoted today · you approve the cap';
+
+    final start = _parseDateTime(job['scheduledStart']?.toString());
+    final end = _parseDateTime(job['scheduledEnd']?.toString());
+    if (start == null) return 'Date TBD';
+    return '${_relativeDateLabel(start)} · ${_timeRangeLabel(start, end)}';
+  }
+
+  String _formatHistoryLine(
+    Map<String, dynamic> job, {
+    required bool isCancelled,
+  }) {
+    final start = _parseDateTime(job['scheduledStart']?.toString());
+    if (isCancelled) return '${_monthDayLabel(start)} · Cancelled by you';
+    final amount = _paidAmount(job);
+    return amount == null
+        ? '${_monthDayLabel(start)} · Paid'
+        : '${_monthDayLabel(start)} · Paid $amount';
+  }
+
+  String _relativeDateLabel(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final target = DateTime(date.year, date.month, date.day);
+    final days = target.difference(today).inDays;
+    if (days == 0) return 'Today';
+    if (days == 1) return 'Tomorrow';
+    return _monthDayLabel(date);
+  }
+
+  String _monthDayLabel(DateTime? date) {
+    if (date == null) return 'Date TBD';
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}';
+  }
+
+  String _timeRangeLabel(DateTime start, DateTime? end) {
+    if (end == null) return _clockLabel(start);
+    final samePeriod = (start.hour >= 12) == (end.hour >= 12);
+    if (samePeriod && start.minute == 0 && end.minute == 0) {
+      return '${_hourLabel(start)}-${_clockLabel(end)}';
+    }
+    return '${_clockLabel(start)}-${_clockLabel(end)}';
+  }
+
+  String _hourLabel(DateTime date) {
+    var hour = date.hour % 12;
+    if (hour == 0) hour = 12;
+    return hour.toString();
+  }
+
+  String _clockLabel(DateTime date) {
+    var hour = date.hour % 12;
+    if (hour == 0) hour = 12;
+    final minute = date.minute == 0
+        ? ''
+        : ':${date.minute.toString().padLeft(2, '0')}';
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    return '$hour$minute $period';
+  }
+
+  String? _paidAmount(Map<String, dynamic> job) {
+    for (final key in const [
+      'paidAmount',
+      'paid_amount',
+      'total',
+      'totalAmount',
+      'finalAmount',
+      'amount',
+      'price',
+    ]) {
+      final value = job[key];
+      if (value is num) {
+        return '\$${value % 1 == 0 ? value.toInt() : value.toStringAsFixed(2)}';
+      }
+      final parsed = num.tryParse(value?.toString() ?? '');
+      if (parsed != null) {
+        return '\$${parsed % 1 == 0 ? parsed.toInt() : parsed.toStringAsFixed(2)}';
+      }
+    }
+    return null;
   }
 
   String _getStatusText(String status) {
     status = status.toLowerCase();
-    if (status.contains('quote') || status.contains('review'))
+    if (status.contains('quote') || status.contains('review')) {
       return 'Quote ready';
+    }
     if (status == 'en_route') return 'En route';
     if (status == 'in_progress') return 'In progress';
     if (status == 'arrived') return 'Arrived';
@@ -1488,5 +1966,28 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     if (status == 'cancelled' || status == 'cancel') return 'Cancelled';
     if (status == 'scheduled' || status == 'booked') return 'Booked';
     return status.toUpperCase();
+  }
+}
+
+class _BookingSectionLabel extends StatelessWidget {
+  final String label;
+
+  const _BookingSectionLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF66758C),
+          fontSize: 12,
+          height: 1,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 2.2,
+        ),
+      ),
+    );
   }
 }

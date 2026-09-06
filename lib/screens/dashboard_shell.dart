@@ -4,14 +4,19 @@ import 'dart:math' as math;
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 import 'book_flow.dart';
+import 'account/home_profile.dart';
 import 'home_tab.dart';
 import 'search_tab.dart';
 import 'bookings_tab.dart';
 import 'reward_tab.dart';
 import 'profile_tab.dart';
 import 'category_guides_screen.dart';
+import 'inbox_tab.dart';
 import 'onboarding_slider.dart';
+import 'support_page.dart';
 import '../services/auth_service.dart';
+import '../services/homeowner_service.dart';
+import '../widgets/main_bottom_navigation.dart';
 
 class DashboardShell extends StatefulWidget {
   const DashboardShell({super.key});
@@ -25,9 +30,29 @@ class _DashboardShellState extends State<DashboardShell> {
   int _bookingsInitialSegment = 0;
   Key _bookingsTabKey = UniqueKey();
 
+  bool get _showTopBrandNav =>
+      _currentIndex != 1 &&
+      _currentIndex != 2 &&
+      _currentIndex != 3 &&
+      _currentIndex != 4;
+
   @override
   void initState() {
     super.initState();
+    AppTabNavigation.requestedTab.addListener(_applyRequestedTab);
+  }
+
+  @override
+  void dispose() {
+    AppTabNavigation.requestedTab.removeListener(_applyRequestedTab);
+    super.dispose();
+  }
+
+  void _applyRequestedTab() {
+    final index = AppTabNavigation.requestedTab.value;
+    if (index == null || !mounted || index < 0 || index > 4) return;
+    setState(() => _currentIndex = index);
+    AppTabNavigation.requestedTab.value = null;
   }
 
   Future<void> _openBookingFlow(
@@ -37,7 +62,8 @@ class _DashboardShellState extends State<DashboardShell> {
     final booked = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) => BookFlowScreen(pro: Map<String, dynamic>.from(pro)),
+        builder: (context) =>
+            BookFlowScreen(pro: Map<String, dynamic>.from(pro)),
       ),
     );
 
@@ -63,7 +89,7 @@ class _DashboardShellState extends State<DashboardShell> {
           textColor: Colors.white,
           onPressed: () {
             setState(() {
-              _bookingsInitialSegment = 1;
+              _bookingsInitialSegment = 0;
               _currentIndex = 2;
               _bookingsTabKey = UniqueKey();
             });
@@ -73,7 +99,7 @@ class _DashboardShellState extends State<DashboardShell> {
     );
 
     setState(() {
-      _bookingsInitialSegment = 1;
+      _bookingsInitialSegment = 0;
       _currentIndex = 2;
       _bookingsTabKey = UniqueKey();
     });
@@ -113,19 +139,24 @@ class _DashboardShellState extends State<DashboardShell> {
           );
           if (booked == true) {
             setState(() {
-              _bookingsInitialSegment = 1;
+              _bookingsInitialSegment = 0;
               _currentIndex = 2; // Bookings Tab
               _bookingsTabKey = UniqueKey();
             });
           }
         },
-        onJobTap: (job) {
-          _openBookingFlow(job);
+        onJobTap: (_) {
+          setState(() {
+            _bookingsInitialSegment = 0;
+            _currentIndex = 2;
+            _bookingsTabKey = UniqueKey();
+          });
         },
         onInboxTap: () {
-          setState(() {
-            _currentIndex = 1; // Go to Browse Tab
-          });
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const InboxScreen()),
+          );
         },
         onSearchQuery: (query) async {
           final booked = await Navigator.push(
@@ -139,7 +170,7 @@ class _DashboardShellState extends State<DashboardShell> {
           );
           if (booked == true) {
             setState(() {
-              _bookingsInitialSegment = 1;
+              _bookingsInitialSegment = 0;
               _currentIndex = 2; // Bookings Tab
               _bookingsTabKey = UniqueKey();
             });
@@ -158,13 +189,29 @@ class _DashboardShellState extends State<DashboardShell> {
           );
           if (booked == true) {
             setState(() {
-              _bookingsInitialSegment = 1;
+              _bookingsInitialSegment = 0;
               _currentIndex = 2; // Bookings Tab
               _bookingsTabKey = UniqueKey();
             });
           }
         },
         onGuidesTap: _openCategoryGuides,
+        onManageHomeTap: () async {
+          final addresses = List<dynamic>.from(
+              HomeownerService.instance.cachedAddresses ?? const []);
+          if (addresses.isEmpty) {
+            setState(() {
+              _currentIndex = 4;
+            });
+            return;
+          }
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => HomeProfileScreen(addresses: addresses),
+            ),
+          );
+        },
       ),
       const BrowseScreen(),
       BookingsTab(
@@ -179,7 +226,7 @@ class _DashboardShellState extends State<DashboardShell> {
           );
           if (booked == true) {
             setState(() {
-              _bookingsInitialSegment = 1;
+              _bookingsInitialSegment = 0;
               _currentIndex = 2; // Refresh Bookings Tab
               _bookingsTabKey = UniqueKey();
             });
@@ -196,7 +243,7 @@ class _DashboardShellState extends State<DashboardShell> {
           );
           if (booked == true) {
             setState(() {
-              _bookingsInitialSegment = 1;
+              _bookingsInitialSegment = 0;
               _currentIndex = 2;
               _bookingsTabKey = UniqueKey();
             });
@@ -238,7 +285,7 @@ class _DashboardShellState extends State<DashboardShell> {
           child: SafeArea(
             child: Column(
               children: [
-                _buildTradeWorksNav(),
+                if (_showTopBrandNav) _buildTradeWorksNav(),
                 Expanded(
                   child: IndexedStack(
                     index: _currentIndex,
@@ -250,67 +297,17 @@ class _DashboardShellState extends State<DashboardShell> {
           ),
         ),
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 16,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          child: BottomNavigationBar(
-            currentIndex: _currentIndex,
-            onTap: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-            type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.white,
-            selectedItemColor: AppTheme.orange500,
-            unselectedItemColor: AppTheme.gray,
-            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 11),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.search_outlined),
-                activeIcon: Icon(Icons.search),
-                label: 'Browse',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.calendar_today_outlined),
-                activeIcon: Icon(Icons.calendar_today),
-                label: 'Bookings',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.star_outline),
-                activeIcon: Icon(Icons.star),
-                label: 'Rewards',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline),
-                activeIcon: Icon(Icons.person),
-                label: 'Profile',
-              ),
-            ],
-          ),
-        ),
+      bottomNavigationBar: MainBottomNavigation(
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
       ),
     );
   }
 
   Widget _buildTradeWorksNav() {
     return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: AppTheme.line, width: 0.5)),
@@ -328,38 +325,71 @@ class _DashboardShellState extends State<DashboardShell> {
             'TradeWorks',
             style: TextStyle(
               color: AppTheme.navy700,
-              fontSize: 22,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
             ),
           ),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             decoration: BoxDecoration(
-              color: AppTheme.navyTint,
-              borderRadius: BorderRadius.circular(999),
+              color: AppTheme.teal500,
+              borderRadius: BorderRadius.circular(4),
             ),
             child: const Text(
               'AI',
               style: TextStyle(
-                color: AppTheme.navy700,
-                fontSize: 11,
+                color: Colors.white,
+                fontSize: 9,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
           const Spacer(),
-          IconButton(
-            tooltip: 'Inbox',
-            onPressed: () {},
-            icon: const Icon(Icons.mail_outline,
-                color: AppTheme.navy700, size: 20),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                tooltip: 'Inbox',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const InboxScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.mail_outline,
+                    color: AppTheme.navy700, size: 21),
+              ),
+              Positioned(
+                right: 10,
+                top: 13,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: AppTheme.orange500,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                ),
+              ),
+            ],
           ),
           IconButton(
             tooltip: 'Help',
-            onPressed: () {},
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SupportPage(),
+                ),
+              );
+            },
             icon: const Icon(Icons.help_outline,
-                color: AppTheme.navy700, size: 20),
+                color: AppTheme.navy700, size: 21),
           ),
         ],
       ),
@@ -396,11 +426,13 @@ class _DashboardShellState extends State<DashboardShell> {
                   ),
                   Row(
                     children: [
-                      const Icon(Icons.stars, color: AppTheme.orange500, size: 26),
+                      const Icon(Icons.stars,
+                          color: AppTheme.orange500, size: 26),
                       const SizedBox(width: 8),
                       Text(
                         'Exclusive Offers for You',
-                        style: AppTheme.headingStyle.copyWith(fontSize: 18, color: AppTheme.navy700),
+                        style: AppTheme.headingStyle
+                            .copyWith(fontSize: 18, color: AppTheme.navy700),
                       ),
                     ],
                   ),
@@ -411,19 +443,22 @@ class _DashboardShellState extends State<DashboardShell> {
                       children: [
                         _buildOfferCard(
                           title: '\$50 Off Summer HVAC Special',
-                          desc: 'Get \$50 off any HVAC repair or maintenance service this month.',
+                          desc:
+                              'Get \$50 off any HVAC repair or maintenance service this month.',
                           code: 'SUMMER50',
                           partner: 'AirFlow HVAC Specialists',
                         ),
                         _buildOfferCard(
                           title: 'Free Water Quality Test',
-                          desc: 'Book a plumbing diagnostic and get a water hardness/purity test free.',
+                          desc:
+                              'Book a plumbing diagnostic and get a water hardness/purity test free.',
                           code: 'PUREWATER',
                           partner: 'Rooter & Plumb Co.',
                         ),
                         _buildOfferCard(
                           title: 'Double Rewards Points',
-                          desc: 'Earn 6% back in service credits on your next landscaping booking.',
+                          desc:
+                              'Earn 6% back in service credits on your next landscaping booking.',
                           code: 'DOUBLEGREEN',
                           partner: 'TradeWorks Network',
                         ),
@@ -461,7 +496,10 @@ class _DashboardShellState extends State<DashboardShell> {
             children: [
               Text(
                 partner,
-                style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.orange700, fontSize: 11),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.orange700,
+                    fontSize: 11),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -471,7 +509,11 @@ class _DashboardShellState extends State<DashboardShell> {
                 ),
                 child: Text(
                   code,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 10,
+                      letterSpacing: 0.5),
                 ),
               ),
             ],
@@ -479,7 +521,10 @@ class _DashboardShellState extends State<DashboardShell> {
           const SizedBox(height: 8),
           Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.navy700, fontSize: 14.5),
+            style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppTheme.navy700,
+                fontSize: 14.5),
           ),
           const SizedBox(height: 4),
           Text(
@@ -528,7 +573,8 @@ class BrowseScreen extends StatelessWidget {
               backgroundColor: Colors.white,
               bottom: const PreferredSize(
                 preferredSize: Size.fromHeight(0.5),
-                child: Divider(height: 0.5, thickness: 0.5, color: AppTheme.line),
+                child:
+                    Divider(height: 0.5, thickness: 0.5, color: AppTheme.line),
               ),
             )
           : null,
@@ -567,7 +613,8 @@ class AnimatedGiftIcon extends StatefulWidget {
   State<AnimatedGiftIcon> createState() => _AnimatedGiftIconState();
 }
 
-class _AnimatedGiftIconState extends State<AnimatedGiftIcon> with SingleTickerProviderStateMixin {
+class _AnimatedGiftIconState extends State<AnimatedGiftIcon>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
   @override
@@ -639,7 +686,7 @@ class _AnimatedGiftIconState extends State<AnimatedGiftIcon> with SingleTickerPr
 
 class GiftBoxPainter extends CustomPainter {
   final double lidOpenProgress; // 0.0 to 1.0
-  final double wiggleProgress;  // -1.0 to 1.0
+  final double wiggleProgress; // -1.0 to 1.0
 
   GiftBoxPainter({required this.lidOpenProgress, required this.wiggleProgress});
 
@@ -659,7 +706,8 @@ class GiftBoxPainter extends CustomPainter {
     }
 
     final redPaint = Paint()
-      ..color = const Color(0xFFD32F2F) // Red box color (standard red/gold requested)
+      ..color =
+          const Color(0xFFD32F2F) // Red box color (standard red/gold requested)
       ..style = PaintingStyle.fill;
 
     final goldPaint = Paint()

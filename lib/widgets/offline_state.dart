@@ -55,8 +55,8 @@ class OfflineState extends StatelessWidget {
                       color: AppTheme.orange500.withOpacity(0.2),
                     ),
                   ),
-                  child: const Icon(
-                    Icons.wifi_off_rounded,
+                  child: Icon(
+                    icon,
                     size: 34,
                     color: AppTheme.orange500,
                   ),

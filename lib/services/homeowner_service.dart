@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/app_error_utils.dart';
 import 'api_config.dart';
 import 'auth_service.dart';
@@ -48,13 +49,38 @@ class HomeownerService {
   Map<String, dynamic>? _cachedProfile;
   DateTime? _cachedProfileAt;
   Future<Map<String, dynamic>>? _profileInFlight;
+  Map<String, dynamic>? _cachedRewards;
+  DateTime? _cachedRewardsAt;
+  Future<Map<String, dynamic>>? _rewardsInFlight;
   Map<String, dynamic>? _cachedWorkOrdersResponse;
   DateTime? _cachedWorkOrdersAt;
   Future<Map<String, dynamic>>? _workOrdersInFlight;
+  final Map<int, Map<String, dynamic>> _reviewEligibilityCache = {};
+  final Map<int, DateTime> _reviewEligibilityCacheAt = {};
+  final Map<int, Future<Map<String, dynamic>>> _reviewEligibilityInFlight = {};
   final Map<String, Map<String, dynamic>> _contractorProfileCache = {};
   final Map<String, DateTime> _contractorProfileCacheAt = {};
   final Map<String, Future<Map<String, dynamic>>> _contractorProfileInFlight =
       {};
+  final Map<String, Map<String, dynamic>> _searchProsCache = {};
+  final Map<String, DateTime> _searchProsCacheAt = {};
+  final Map<String, Map<String, dynamic>> _zipCoverageCache = {};
+  final Map<String, DateTime> _zipCoverageCacheAt = {};
+  final Map<String, Map<String, dynamic>> _availabilityCache = {};
+  final Map<String, DateTime> _availabilityCacheAt = {};
+  SharedPreferences? _preferences;
+  Future<SharedPreferences>? _preferencesInFlight;
+  final Map<String, _RecentRequestFailure> _recentRequestFailures = {};
+  static const Duration _requestTimeout = Duration(seconds: 15);
+  static const Duration _recentFailureCooldown = Duration(seconds: 5);
+  static const String _persistentCachePrefix = 'homeowner_api_cache_v1_';
+  static const Duration _profileCacheTtl = Duration(minutes: 10);
+  static const Duration _workOrdersCacheTtl = Duration(minutes: 2);
+  static const Duration _rewardsCacheTtl = Duration(minutes: 5);
+  static const Duration _searchCacheTtl = Duration(minutes: 5);
+  static const Duration _coverageCacheTtl = Duration(hours: 12);
+  static const Duration _contractorProfileCacheTtl = Duration(hours: 1);
+  static const Duration _availabilityCacheTtl = Duration(minutes: 1);
 
   String _normalizeWorkOrderStatus(dynamic rawStatus) {
     final status = rawStatus?.toString().trim().toLowerCase() ?? '';
@@ -488,17 +514,190 @@ class HomeownerService {
   }
 
   String? get _userId => AuthService.instance.userId;
-  // Demo-mode fallbacks are disabled so homeowner flows only use backend data.
+  /// Demo/mock mode is permanently disabled for the commercial build.
+  /// It previously auto-enabled on `localhost`/`127.0.0.1`, which meant
+  /// every local dev/staging run silently faked contractor availability,
+  /// pricing, and booking submission instead of hitting the real backend —
+  /// including in any environment that happens to resolve to those hosts.
+  /// If a mock mode is ever needed again for offline UI work, it must be
+  /// an explicit opt-in (e.g. a build flag), never inferred from hostname.
   bool get _isDemo => false;
 
-  void _invalidateProfileCache() {
-    _cachedProfile = null;
-    _cachedProfileAt = null;
+  void _ensureDemoState() {
+    _mockAddresses ??= [
+      {
+        'id': 100,
+        'label': 'Home',
+        'street': '742 Evergreen Terrace',
+        'city': 'Riverview',
+        'state': 'FL',
+        'zip': '33578',
+        'isDefault': true,
+      },
+    ];
+
+    if (_mockWorkOrders.isNotEmpty) return;
+
+    final now = DateTime.now();
+    _mockWorkOrders.addAll([
+      {
+        'workOrderId': 101,
+        'status': 'active',
+        'serviceCategory': 'Plumbing',
+        'priority': 'Urgent',
+        'createdAt': now.subtract(const Duration(hours: 3)).toIso8601String(),
+        'scheduledStart': now.add(const Duration(hours: 2)).toIso8601String(),
+        'scheduledEnd': now.add(const Duration(hours: 4)).toIso8601String(),
+        'address': Map<String, dynamic>.from(_mockAddresses!.first),
+        'pro': {
+          'id': 'pro-plumbing-1',
+          'slug': 'sunrise-plumbing',
+          'businessName': 'Sunrise Plumbing Co.',
+        },
+        'timeline': {
+          'acceptedAt':
+              now.subtract(const Duration(hours: 2)).toIso8601String(),
+        },
+        'description': 'Kitchen sink leak and water pressure check.',
+      },
+      {
+        'workOrderId': 102,
+        'status': 'scheduled',
+        'serviceCategory': 'HVAC',
+        'priority': 'Standard',
+        'createdAt': now.subtract(const Duration(days: 1)).toIso8601String(),
+        'scheduledStart': now.add(const Duration(days: 1, hours: 4))
+            .toIso8601String(),
+        'scheduledEnd': now.add(const Duration(days: 1, hours: 6))
+            .toIso8601String(),
+        'address': Map<String, dynamic>.from(_mockAddresses!.first),
+        'pro': {
+          'id': 'pro-hvac-1',
+          'slug': 'gulf-coast-air',
+          'businessName': 'Gulf Coast Air',
+        },
+        'timeline': {
+          'acceptedAt':
+              now.subtract(const Duration(hours: 20)).toIso8601String(),
+        },
+        'description': 'Seasonal AC tune-up and airflow inspection.',
+      },
+    ]);
   }
 
-  void _invalidateWorkOrderCache() {
+  Future<SharedPreferences> _getPreferences() {
+    final existing = _preferences;
+    if (existing != null) return Future.value(existing);
+    return _preferencesInFlight ??= SharedPreferences.getInstance().then((prefs) {
+      _preferences = prefs;
+      return prefs;
+    });
+  }
+
+  String _persistentCacheKey(String resource) {
+    final userScope = _userId?.trim().isNotEmpty == true ? _userId! : 'public';
+    return '$_persistentCachePrefix$userScope:$resource';
+  }
+
+  Future<Map<String, dynamic>?> _readPersistentCache(
+    String resource,
+    Duration maxAge,
+  ) async {
+    final prefs = await _getPreferences();
+    final key = _persistentCacheKey(resource);
+    final raw = prefs.getString(key);
+    if (raw == null || raw.isEmpty) return null;
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final savedAt = decoded['savedAt'] as int?;
+      final data = decoded['data'];
+      if (savedAt == null || data is! Map) return null;
+      final age = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(savedAt),
+      );
+      if (age > maxAge || age.isNegative) {
+        await prefs.remove(key);
+        return null;
+      }
+      return Map<String, dynamic>.from(data);
+    } catch (_) {
+      await prefs.remove(key);
+      return null;
+    }
+  }
+
+  Future<void> _writePersistentCache(
+    String resource,
+    Map<String, dynamic> data,
+  ) async {
+    final prefs = await _getPreferences();
+    await prefs.setString(
+      _persistentCacheKey(resource),
+      jsonEncode({
+        'savedAt': DateTime.now().millisecondsSinceEpoch,
+        'data': data,
+      }),
+    );
+  }
+
+  Future<void> _removePersistentCache(String resource) async {
+    final prefs = await _getPreferences();
+    await prefs.remove(_persistentCacheKey(resource));
+  }
+
+  Future<void> _removePersistentCacheGroup(String resourcePrefix) async {
+    final prefs = await _getPreferences();
+    final keyPrefix = _persistentCacheKey(resourcePrefix);
+    final keys = prefs
+        .getKeys()
+        .where((key) => key.startsWith(keyPrefix))
+        .toList(growable: false);
+    await Future.wait(keys.map(prefs.remove));
+  }
+
+  Future<void> _invalidateProfileCache() async {
+    _cachedProfile = null;
+    _cachedProfileAt = null;
+    await _removePersistentCache('profile');
+  }
+
+  Future<void> _invalidateWorkOrderCache() async {
     _cachedWorkOrdersResponse = null;
     _cachedWorkOrdersAt = null;
+    await _removePersistentCache('work-orders');
+  }
+
+  Future<void> _invalidateRewardsCache() async {
+    _cachedRewards = null;
+    _cachedRewardsAt = null;
+    await _removePersistentCache('rewards');
+  }
+
+  Future<void> _invalidateAvailabilityCache() async {
+    _availabilityCache.clear();
+    _availabilityCacheAt.clear();
+    await _removePersistentCacheGroup('availability:');
+  }
+
+  Future<void> _invalidateContractorProfileCache() async {
+    _contractorProfileCache.clear();
+    _contractorProfileCacheAt.clear();
+    _contractorProfileInFlight.clear();
+    await _removePersistentCacheGroup('contractor-profile:');
+  }
+
+  void _invalidateReviewEligibilityCache([int? workOrderId]) {
+    if (workOrderId != null) {
+      _reviewEligibilityCache.remove(workOrderId);
+      _reviewEligibilityCacheAt.remove(workOrderId);
+      _reviewEligibilityInFlight.remove(workOrderId);
+      return;
+    }
+    _reviewEligibilityCache.clear();
+    _reviewEligibilityCacheAt.clear();
+    _reviewEligibilityInFlight.clear();
   }
 
   Future<Map<String, String>> _jsonHeaders() async {
@@ -517,11 +716,50 @@ class HomeownerService {
     Map<String, dynamic> body,
   ) async {
     final headers = await _jsonHeaders();
-    return http.post(
-      Uri.parse('${ApiConfig.baseUrl}$endpoint'),
-      headers: headers,
-      body: jsonEncode(body),
+    return http
+        .post(
+          Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+          headers: headers,
+          body: jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
+  }
+
+  void _throwIfRecentFailure(String endpoint) {
+    final recent = _recentRequestFailures[endpoint];
+    if (recent == null) return;
+    if (DateTime.now().difference(recent.at) >= _recentFailureCooldown) {
+      _recentRequestFailures.remove(endpoint);
+      return;
+    }
+    throw Exception(recent.message);
+  }
+
+  void _cacheRecentFailure(
+    String endpoint,
+    Object error, {
+    String? fallbackMessage,
+  }) {
+    final raw = error.toString().toLowerCase();
+    final shouldCache =
+        AppErrorUtils.isNetworkError(error) ||
+        raw.contains('empty response') ||
+        raw.contains('returned an empty response') ||
+        raw.contains('got an empty response');
+    if (!shouldCache) {
+      return;
+    }
+    _recentRequestFailures[endpoint] = _RecentRequestFailure(
+      at: DateTime.now(),
+      message: AppErrorUtils.friendlyMessage(
+        error,
+        fallback: fallbackMessage ?? AppErrorUtils.genericMessage,
+      ),
     );
+  }
+
+  void _clearRecentFailure(String endpoint) {
+    _recentRequestFailures.remove(endpoint);
   }
 
   Future<Map<String, dynamic>> _post(
@@ -529,19 +767,35 @@ class HomeownerService {
     Map<String, dynamic> body, {
     String? fallbackEndpoint,
   }) async {
+    _throwIfRecentFailure(endpoint);
     try {
-      var response = await _postRaw(endpoint, body);
+      http.Response response;
+      try {
+        response = await _postRaw(endpoint, body);
+      } catch (primaryError) {
+        if (fallbackEndpoint == null ||
+            !AppErrorUtils.isNetworkError(primaryError)) {
+          rethrow;
+        }
+        response = await _postRaw(fallbackEndpoint, body);
+      }
+
       if (response.statusCode == 404 && fallbackEndpoint != null) {
         response = await _postRaw(fallbackEndpoint, body);
       }
 
       if (response.body.isEmpty) {
-        throw Exception('Received empty response from server.');
+        throw Exception(ApiConfig.emptyResponseMessage(endpoint));
       }
 
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>) {
         throw Exception('Invalid response format.');
+      }
+
+      if (_isAuthenticationFailure(response.statusCode, data)) {
+        await AuthService.instance.invalidateSession();
+        throw Exception('Your session has expired. Please sign in again.');
       }
 
       if (response.statusCode >= 400) {
@@ -562,8 +816,16 @@ class HomeownerService {
         throw Exception(error);
       }
 
+      _clearRecentFailure(endpoint);
+      if (fallbackEndpoint != null) {
+        _clearRecentFailure(fallbackEndpoint);
+      }
       return data;
     } catch (e) {
+      _cacheRecentFailure(endpoint, e);
+      if (fallbackEndpoint != null) {
+        _cacheRecentFailure(fallbackEndpoint, e);
+      }
       if (kDebugMode) {
         print('HomeownerService POST Error on $endpoint: $e');
       }
@@ -571,9 +833,28 @@ class HomeownerService {
     }
   }
 
+  bool _isAuthenticationFailure(
+    int statusCode,
+    Map<String, dynamic> response,
+  ) {
+    if (statusCode == 401) return true;
+
+    final detail = [
+      response['error'],
+      response['reason'],
+      response['message'],
+    ].whereType<Object>().join(' ').toLowerCase();
+    return detail.contains('unauthenticated') ||
+        detail.contains('unauthorized') ||
+        detail.contains('invalid jwt') ||
+        detail.contains('jwt expired') ||
+        detail.contains('expired token');
+  }
+
   // H1: Fetch Work Orders
   Future<Map<String, dynamic>> fetchWorkOrders() async {
     if (_isDemo) {
+      _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 300));
       return _withNormalizedTabs({
         'success': true,
@@ -582,20 +863,31 @@ class HomeownerService {
       });
     }
 
+    final uid = _userId;
+    if (uid == null) throw Exception('User is not authenticated');
+
     final cached = _cachedWorkOrdersResponse;
     final cachedAt = _cachedWorkOrdersAt;
     if (cached != null &&
         cachedAt != null &&
-        DateTime.now().difference(cachedAt) < const Duration(seconds: 6)) {
+        DateTime.now().difference(cachedAt) < _workOrdersCacheTtl) {
       return cached;
     }
     final inFlight = _workOrdersInFlight;
     if (inFlight != null) return inFlight;
 
-    final uid = _userId;
-    if (uid == null) throw Exception('User is not authenticated');
-    final future =
-        _post(
+    final persistent = await _readPersistentCache(
+      'work-orders',
+      _workOrdersCacheTtl,
+    );
+    if (persistent != null) {
+      final normalized = _withNormalizedTabs(persistent);
+      _cachedWorkOrdersResponse = normalized;
+      _cachedWorkOrdersAt = DateTime.now();
+      return normalized;
+    }
+
+    final future = _post(
           _workOrdersListPath,
           {'userId': uid},
           fallbackEndpoint: _legacyWorkOrdersListPath,
@@ -606,6 +898,7 @@ class HomeownerService {
       final resp = await future;
       _cachedWorkOrdersResponse = resp;
       _cachedWorkOrdersAt = DateTime.now();
+      await _writePersistentCache('work-orders', resp);
       return resp;
     } finally {
       _workOrdersInFlight = null;
@@ -668,7 +961,7 @@ class HomeownerService {
           body,
           fallbackEndpoint: _legacyWorkOrdersActionPath,
         );
-    _invalidateWorkOrderCache();
+    await _invalidateWorkOrderCache();
     return result;
   }
 
@@ -725,7 +1018,7 @@ class HomeownerService {
       body,
       fallbackEndpoint: _legacyBookingCommitPath,
     );
-    _invalidateWorkOrderCache();
+    await _invalidateWorkOrderCache();
     return result;
   }
 
@@ -745,19 +1038,14 @@ class HomeownerService {
       return {'success': true, 'ok': true};
     }
 
-    final uid = _userId;
-    if (uid == null) throw Exception('User is not authenticated');
+    if (_userId == null) throw Exception('User is not authenticated');
     final ratingInt = rating.round().clamp(1, 5).toInt();
 
     final body = {
       'action': 'submit_review',
       'workOrderId': workOrderId,
-      'work_order_id': workOrderId,
-      'requesterUserId': uid,
-      'requester_user_id': uid,
       'rating': ratingInt,
       'text': text,
-      'reviewText': text,
       if (displayName != null) 'displayName': displayName,
     };
     final result = await _post(
@@ -765,7 +1053,10 @@ class HomeownerService {
       body,
       fallbackEndpoint: _legacyReviewActionPath,
     );
-    _invalidateWorkOrderCache();
+    await _invalidateWorkOrderCache();
+    _invalidateReviewEligibilityCache(workOrderId);
+    await _invalidateContractorProfileCache();
+    await _invalidateRewardsCache();
     return result;
   }
 
@@ -781,34 +1072,61 @@ class HomeownerService {
       };
     }
 
-    final uid = _userId;
-    if (uid == null) throw Exception('User is not authenticated');
+    if (_userId == null) throw Exception('User is not authenticated');
 
-    return await _post(
+    final cached = _reviewEligibilityCache[workOrderId];
+    final cachedAt = _reviewEligibilityCacheAt[workOrderId];
+    if (cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < const Duration(minutes: 5)) {
+      return cached;
+    }
+
+    final inFlight = _reviewEligibilityInFlight[workOrderId];
+    if (inFlight != null) return inFlight;
+
+    final future = _post(
       _reviewActionPath,
       {
         'action': 'get_review_eligibility',
         'workOrderId': workOrderId,
-        'work_order_id': workOrderId,
-        'requesterUserId': uid,
-        'requester_user_id': uid,
       },
       fallbackEndpoint: _legacyReviewActionPath,
     );
+    _reviewEligibilityInFlight[workOrderId] = future;
+    try {
+      final resp = await future;
+      _reviewEligibilityCache[workOrderId] = resp;
+      _reviewEligibilityCacheAt[workOrderId] = DateTime.now();
+      return resp;
+    } finally {
+      _reviewEligibilityInFlight.remove(workOrderId);
+    }
   }
 
   Future<Map<String, dynamic>> getContractorProfile(String slug) async {
     try {
+      final resource = 'contractor-profile:${Uri.encodeComponent(slug)}';
       final cached = _contractorProfileCache[slug];
       final cachedAt = _contractorProfileCacheAt[slug];
       if (cached != null &&
           cachedAt != null &&
-          DateTime.now().difference(cachedAt) < const Duration(seconds: 30)) {
+          DateTime.now().difference(cachedAt) < _contractorProfileCacheTtl) {
         return cached;
       }
 
       final inFlight = _contractorProfileInFlight[slug];
       if (inFlight != null) return inFlight;
+
+      final persistent = await _readPersistentCache(
+        resource,
+        _contractorProfileCacheTtl,
+      );
+      if (persistent != null) {
+        _contractorProfileCache[slug] = persistent;
+        _contractorProfileCacheAt[slug] = DateTime.now();
+        return persistent;
+      }
 
       final future = () async {
         var response = await _postRaw(_contractorProfilePath, {'slug': slug});
@@ -830,6 +1148,7 @@ class HomeownerService {
       final data = await future;
       _contractorProfileCache[slug] = data;
       _contractorProfileCacheAt[slug] = DateTime.now();
+      await _writePersistentCache(resource, data);
       return data;
     } catch (e) {
       if (kDebugMode) {
@@ -844,6 +1163,7 @@ class HomeownerService {
   // H4: Contractor availability
   Future<Map<String, dynamic>> getContractorAvailability({
     required String contractorId,
+    String? serviceId,
     String urgency = 'standard',
     required String fromDate,
     required String toDate,
@@ -855,30 +1175,40 @@ class HomeownerService {
   }) async {
     if (_isDemo) {
       await Future.delayed(const Duration(milliseconds: 100));
-      final slots = <Map<String, String>>[];
-      final startBase = DateTime.now().add(const Duration(days: 1));
-      for (int i = 0; i < 5; i++) {
-        final date = startBase.add(Duration(days: i));
-        final morningStart = DateTime(date.year, date.month, date.day, 10, 0);
-        final morningEnd = morningStart.add(const Duration(hours: 2));
-        final afternoonStart = DateTime(date.year, date.month, date.day, 14, 0);
-        final afternoonEnd = afternoonStart.add(const Duration(hours: 2));
+      return {'success': true, 'slots': const <Map<String, String>>[]};
+    }
 
-        slots.add({
-          'start': morningStart.toIso8601String(),
-          'end': morningEnd.toIso8601String(),
-        });
-        slots.add({
-          'start': afternoonStart.toIso8601String(),
-          'end': afternoonEnd.toIso8601String(),
-        });
-      }
-      return {'success': true, 'slots': slots};
+    final identity = [
+      contractorId,
+      serviceId ?? '',
+      urgency,
+      fromDate,
+      toDate,
+      propertyZip ?? '',
+      durationMinutes?.toString() ?? '',
+      serviceName ?? '',
+      serviceCategory ?? '',
+      workOrderType ?? '',
+    ].join('|');
+    final resource = 'availability:${Uri.encodeComponent(identity)}';
+    final cached = _availabilityCache[identity];
+    final cachedAt = _availabilityCacheAt[identity];
+    if (cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _availabilityCacheTtl) {
+      return cached;
+    }
+    final persistent = await _readPersistentCache(resource, _availabilityCacheTtl);
+    if (persistent != null) {
+      _availabilityCache[identity] = persistent;
+      _availabilityCacheAt[identity] = DateTime.now();
+      return persistent;
     }
 
     try {
       final payload = {
         'contractorId': contractorId,
+        if (serviceId != null && serviceId.isNotEmpty) 'serviceId': serviceId,
         'urgency': urgency,
         'fromDate': fromDate,
         'toDate': toDate,
@@ -905,10 +1235,14 @@ class HomeownerService {
           data['error'] ?? data['reason'] ?? data['message'] ?? "Couldn't load availability.",
         );
       }
-      return {
+      final result = {
         ...data,
         'slots': _extractAvailabilitySlots(data),
       };
+      _availabilityCache[identity] = result;
+      _availabilityCacheAt[identity] = DateTime.now();
+      await _writePersistentCache(resource, result);
+      return result;
     } catch (e) {
       if (kDebugMode) {
         print('Error fetching contractor availability: $e');
@@ -920,6 +1254,7 @@ class HomeownerService {
   // H5: Fetch Rewards
   Future<Map<String, dynamic>> fetchRewards() async {
     if (_isDemo) {
+      _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 100));
       return {
         'success': true,
@@ -928,49 +1263,85 @@ class HomeownerService {
       };
     }
 
-    final uid = _userId;
-    if (uid == null) throw Exception('User is not authenticated');
+    if (_userId == null) throw Exception('User is not authenticated');
 
-    final resp = await _post(
+    final cached = _cachedRewards;
+    final cachedAt = _cachedRewardsAt;
+    if (cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _rewardsCacheTtl) {
+      return cached;
+    }
+    final inFlight = _rewardsInFlight;
+    if (inFlight != null) return inFlight;
+    final persistent = await _readPersistentCache('rewards', _rewardsCacheTtl);
+    if (persistent != null) {
+      _cachedRewards = persistent;
+      _cachedRewardsAt = DateTime.now();
+      return persistent;
+    }
+
+    final future = _post(
       _rewardsPath,
-      {'userId': uid},
+      {},
       fallbackEndpoint: _legacyRewardsPath,
     );
-    return resp;
+    _rewardsInFlight = future;
+    try {
+      final resp = await future;
+      _cachedRewards = resp;
+      _cachedRewardsAt = DateTime.now();
+      await _writePersistentCache('rewards', resp);
+      return resp;
+    } finally {
+      _rewardsInFlight = null;
+    }
   }
 
   Future<Map<String, dynamic>> fetchProfile() async {
     if (_isDemo) {
+      _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 100));
       return {
         'success': true,
         'profile': {
-          'userId': '999',
-          'email': 'demo.homeowner@gmail.com',
-          'name': 'Demo Homeowner',
-          'givenName': 'Demo',
-          'familyName': 'Homeowner',
+          'userId': _userId ?? '999',
+          'email':
+              AuthService.instance.userEmail ?? 'demo.homeowner@gmail.com',
+          'name': AuthService.instance.userName ?? 'Demo Homeowner',
+          'givenName': AuthService.instance.givenName ?? 'Demo',
+          'familyName': AuthService.instance.familyName ?? 'Homeowner',
           'phone': '(813) 555-9999',
           'emailVerified': true,
           'rewardsBalance': _mockRewardsBalance,
           'rewardsTier': 'bronze',
         },
-        'addresses': _mockAddresses ?? [],
+        'addresses': _mockAddresses ?? const [],
       };
     }
+
+    final uid = _userId;
+    if (uid == null) throw Exception('User is not authenticated');
 
     final cached = _cachedProfile;
     final cachedAt = _cachedProfileAt;
     if (cached != null &&
         cachedAt != null &&
-        DateTime.now().difference(cachedAt) < const Duration(seconds: 6)) {
+        DateTime.now().difference(cachedAt) < _profileCacheTtl) {
       return cached;
     }
     final inFlight = _profileInFlight;
     if (inFlight != null) return inFlight;
 
-    final uid = _userId;
-    if (uid == null) throw Exception('User is not authenticated');
+    final persistent = await _readPersistentCache('profile', _profileCacheTtl);
+    if (persistent != null) {
+      _cachedProfile = persistent;
+      _cachedProfileAt = DateTime.now();
+      _mockAddresses =
+          persistent['addresses'] ?? persistent['profile']?['addresses'] ?? [];
+      return persistent;
+    }
+
     final future = _post(
       _profilePath,
       {
@@ -985,6 +1356,7 @@ class HomeownerService {
       _cachedProfile = resp;
       _cachedProfileAt = DateTime.now();
       _mockAddresses = resp['addresses'] ?? resp['profile']?['addresses'] ?? [];
+      await _writePersistentCache('profile', resp);
       return resp;
     } finally {
       _profileInFlight = null;
@@ -1001,8 +1373,24 @@ class HomeownerService {
     required bool marketingConsent,
   }) async {
     if (_isDemo) {
+      _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 200));
-      return {'success': true};
+      return {
+        'success': true,
+        'profile': {
+          'userId': _userId ?? '999',
+          'email': email,
+          'name': userName,
+          'userName': userName,
+          'givenName': givenName,
+          'familyName': familyName,
+          'phone': phone,
+          'preferredContact': preferredContact,
+          'marketingConsent': marketingConsent,
+          'emailVerified': true,
+        },
+        'addresses': _mockAddresses ?? const [],
+      };
     }
 
     final uid = _userId;
@@ -1022,12 +1410,13 @@ class HomeownerService {
       },
       fallbackEndpoint: _legacyProfilePath,
     );
-    _invalidateProfileCache();
+    await _invalidateProfileCache();
     return result;
   }
 
   Future<Map<String, dynamic>> addAddress(Map<String, String> address) async {
     if (_isDemo) {
+      _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 200));
       _mockIdCounter++;
       final newAddr = {
@@ -1071,7 +1460,7 @@ class HomeownerService {
     if (result['success'] == true && result['addresses'] != null) {
       _mockAddresses = result['addresses'];
     }
-    _invalidateProfileCache();
+    await _invalidateProfileCache();
     return result;
   }
 
@@ -1080,6 +1469,7 @@ class HomeownerService {
     required Map<String, String> address,
   }) async {
     if (_isDemo) {
+      _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 200));
       for (var a in _mockAddresses!) {
         if (a['id'] == addressId) {
@@ -1118,12 +1508,13 @@ class HomeownerService {
     if (result['success'] == true && result['addresses'] != null) {
       _mockAddresses = result['addresses'];
     }
-    _invalidateProfileCache();
+    await _invalidateProfileCache();
     return result;
   }
 
   Future<Map<String, dynamic>> setDefaultAddress(dynamic addressId) async {
     if (_isDemo) {
+      _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 200));
       final parsedId =
           addressId is int ? addressId : int.tryParse(addressId.toString());
@@ -1148,12 +1539,13 @@ class HomeownerService {
     if (result['success'] == true && result['addresses'] != null) {
       _mockAddresses = result['addresses'];
     }
-    _invalidateProfileCache();
+    await _invalidateProfileCache();
     return result;
   }
 
   Future<Map<String, dynamic>> removeAddress(int addressId) async {
     if (_isDemo) {
+      _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 200));
       _mockAddresses!.removeWhere((a) => a['id'] == addressId);
       return {'success': true, 'addresses': _mockAddresses};
@@ -1174,7 +1566,7 @@ class HomeownerService {
     if (result['success'] == true && result['addresses'] != null) {
       _mockAddresses = result['addresses'];
     }
-    _invalidateProfileCache();
+    await _invalidateProfileCache();
     return result;
   }
 
@@ -1188,6 +1580,7 @@ class HomeownerService {
     String? endsAt,
   }) async {
     if (_isDemo) {
+      _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 300));
       _mockIdCounter++;
       final newWO = {
@@ -1255,7 +1648,9 @@ class HomeownerService {
         throw Exception(
             data['reason'] ?? data['error'] ?? 'Booking commit failed');
       }
-      _invalidateWorkOrderCache();
+      await _invalidateWorkOrderCache();
+      await _invalidateAvailabilityCache();
+      await _invalidateRewardsCache();
       return data;
     } catch (e) {
       if (kDebugMode) {
@@ -1271,17 +1666,37 @@ class HomeownerService {
     required String categorySlug,
     String urgency = 'standard',
   }) async {
+    final identity = '${zip.trim().toLowerCase()}|${categorySlug.trim().toLowerCase()}|${urgency.trim().toLowerCase()}';
+    final resource = 'search:$identity';
     try {
+      final cached = _searchProsCache[identity];
+      final cachedAt = _searchProsCacheAt[identity];
+      if (cached != null &&
+          cachedAt != null &&
+          DateTime.now().difference(cachedAt) < _searchCacheTtl) {
+        return cached;
+      }
+      final persistent = await _readPersistentCache(resource, _searchCacheTtl);
+      if (persistent != null) {
+        _searchProsCache[identity] = persistent;
+        _searchProsCacheAt[identity] = DateTime.now();
+        return persistent;
+      }
+
       final payload = {
         'zip': zip,
         'categorySlug': categorySlug,
         'urgency': urgency,
       };
+      _throwIfRecentFailure(_contractorSearchPath);
+      _throwIfRecentFailure(_legacyContractorSearchPath);
       var response = await _postRaw(_contractorSearchPath, payload);
       if (response.statusCode == 404) {
         response = await _postRaw(_legacyContractorSearchPath, payload);
       }
-      if (response.body.isEmpty) throw Exception('Empty response');
+      if (response.body.isEmpty) {
+        throw Exception(ApiConfig.emptyResponseMessage(_contractorSearchPath));
+      }
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>) throw Exception('Invalid response');
       if (data['success'] == false && data['covered'] != false) {
@@ -1289,22 +1704,53 @@ class HomeownerService {
           data['error'] ?? data['reason'] ?? data['message'] ?? 'Search failed.',
         );
       }
+      _clearRecentFailure(_contractorSearchPath);
+      _clearRecentFailure(_legacyContractorSearchPath);
+      _searchProsCache[identity] = data;
+      _searchProsCacheAt[identity] = DateTime.now();
+      await _writePersistentCache(resource, data);
       return data;
     } catch (e) {
+      _cacheRecentFailure(_contractorSearchPath, e,
+          fallbackMessage: 'Unable to load available pros right now.');
+      _cacheRecentFailure(_legacyContractorSearchPath, e,
+          fallbackMessage: 'Unable to load available pros right now.');
       if (kDebugMode) {
         print('Error searching contractors: $e');
       }
-      throw Exception('Search failed.');
+      throw Exception(
+        AppErrorUtils.friendlyMessage(
+          e,
+          fallback: 'Unable to load available pros right now.',
+        ),
+      );
     }
   }
 
   Future<Map<String, dynamic>> getZipCoverage({
     required String zip,
   }) async {
+    final normalizedZip = zip.trim().toLowerCase();
+    final resource = 'coverage:$normalizedZip';
     try {
+      final cached = _zipCoverageCache[normalizedZip];
+      final cachedAt = _zipCoverageCacheAt[normalizedZip];
+      if (cached != null &&
+          cachedAt != null &&
+          DateTime.now().difference(cachedAt) < _coverageCacheTtl) {
+        return cached;
+      }
+      final persistent = await _readPersistentCache(resource, _coverageCacheTtl);
+      if (persistent != null) {
+        _zipCoverageCache[normalizedZip] = persistent;
+        _zipCoverageCacheAt[normalizedZip] = DateTime.now();
+        return persistent;
+      }
+
+      _throwIfRecentFailure(_zipCoveragePath);
       final response = await _postRaw(_zipCoveragePath, {'zip': zip});
       if (response.body.isEmpty) {
-        throw Exception('Empty response');
+        throw Exception(ApiConfig.emptyResponseMessage(_zipCoveragePath));
       }
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>) {
@@ -1315,12 +1761,26 @@ class HomeownerService {
           data['error'] ?? data['reason'] ?? data['message'] ?? 'ZIP coverage lookup failed.',
         );
       }
+      _clearRecentFailure(_zipCoveragePath);
+      _zipCoverageCache[normalizedZip] = data;
+      _zipCoverageCacheAt[normalizedZip] = DateTime.now();
+      await _writePersistentCache(resource, data);
       return data;
     } catch (e) {
+      _cacheRecentFailure(
+        _zipCoveragePath,
+        e,
+        fallbackMessage: 'Unable to verify ZIP coverage right now.',
+      );
       if (kDebugMode) {
         print('Error loading ZIP coverage: $e');
       }
-      throw Exception('ZIP coverage lookup failed.');
+      throw Exception(
+        AppErrorUtils.friendlyMessage(
+          e,
+          fallback: 'Unable to verify ZIP coverage right now.',
+        ),
+      );
     }
   }
 
@@ -1433,4 +1893,14 @@ class HomeownerService {
       fallback: 'Unable to complete your booking right now. Please try again.',
     );
   }
+}
+
+class _RecentRequestFailure {
+  final DateTime at;
+  final String message;
+
+  const _RecentRequestFailure({
+    required this.at,
+    required this.message,
+  });
 }

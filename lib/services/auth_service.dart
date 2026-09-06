@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'api_config.dart';
 import 'stream_service.dart';
 
 class AuthService extends ChangeNotifier {
@@ -15,14 +16,11 @@ class AuthService extends ChangeNotifier {
   bool isTesting = false;
   static const String googleClientId =
       '71668222585-50stjb9s6ias4g5su87fsmdiaikh4iec.apps.googleusercontent.com';
-
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: const ['email', 'profile'],
-    serverClientId: googleClientId,
-  );
+  GoogleSignIn? _googleSignIn;
 
   SharedPreferences? _prefs;
   StreamSubscription<AuthState>? _authSubscription;
+  bool _isDiscardingInvalidSession = false;
 
   bool _isAuthenticated = false;
   String? _userId;
@@ -58,18 +56,43 @@ class AuthService extends ChangeNotifier {
 
   Future<void> loadSession() async {
     _prefs = await SharedPreferences.getInstance();
-    await _syncFromSession(_client.auth.currentSession);
     _bindAuthListener();
+
+    final session = _client.auth.currentSession;
+    if (session == null) {
+      await _clearSession(notify: false);
+      return;
+    }
+
+    if (session.isExpired) {
+      await _discardInvalidSession(notify: false);
+      return;
+    }
+
+    await _syncFromSession(session);
   }
 
   void _bindAuthListener() {
-    _authSubscription ??= _client.auth.onAuthStateChange.listen((state) async {
-      if (state.event == AuthChangeEvent.signedOut || state.session == null) {
-        await _clearSession(notify: true);
-        return;
-      }
-      await _syncFromSession(state.session);
-    });
+    _authSubscription ??= _client.auth.onAuthStateChange.listen(
+      (state) async {
+        final session = state.session;
+        if (state.event == AuthChangeEvent.signedOut || session == null) {
+          await _clearSession(notify: true);
+          await StreamService.instance.disconnect();
+          return;
+        }
+
+        if (session.isExpired) {
+          await _discardInvalidSession();
+          return;
+        }
+
+        await _syncFromSession(session);
+      },
+      onError: (_) {
+        unawaited(_discardInvalidSession());
+      },
+    );
   }
 
   Future<void> signUp({
@@ -139,7 +162,8 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> signInWithGoogleInteractive() async {
-    final account = await _googleSignIn.signIn();
+    final googleAuth = _resolvedGoogleSignIn();
+    final account = await googleAuth.signIn();
     if (account == null) {
       throw Exception('Google sign-in was cancelled.');
     }
@@ -205,7 +229,10 @@ class AuthService extends ChangeNotifier {
       await _client.auth.signOut();
     } catch (_) {}
     try {
-      await _googleSignIn.signOut();
+      final googleSignIn = _googleSignIn;
+      if (googleSignIn != null) {
+        await googleSignIn.signOut();
+      }
     } catch (_) {}
     await StreamService.instance.disconnect();
     notifyListeners();
@@ -245,6 +272,10 @@ class AuthService extends ChangeNotifier {
     _prefs ??= await SharedPreferences.getInstance();
     if (session == null) {
       await _clearSession(notify: true);
+      return;
+    }
+    if (session.isExpired) {
+      await _discardInvalidSession();
       return;
     }
 
@@ -306,17 +337,32 @@ class AuthService extends ChangeNotifier {
       whatsapp: _whatsapp ?? false,
     );
 
-    if (!isTesting) {
-      try {
-        await StreamService.instance.ensureConnected(forceReconnect: true);
-      } catch (e) {
-        if (kDebugMode) {
-          print('Stream Chat connect error: $e');
-        }
-      }
-    }
-
     notifyListeners();
+  }
+
+  /// Ends an unusable local session after the authentication provider or an
+  /// authenticated API has rejected it. The next screen is the sign-in flow.
+  Future<void> invalidateSession() => _discardInvalidSession();
+
+  /// Removes a session which can no longer be refreshed, including the
+  /// Supabase browser storage entry that would otherwise fail again at launch.
+  Future<void> _discardInvalidSession({bool notify = true}) async {
+    if (_isDiscardingInvalidSession) return;
+    _isDiscardingInvalidSession = true;
+
+    try {
+      await _clearSession(notify: false);
+      try {
+        await _client.auth.signOut(scope: SignOutScope.local);
+      } catch (_) {
+        // Clearing local authentication must still succeed if the SDK has
+        // already removed the invalid session while processing a refresh.
+      }
+      await StreamService.instance.disconnect();
+      if (notify) notifyListeners();
+    } finally {
+      _isDiscardingInvalidSession = false;
+    }
   }
 
   Future<void> _persistLegacySessionKeys({
@@ -438,5 +484,22 @@ class AuthService extends ChangeNotifier {
     if (text == 'true') return true;
     if (text == 'false') return false;
     return null;
+  }
+
+  GoogleSignIn _resolvedGoogleSignIn() {
+    if (_googleSignIn != null) {
+      return _googleSignIn!;
+    }
+
+    final webClientId = ApiConfig.googleWebClientId.trim().isNotEmpty
+        ? ApiConfig.googleWebClientId.trim()
+        : googleClientId;
+
+    _googleSignIn = GoogleSignIn(
+      scopes: const ['email', 'profile'],
+      serverClientId: googleClientId,
+      clientId: kIsWeb ? webClientId : null,
+    );
+    return _googleSignIn!;
   }
 }

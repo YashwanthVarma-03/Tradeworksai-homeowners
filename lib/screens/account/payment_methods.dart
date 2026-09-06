@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
-import '../../theme.dart';
+
 import '../../services/homeowner_service.dart';
+import '../../theme.dart';
+import '../../utils/app_error_utils.dart';
 
 class PaymentMethodsScreen extends StatefulWidget {
-  const PaymentMethodsScreen({Key? key}) : super(key: key);
+  const PaymentMethodsScreen({super.key});
 
   @override
   State<PaymentMethodsScreen> createState() => _PaymentMethodsScreenState();
 }
 
 class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
+  static const Color _pageBackground = Color(0xFFF5F7FA);
+  static const Color _inkStrong = Color(0xFF1E293B);
+  static const Color _mutedText = Color(0xFF64748B);
+  static const Color _lineSoft = Color(0xFFE1E7EF);
+
   List<dynamic> _methods = [];
   bool _isLoading = true;
 
@@ -23,60 +30,29 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
     setState(() => _isLoading = true);
     try {
       final profile = await HomeownerService.instance.fetchProfile();
-      if (mounted) {
-        setState(() {
-          _methods = profile['paymentMethods'] ?? [];
-          _isLoading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _methods = profile['paymentMethods'] as List? ??
+            profile['profile']?['paymentMethods'] as List? ??
+            const [];
+        _isLoading = false;
+      });
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppErrorUtils.friendlyMessage(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
     }
   }
 
-  Future<void> _deleteMethod(String id) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove Payment Method'),
-        content: const Text('Are you sure you want to remove this card?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child:
-                  const Text('Cancel', style: TextStyle(color: AppTheme.gray))),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Remove',
-                  style: TextStyle(color: AppTheme.error))),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() {
-      _methods.removeWhere((m) => m['id'] == id);
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Card removed'), backgroundColor: AppTheme.success));
-    }
-  }
-
-  Future<void> _setDefault(String id) async {
-    setState(() {
-      for (var m in _methods) {
-        m['isDefault'] = (m['id'] == id);
-      }
-    });
-  }
-
-  void _addCard() async {
+  void _addCard() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('This feature is coming soon.'),
+        content: Text('Add card is not available yet.'),
         backgroundColor: AppTheme.gray,
       ),
     );
@@ -85,292 +61,258 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.pageAlt,
-      appBar: AppBar(
-        title: const Text('Payment methods',
-            style: TextStyle(
-                color: AppTheme.navy700,
-                fontWeight: FontWeight.bold,
-                fontSize: 16)),
-        centerTitle: true,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: AppTheme.tealTint,
-              child: const Row(
+      backgroundColor: _pageBackground,
+      appBar: _appBar('Payment methods'),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppTheme.orange500),
+            )
+          : RefreshIndicator(
+              onRefresh: _fetchMethods,
+              color: AppTheme.orange500,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  Icon(Icons.security, color: AppTheme.teal700, size: 20),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Cards pay the pro directly. No markup, no platform fee.',
-                      style: TextStyle(
-                          color: AppTheme.teal700,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500),
+                  if (_methods.isEmpty)
+                    _emptyState()
+                  else
+                    ..._methods.map(
+                      (dynamic item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _methodCard(_asMap(item)),
+                      ),
+                    ),
+                  _addCardButton(),
+                  const SizedBox(height: 16),
+                  _securityCallout(),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Cards pay the pro directly. TradeWorks adds no markup and no platform fee.',
+                    style: TextStyle(
+                      color: _mutedText,
+                      fontSize: 13,
+                      height: 1.45,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
             ),
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child:
-                          CircularProgressIndicator(color: AppTheme.orange500))
-                  : _methods.isEmpty
-                      ? _buildEmptyState()
-                      : _buildList(),
+    );
+  }
+
+  PreferredSizeWidget _appBar(String title) {
+    return AppBar(
+      toolbarHeight: 56,
+      backgroundColor: Colors.white,
+      elevation: 0,
+      leadingWidth: 54,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded, size: 25),
+        color: AppTheme.navy700,
+        onPressed: () => Navigator.pop(context),
+      ),
+      titleSpacing: 0,
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: AppTheme.navy700,
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      bottom: const PreferredSize(
+        preferredSize: Size.fromHeight(1),
+        child: Divider(height: 1, color: _lineSoft),
+      ),
+    );
+  }
+
+  Widget _methodCard(Map<String, dynamic> method) {
+    final brand = _string(method['brand']) ?? 'Card';
+    final last4 = _string(method['last4']);
+    final isDefault =
+        method['isDefault'] == true || method['isDefault'] == 'true';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _lineSoft),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: brand.toLowerCase().contains('visa')
+                  ? AppTheme.navy700
+                  : _inkStrong,
+              borderRadius: BorderRadius.circular(5),
             ),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: AppTheme.white,
-                border: Border(top: BorderSide(color: AppTheme.line)),
+            child: Text(
+              brand.toLowerCase().contains('master') ? 'MC' : brand.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
               ),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _addCard,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.orange500,
-                    foregroundColor: AppTheme.navy700,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  last4 == null ? brand : '$brand ending $last4',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _inkStrong,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    height: 1.1,
                   ),
-                  child: const Text('Add card',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _expiryLabel(method),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _mutedText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isDefault)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE7F7F8),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: const Text(
+                'DEFAULT',
+                style: TextStyle(
+                  color: AppTheme.teal500,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
+            )
+          else
+            const Icon(
+              Icons.card_giftcard_rounded,
+              color: _mutedText,
+              size: 23,
             ),
-          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _addCardButton() {
+    return OutlinedButton(
+      onPressed: _addCard,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppTheme.teal500,
+        side: const BorderSide(color: AppTheme.teal500, width: 1.2),
+        padding: const EdgeInsets.symmetric(vertical: 17),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      child: const Text(
+        '+ Add card',
+        style: TextStyle(
+          fontSize: 15.5,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.credit_card_off_outlined,
-              size: 64, color: AppTheme.gray.withOpacity(0.5)),
-          const SizedBox(height: 16),
-          const Text('No payment methods',
-              style: TextStyle(
-                  color: AppTheme.navy700,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          const Text('Add a card to book a pro.',
-              style: TextStyle(color: AppTheme.gray)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildList() {
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: _methods.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final m = _methods[index];
-        final isDefault = m['isDefault'] == true;
-
-        return Container(
-          decoration: BoxDecoration(
-            color: AppTheme.white,
-            border: Border.all(color: AppTheme.line),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: ListTile(
-            leading: Icon(
-              m['brand'] == 'Visa' ? Icons.payment : Icons.credit_card,
-              color: AppTheme.navy700,
-              size: 32,
-            ),
-            title: Row(
-              children: [
-                Text('${m['brand']} •••• ${m['last4']}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, color: AppTheme.navy700)),
-                if (isDefault) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                        color: AppTheme.tealTint,
-                        borderRadius: BorderRadius.circular(4)),
-                    child: const Text('Default',
-                        style: TextStyle(
-                            color: AppTheme.teal700,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold)),
-                  ),
-                ]
-              ],
-            ),
-            trailing: PopupMenuButton(
-              icon: const Icon(Icons.more_vert, color: AppTheme.gray),
-              itemBuilder: (context) => [
-                if (!isDefault)
-                  const PopupMenuItem(
-                      value: 'default', child: Text('Set as default')),
-                const PopupMenuItem(
-                    value: 'delete',
-                    child: Text('Remove',
-                        style: TextStyle(color: AppTheme.error))),
-              ],
-              onSelected: (val) {
-                if (val == 'default') {
-                  _setDefault(m['id']);
-                } else if (val == 'delete') {
-                  _deleteMethod(m['id']);
-                }
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class AddCardSheet extends StatefulWidget {
-  const AddCardSheet({Key? key}) : super(key: key);
-
-  @override
-  State<AddCardSheet> createState() => _AddCardSheetState();
-}
-
-class _AddCardSheetState extends State<AddCardSheet> {
-  bool _isLoading = false;
-
-  void _tokenizeAndSave() async {
-    setState(() => _isLoading = true);
-    // Simulate SDK tokenization
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) {
-      Navigator.pop(context, {
-        'id': 'pm_${DateTime.now().millisecondsSinceEpoch}',
-        'brand': 'Visa',
-        'last4': '4242',
-        'isDefault': true,
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+  Widget _securityCallout() {
     return Container(
-      padding: EdgeInsets.fromLTRB(16, 24, 16, bottomInset + 24),
-      decoration: const BoxDecoration(
-        color: AppTheme.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAFBFF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.teal500),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Add payment method',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.navy700)),
-              IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Mock secure field from SDK
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppTheme.line),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.lock_outline,
-                        color: AppTheme.success, size: 16),
-                    const SizedBox(width: 8),
-                    const Text('Secure card field (PCI compliant)',
-                        style: TextStyle(
-                            color: AppTheme.success,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const TextField(
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: 'Card number',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: const TextField(
-                        decoration: InputDecoration(
-                            hintText: 'MM/YY', border: OutlineInputBorder()),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: const TextField(
-                        decoration: InputDecoration(
-                            hintText: 'CVC', border: OutlineInputBorder()),
-                      ),
-                    ),
-                  ],
-                )
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _tokenizeAndSave,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.orange500,
-                foregroundColor: AppTheme.navy700,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+          Icon(Icons.trending_up_rounded, color: AppTheme.teal500, size: 25),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Cards are entered in a secure, encrypted field and tokenized.',
+              style: TextStyle(
+                color: _inkStrong,
+                fontSize: 12.5,
+                height: 1.45,
+                fontWeight: FontWeight.w500,
               ),
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppTheme.navy700))
-                  : const Text('Save card',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _emptyState() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _lineSoft),
+      ),
+      child: const Text(
+        'No saved payment methods yet.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: _mutedText,
+          fontSize: 13.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  String _expiryLabel(Map<String, dynamic> method) {
+    final expiry = _string(method['expiry']) ??
+        _string(method['expires']) ??
+        _string(method['exp']);
+    if (expiry != null) return 'Expires $expiry';
+    final month = _string(method['expMonth']) ?? _string(method['exp_month']);
+    final year = _string(method['expYear']) ?? _string(method['exp_year']);
+    if (month != null && year != null) return 'Expires $month/$year';
+    return 'Payment method';
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return const {};
+  }
+
+  String? _string(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
+      return null;
+    }
+    return text;
   }
 }

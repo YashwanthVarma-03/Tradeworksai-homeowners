@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -91,7 +90,7 @@ class IntakeService {
     }
 
     if (response.body.isEmpty) {
-      throw Exception('Empty intake response.');
+      throw Exception(ApiConfig.emptyResponseMessage(_intakePath));
     }
 
     final data = jsonDecode(response.body);
@@ -146,7 +145,7 @@ class IntakeService {
     }
 
     if (signResponse.body.isEmpty) {
-      throw Exception('Empty upload-url response.');
+      throw Exception(ApiConfig.emptyResponseMessage(_uploadUrlPath));
     }
 
     final signData = jsonDecode(signResponse.body);

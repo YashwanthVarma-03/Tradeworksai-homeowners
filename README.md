@@ -1,16 +1,32 @@
 # homeowners_app
 
-A new Flutter project.
+## Web dev setup
 
-## Getting Started
+For Flutter web on `localhost`, the app now expects a local API proxy at
+`http://localhost:8787/` by default. Start it in one terminal:
 
-This project is a starting point for a Flutter application.
+```bash
+dart run tool/dev_api_proxy.dart
+```
 
-A few resources to get you started if this is your first Flutter project:
+Then run the app in another:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```bash
+flutter run -d chrome \
+  --dart-define=TRADEWORKS_GOOGLE_WEB_CLIENT_ID=your-google-web-client-id
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Optional env vars for the proxy:
+
+```bash
+TRADEWORKS_PROXY_TARGET=https://tradeworks-api-71668222585.us-east1.run.app/
+TRADEWORKS_PROXY_PORT=8787
+```
+
+Optional app overrides:
+
+```bash
+flutter run -d chrome \
+  --dart-define=TRADEWORKS_API_BASE_URL=http://localhost:8787/ \
+  --dart-define=TRADEWORKS_GOOGLE_WEB_CLIENT_ID=your-google-web-client-id
+```

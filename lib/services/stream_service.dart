@@ -7,6 +7,7 @@ import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
 import 'api_config.dart';
 import 'auth_service.dart';
+import '../utils/app_error_utils.dart';
 
 class StreamService extends ChangeNotifier {
   StreamService._internal();
@@ -23,6 +24,8 @@ class StreamService extends ChangeNotifier {
   bool _isConnecting = false;
   Future<void>? _connectInFlight;
   String? _lastError;
+  DateTime? _lastFailureAt;
+  static const Duration _connectFailureCooldown = Duration(seconds: 15);
 
   StreamChatClient? get client => _client;
   bool get isReady => _client != null && _client!.state.currentUser != null;
@@ -86,6 +89,14 @@ class StreamService extends ChangeNotifier {
       return;
     }
 
+    if (!forceReconnect &&
+        _lastFailureAt != null &&
+        DateTime.now().difference(_lastFailureAt!) < _connectFailureCooldown &&
+        (_lastError == AppErrorUtils.webFetchMessage ||
+            _lastError == AppErrorUtils.noInternetMessage)) {
+      return;
+    }
+
     if (_connectInFlight != null) {
       await _connectInFlight;
       if (!forceReconnect &&
@@ -140,7 +151,7 @@ class StreamService extends ChangeNotifier {
         }
 
         if (resolvedResponse.body.isEmpty) {
-          throw Exception('Empty Stream token response');
+          throw Exception(ApiConfig.emptyResponseMessage(_streamTokenPath));
         }
 
         final data = jsonDecode(resolvedResponse.body);
@@ -195,8 +206,14 @@ class StreamService extends ChangeNotifier {
             token,
           );
         }
+        _lastError = null;
+        _lastFailureAt = null;
       } catch (e) {
-        _lastError = e.toString().replaceAll('Exception: ', '');
+        _lastError = AppErrorUtils.friendlyMessage(
+          e,
+          fallback: 'Chat is unavailable right now.',
+        );
+        _lastFailureAt = DateTime.now();
         if (kDebugMode) {
           print('StreamService connection error: $_lastError');
         }

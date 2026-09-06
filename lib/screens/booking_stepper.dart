@@ -24,8 +24,8 @@ class _BookingStepperState extends State<BookingStepper> {
 
   // Selection States
   String _selectedTier = 'Standard';
-  String _selectedDate = 'Tomorrow';
-  String _selectedTime = '10:00 AM';
+  String _selectedDate = '';
+  String _selectedTime = '';
   final TextEditingController _gateCodeController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
@@ -33,17 +33,14 @@ class _BookingStepperState extends State<BookingStepper> {
     {
       'name': 'Standard',
       'desc': 'Responds within 48 hours',
-      'surcharge': 0
     },
     {
       'name': 'Urgent',
       'desc': 'Responds within 12 hours',
-      'surcharge': 30
     },
     {
       'name': 'Emergency',
       'desc': 'Responds within 2 hours',
-      'surcharge': 75
     },
   ];
 
@@ -235,11 +232,8 @@ class _BookingStepperState extends State<BookingStepper> {
         }
       }
 
-      if (startsAt == null) {
-        final now = DateTime.now();
-        DateTime targetDate = now.add(const Duration(days: 1));
-        startsAt = targetDate.toIso8601String();
-        endsAt = targetDate.add(const Duration(hours: 2)).toIso8601String();
+      if (startsAt == null || endsAt == null) {
+        throw Exception('Select an available calendar slot before booking.');
       }
 
       String street = '';
@@ -253,10 +247,7 @@ class _BookingStepperState extends State<BookingStepper> {
         state = _selectedAddressObj!['state'] ?? '';
         zip = _selectedAddressObj!['zip'] ?? '';
       } else {
-        street = '124 Skyview Lane';
-        city = 'Tampa';
-        state = 'FL';
-        zip = '33569';
+        throw Exception('Select a saved property address before booking.');
       }
 
       final bookingData = {
@@ -670,7 +661,6 @@ class _BookingStepperState extends State<BookingStepper> {
         const SizedBox(height: 20),
         ..._tiers.map((tier) {
           final isSelected = _selectedTier == tier['name'];
-          final surcharge = tier['surcharge'] as int;
 
           return GestureDetector(
             onTap: () {
@@ -720,14 +710,6 @@ class _BookingStepperState extends State<BookingStepper> {
                       ],
                     ),
                   ),
-                  if (surcharge > 0)
-                    Text(
-                      '+\$$surcharge',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.orange500,
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -1121,8 +1103,6 @@ class _BookingStepperState extends State<BookingStepper> {
 
   // --- STEP 5: REVIEW SUMMARY ---
   Widget _buildStepReviewSummary() {
-    final surcharge = _tiers
-        .firstWhere((t) => t['name'] == _selectedTier)['surcharge'] as int;
     final street = _selectedAddressObj?['street'] ?? 'No address selected';
     final unit = _selectedAddressObj?['unit'] ?? '';
     final city = _selectedAddressObj?['city'] ?? '';
@@ -1188,22 +1168,6 @@ class _BookingStepperState extends State<BookingStepper> {
                           fontWeight: FontWeight.bold, fontSize: 13)),
                 ],
               ),
-              if (surcharge > 0) ...[
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('$_selectedTier urgency fee',
-                        style: const TextStyle(
-                            color: AppTheme.gray, fontSize: 13)),
-                    Text('+\$$surcharge',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: AppTheme.orange500)),
-                  ],
-                ),
-              ],
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1212,9 +1176,7 @@ class _BookingStepperState extends State<BookingStepper> {
                       style:
                           TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   Text(
-                    surcharge > 0
-                        ? '\$${89 + surcharge} Capped'
-                        : widget.proDetails['price']!,
+                    widget.proDetails['price']!,
                     style: const TextStyle(
                       color: AppTheme.teal700,
                       fontWeight: FontWeight.bold,

@@ -38,6 +38,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
     with SingleTickerProviderStateMixin {
   final _picker = ImagePicker();
   final _speech = stt.SpeechToText();
+  final TextEditingController _spokenTextController = TextEditingController();
   final List<Map<String, String>> _priorTurns = [];
   final List<String> _photoRefs = [];
   final List<XFile> _localPhotos = [];
@@ -70,6 +71,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
   @override
   void dispose() {
     _pulseController.dispose();
+    _spokenTextController.dispose();
     _speech.stop();
     super.dispose();
   }
@@ -82,14 +84,31 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
 
   Future<void> _startVoiceCapture() async {
     try {
-      final available = await _speech.initialize();
+      final available = await _speech.initialize(
+        onError: (error) {
+          if (!mounted) return;
+          setState(() {
+            _isListening = false;
+            _message = error.errorMsg.trim().isEmpty
+                ? 'Voice capture could not understand that. Please try again.'
+                : error.errorMsg;
+          });
+        },
+        onStatus: (status) {
+          if (!mounted) return;
+          setState(() {
+            _isListening = status == 'listening';
+          });
+        },
+      );
       if (!mounted) return;
       setState(() {
         _speechReady = available;
       });
       if (!available) {
         setState(() {
-          _message = 'Voice capture is not available on this device right now.';
+          _message =
+              'Voice capture is not available right now. Type your issue below instead.';
         });
         return;
       }
@@ -99,18 +118,29 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
           setState(() {
             _spokenText = result.recognizedWords;
             _isListening = !result.finalResult;
+            _spokenTextController.value = TextEditingValue(
+              text: _spokenText,
+              selection: TextSelection.collapsed(offset: _spokenText.length),
+            );
           });
         },
+        listenOptions: stt.SpeechListenOptions(
+          partialResults: true,
+          listenMode: stt.ListenMode.search,
+        ),
       );
       if (!mounted) return;
       setState(() {
         _isListening = true;
-        _message = null;
+        _message = kIsWeb
+            ? 'Browser voice capture is live. Allow microphone access in Chrome if prompted.'
+            : null;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _message = 'Voice capture could not start.';
+        _message =
+            'Voice capture could not start. Type your issue below instead.';
         _isListening = false;
       });
     }
@@ -130,7 +160,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
     if (_isUploadingPhoto) return;
     try {
       final file = await _picker.pickImage(
-        source: source,
+        source: kIsWeb ? ImageSource.gallery : source,
         imageQuality: 85,
       );
       if (file == null || !mounted) return;
@@ -376,7 +406,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
     return Column(
       children: [
         GestureDetector(
-          onTap: _isSubmitting ? null : _toggleVoiceCapture,
+          onTap: (!_speechReady || _isSubmitting) ? null : _toggleVoiceCapture,
           child: AnimatedBuilder(
             animation: _pulseAnimation,
             builder: (context, child) {
@@ -387,9 +417,17 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                   height: 96,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _isListening ? AppTheme.orange500 : AppTheme.orangeTint,
+                    color: _isListening
+                        ? AppTheme.orange500
+                        : (_speechReady
+                            ? AppTheme.orangeTint
+                            : const Color(0xFFF7FAFD)),
                     border: Border.all(
-                      color: AppTheme.orange500.withOpacity(_isListening ? 0.8 : 0.3),
+                      color: AppTheme.orange500.withOpacity(
+                        _isListening
+                            ? 0.8
+                            : (_speechReady ? 0.3 : 0.15),
+                      ),
                       width: 3,
                     ),
                     boxShadow: _isListening
@@ -405,7 +443,11 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                   child: Icon(
                     _isListening ? Icons.mic : Icons.mic_none_rounded,
                     size: 44,
-                    color: _isListening ? Colors.white : AppTheme.orange500,
+                    color: _isListening
+                        ? Colors.white
+                        : (_speechReady
+                            ? AppTheme.orange500
+                            : AppTheme.gray),
                   ),
                 ),
               );
@@ -418,11 +460,43 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
               ? 'Listening... Speak now'
               : (_spokenText.isNotEmpty
                   ? 'Voice recorded. Tap mic to re-record.'
-                  : 'Tap the microphone to start speaking'),
+                  : (_speechReady
+                      ? 'Tap the microphone to start speaking'
+                      : 'Type what you need help with')),
           style: TextStyle(
             color: _isListening ? AppTheme.orange500 : AppTheme.navy700,
             fontSize: 14,
             fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7FAFD),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.line),
+          ),
+          child: TextField(
+            minLines: 3,
+            maxLines: 5,
+            enabled: !_isSubmitting,
+            controller: _spokenTextController,
+            onChanged: (value) {
+              setState(() {
+                _spokenText = value;
+              });
+            },
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              hintText: 'Describe the problem in a few words...',
+            ),
+            style: const TextStyle(
+              color: AppTheme.navy700,
+              fontSize: 14,
+              height: 1.4,
+            ),
           ),
         ),
         if (_spokenText.isNotEmpty) ...[
@@ -457,6 +531,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                   onPressed: () {
                     setState(() {
                       _spokenText = '';
+                      _spokenTextController.clear();
                     });
                   },
                   padding: EdgeInsets.zero,
@@ -502,7 +577,9 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Add photos of what needs fixing',
+                  kIsWeb
+                      ? 'Upload photos of what needs fixing'
+                      : 'Add photos of what needs fixing',
                   style: TextStyle(
                     color: AppTheme.navy700,
                     fontWeight: FontWeight.w700,
@@ -517,8 +594,13 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                         onPressed: _isUploadingPhoto
                             ? null
                             : () => _pickPhoto(ImageSource.camera),
-                        icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                        label: const Text('Take Photo'),
+                        icon: Icon(
+                          kIsWeb
+                              ? Icons.upload_file_outlined
+                              : Icons.camera_alt_outlined,
+                          size: 18,
+                        ),
+                        label: Text(kIsWeb ? 'Upload Photo' : 'Take Photo'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.navy700,
                           side: const BorderSide(color: AppTheme.line),
@@ -536,7 +618,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                             ? null
                             : () => _pickPhoto(ImageSource.gallery),
                         icon: const Icon(Icons.photo_library_outlined, size: 18),
-                        label: const Text('Gallery'),
+                        label: Text(kIsWeb ? 'Choose File' : 'Gallery'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.navy700,
                           side: const BorderSide(color: AppTheme.line),
@@ -638,8 +720,13 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                 onPressed: _isUploadingPhoto
                     ? null
                     : () => _pickPhoto(ImageSource.camera),
-                icon: const Icon(Icons.camera_alt_outlined, size: 16),
-                label: const Text('Take another'),
+                icon: Icon(
+                  kIsWeb
+                      ? Icons.upload_file_outlined
+                      : Icons.camera_alt_outlined,
+                  size: 16,
+                ),
+                label: Text(kIsWeb ? 'Upload another' : 'Take another'),
               ),
               const SizedBox(width: 8),
               TextButton.icon(
@@ -694,7 +781,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                 ListTile(
                   leading: const Icon(Icons.camera_alt_outlined,
                       color: AppTheme.navy700),
-                  title: const Text('Take a photo'),
+                  title: Text(kIsWeb ? 'Upload a photo' : 'Take a photo'),
                   onTap: () {
                     Navigator.pop(ctx);
                     _pickPhoto(ImageSource.camera);

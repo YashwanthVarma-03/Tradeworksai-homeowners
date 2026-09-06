@@ -1,18 +1,183 @@
 import 'package:flutter/material.dart';
-import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 import '../services/homeowner_service.dart';
-import '../services/stream_service.dart';
 import '../utils/app_error_utils.dart';
 import '../widgets/offline_state.dart';
+import '../services/stream_service.dart';
 import 'chat_screen.dart';
+
+class InboxScreen extends StatelessWidget {
+  const InboxScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text(
+          'Messages',
+          style: TextStyle(
+            color: AppTheme.navy700,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        centerTitle: false,
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(0.5),
+          child: Divider(height: 0.5, color: AppTheme.line),
+        ),
+      ),
+      body: const InboxTab(),
+    );
+  }
+}
 
 class InboxTab extends StatefulWidget {
   const InboxTab({super.key});
 
   @override
   State<InboxTab> createState() => _InboxTabState();
+}
+
+/// Shows the booking conversation history when a provider has not yet been
+/// assigned a live Stream Chat identity. This keeps every booking thread
+/// readable instead of sending the user to a broken chat connection.
+class BookingConversationScreen extends StatelessWidget {
+  final String contractorName;
+  final String workOrderTitle;
+  final List<Map<String, dynamic>> messages;
+
+  const BookingConversationScreen({
+    super.key,
+    required this.contractorName,
+    required this.workOrderTitle,
+    required this.messages,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.pageAlt,
+      appBar: AppBar(
+        title: Text(
+          contractorName,
+          style: const TextStyle(
+            color: AppTheme.navy700,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(42),
+          child: Container(
+            alignment: Alignment.centerLeft,
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: const BoxDecoration(
+              color: AppTheme.navyTint,
+              border: Border(bottom: BorderSide(color: AppTheme.line)),
+            ),
+            child: Text(
+              workOrderTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppTheme.gray,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+      body: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+        itemCount: messages.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          if (index == messages.length) {
+            return const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Live messaging becomes available once the provider connects to this booking.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.gray, fontSize: 12, height: 1.35),
+              ),
+            );
+          }
+
+          final message = messages[index];
+          final sender = message['sender']?.toString() ?? 'sys';
+          final isSystem = sender == 'sys';
+          final isHomeowner = sender == 'me';
+          if (isSystem) {
+            return Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppTheme.line),
+                ),
+                child: Text(
+                  message['text']?.toString() ?? '',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppTheme.gray,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            );
+          }
+
+          final color = isHomeowner ? AppTheme.navy700 : Colors.white;
+          final foreground = isHomeowner ? Colors.white : AppTheme.ink;
+          return Align(
+            alignment: isHomeowner ? Alignment.centerRight : Alignment.centerLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(isHomeowner ? 16 : 4),
+                    bottomRight: Radius.circular(isHomeowner ? 4 : 16),
+                  ),
+                  border: isHomeowner ? null : Border.all(color: AppTheme.line),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      message['text']?.toString() ?? '',
+                      style: TextStyle(color: foreground, fontSize: 14, height: 1.35),
+                    ),
+                    if ((message['time']?.toString().trim() ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        message['time'].toString(),
+                        style: TextStyle(
+                          color: isHomeowner ? Colors.white70 : AppTheme.gray,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
@@ -60,7 +225,7 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
       final woData = await HomeownerService.instance.fetchWorkOrders();
       final tabs = woData['tabs'];
       final List<dynamic> allJobs = [];
-      if (tabs != null) {
+      if (tabs is Map) {
         if (tabs['active'] != null) allJobs.addAll(tabs['active']);
         if (tabs['scheduled'] != null) allJobs.addAll(tabs['scheduled']);
         if (tabs['history'] != null) allJobs.addAll(tabs['history']);
@@ -69,7 +234,9 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
       final List<Map<String, dynamic>> threads = [];
       final List<Map<String, dynamic>> activityFeed = [];
 
-      for (final job in allJobs) {
+      for (final rawJob in allJobs) {
+        if (rawJob is! Map) continue;
+        final job = Map<String, dynamic>.from(rawJob);
         final proName = job['pro']?['businessName'] ?? 'Service Pro';
         final serviceCategory = job['serviceCategory'] ?? 'Service';
         final status = job['status'] ?? 'pending';
@@ -201,6 +368,7 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
 
         threads.add({
           'id': job['workOrderId']?.toString() ?? '',
+          'chatUserId': StreamService.instance.resolveMessagingUserId(job),
           'proName': proName,
           'trade': serviceCategory,
           'avatarChar': proName.isNotEmpty ? proName[0].toUpperCase() : 'S',
@@ -342,16 +510,24 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
     setState(() {
       thread['unreadCount'] = 0;
     });
-    // Legacy fallback – will not normally be called since Messages tab uses Stream
+    final chatUserId = thread['chatUserId']?.toString().trim() ?? '';
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          contractorId: thread['id']?.toString() ?? 'unknown',
-          contractorName: thread['proName'] ?? 'Pro',
-          workOrderTitle: thread['woTitle'],
-          workOrderStatus: thread['status'],
-        ),
+        builder: (context) => chatUserId.isEmpty
+            ? BookingConversationScreen(
+                contractorName: thread['proName']?.toString() ?? 'Service Pro',
+                workOrderTitle: thread['woTitle']?.toString() ?? '',
+                messages: List<Map<String, dynamic>>.from(
+                  thread['messages'] as List? ?? const [],
+                ),
+              )
+            : ChatScreen(
+                contractorId: chatUserId,
+                contractorName: thread['proName'] ?? 'Pro',
+                workOrderTitle: thread['woTitle'],
+                workOrderStatus: thread['status'],
+              ),
       ),
     );
   }
@@ -403,8 +579,7 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
 
   /// Messages tab: real-time channel list powered by Stream Chat
   Widget _buildThreadsList() {
-    final client = StreamService.instance.client;
-    if (client == null) {
+    if (_threads.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -418,108 +593,107 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
                   TextStyle(fontWeight: FontWeight.bold, color: AppTheme.gray),
             ),
             const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  await StreamService.instance.ensureConnected();
-                  if (mounted) {
-                    setState(() {});
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content:
-                            Text(e.toString().replaceAll('Exception: ', '')),
-                        backgroundColor: AppTheme.error,
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text('Connect Chat'),
-            ),
-          ],
-        ),
-      );
-    }
-    final currentUser = client.state.currentUser;
-
-    if (currentUser == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.mail_outline,
-                size: 48, color: AppTheme.gray.withOpacity(0.5)),
-            const SizedBox(height: 12),
-            const Text(
-              'Connect to see messages',
-              style:
-                  TextStyle(fontWeight: FontWeight.bold, color: AppTheme.gray),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return StreamChat(
-      client: client,
-      child: StreamChannelListView(
-        controller: StreamChannelListController(
-          client: client,
-          filter: Filter.in_('members', [currentUser.id]),
-          channelStateSort: const [
-            SortOption('last_message_at', direction: SortOption.DESC),
-          ],
-          limit: 30,
-        ),
-        onChannelTap: (channel) {
-          final members = channel.state?.members ?? [];
-          final other = members.firstWhere(
-            (m) => m.userId != currentUser.id,
-            orElse: () => members.first,
-          );
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ChatScreen(
-                contractorId: other.userId ?? 'unknown',
-                contractorName: other.user?.name ??
-                    channel.extraData['name']?.toString() ??
-                    'Pro',
-              ),
-            ),
-          );
-        },
-        emptyBuilder: (_) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.chat_bubble_outline,
-                  size: 48, color: AppTheme.gray.withOpacity(0.4)),
-              const SizedBox(height: 12),
-              const Text(
-                'No messages yet',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, color: AppTheme.gray),
-              ),
-              const SizedBox(height: 4),
-              const Text(
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
                 'Start a conversation from a contractor profile or booking flow.',
                 style: TextStyle(color: AppTheme.gray, fontSize: 12),
                 textAlign: TextAlign.center,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        loadingBuilder: (_) => const Center(
-          child: CircularProgressIndicator(color: AppTheme.orange500),
-        ),
+      );
+    }
+
+    return RefreshIndicator(
+      color: AppTheme.orange500,
+      onRefresh: () => _fetchInboxData(showLoading: false),
+      child: ListView.separated(
+        itemCount: _threads.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (context, index) {
+          final thread = _threads[index];
+          final unreadCount = (thread['unreadCount'] as num?)?.toInt() ?? 0;
+          final statusColor = thread['statusColor'] as Color? ?? AppTheme.gray;
+          return ListTile(
+            onTap: () => _openThread(thread),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: CircleAvatar(
+              radius: 22,
+              backgroundColor: statusColor.withOpacity(0.12),
+              child: Text(
+                thread['avatarChar']?.toString() ?? 'S',
+                style: TextStyle(
+                  color: statusColor,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            title: Text(
+              thread['proName']?.toString() ?? 'Service Pro',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppTheme.navy700,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 3),
+                Text(
+                  thread['woTitle']?.toString() ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppTheme.gray, fontSize: 11.5),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  thread['lastMessage']?.toString() ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppTheme.ink, fontSize: 12),
+                ),
+              ],
+            ),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  thread['time']?.toString() ?? '',
+                  style: const TextStyle(color: AppTheme.gray, fontSize: 11),
+                ),
+                if (unreadCount > 0) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.orange500,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      unreadCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
       ),
     );
   }
-
   Widget _buildActivityList() {
     if (_activityFeed.isEmpty) {
       return Center(
@@ -531,13 +705,12 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
             const SizedBox(height: 12),
             const Text(
               'No activity yet',
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold, color: AppTheme.gray),
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.gray),
             ),
             const SizedBox(height: 4),
             const Text(
               'Updates on your service requests will appear here.',
-              style: const TextStyle(color: AppTheme.gray, fontSize: 12),
+              style: TextStyle(color: AppTheme.gray, fontSize: 12),
             ),
           ],
         ),

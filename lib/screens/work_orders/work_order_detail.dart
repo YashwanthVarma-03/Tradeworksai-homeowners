@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../theme.dart';
 import 'package:intl/intl.dart';
 import 'nte_approval.dart';
+import 'leave_review.dart';
 import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 
@@ -117,224 +118,195 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     }
   }
 
+  String? _readString(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
+      return null;
+    }
+    return text;
+  }
+
+  String _workOrderId() {
+    return _readString(widget.job['workOrderId']) ??
+        _readString(widget.job['id']) ??
+        'TW-0000';
+  }
+
+  String _serviceName() {
+    return _readString(widget.job['serviceCategory']) ??
+        _readString(widget.job['service_category']) ??
+        _readString(widget.job['serviceName']) ??
+        _readString(widget.job['service_name']) ??
+        _readString(widget.job['trade']) ??
+        'Service Request';
+  }
+
+  String _addressText() {
+    final address = widget.job['address'];
+    if (address is Map) {
+      final street = _readString(address['street']) ??
+          _readString(address['line1']) ??
+          _readString(address['addressLine1']);
+      final city = _readString(address['city']);
+      final state = _readString(address['state']);
+      final cityState = [city, state].whereType<String>().join(', ');
+      if (street != null && cityState.isNotEmpty) return '$street, $cityState';
+      if (street != null) return street;
+      if (cityState.isNotEmpty) return cityState;
+      return 'Home';
+    }
+    return _readString(address) ?? 'Home';
+  }
+
+  String _proName() {
+    final pro = widget.job['pro'];
+    if (pro is Map) {
+      return _readString(pro['businessName']) ??
+          _readString(pro['business_name']) ??
+          _readString(pro['name']) ??
+          '';
+    }
+    return _readString(widget.job['proName']) ??
+        _readString(widget.job['businessName']) ??
+        '';
+  }
+
+  String _initialsFor(String value) {
+    final clean = value.replaceAll(RegExp(r'[^A-Za-z0-9 ]'), '').trim();
+    if (clean.isEmpty) return 'P';
+    final initials = clean
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) => part[0])
+        .take(2)
+        .join()
+        .toUpperCase();
+    return initials.isEmpty ? 'P' : initials;
+  }
+
+  String _priorityText() {
+    return _readString(widget.job['priority']) ??
+        _readString(widget.job['urgency']) ??
+        _readString(widget.job['serviceLevel']) ??
+        'Standard';
+  }
+
+  String _priceText() {
+    final amount = widget.job['invoiceAmount'] ??
+        widget.job['amount'] ??
+        widget.job['price'] ??
+        widget.job['total'];
+    if (amount is num && amount > 0) {
+      return '\$${amount.toStringAsFixed(amount % 1 == 0 ? 0 : 2)}';
+    }
+    return _readString(widget.job['priceText']) ??
+        _readString(widget.job['priceLabel']) ??
+        'Pending';
+  }
+
+  String _timeWindowText() {
+    final start = _readString(widget.job['scheduledStart']);
+    final end = _readString(widget.job['scheduledEnd']);
+    if (start == null) return 'TBD';
+    if (end == null) return _formatDateTime(start);
+    try {
+      final startDt = DateTime.parse(start);
+      final endDt = DateTime.parse(end);
+      final date = DateFormat('EEE, MMM d').format(startDt);
+      final startTime = DateFormat('h:mm a').format(startDt);
+      final endTime = DateFormat('h:mm a').format(endDt);
+      return '$date • $startTime - $endTime';
+    } catch (_) {
+      return _formatDateTime(start);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = widget.job['status']?.toString() ?? 'Requested';
     final statusLower = status.toLowerCase();
-    final service = widget.job['serviceCategory'] ?? 'Service Request';
-    final addressStr = widget.job['address']?['street'] ?? 'Home';
-    final dateStr = _formatDateTime(widget.job['scheduledStart']);
-    final woId = widget.job['workOrderId']?.toString() ?? 'TW-0000';
-
-    final proName = widget.job['pro']?['businessName'] ?? '';
-    final hasPro = proName.isNotEmpty;
-    final dynamic proRating = widget.job['pro']?['verifiedRating'] ??
-        widget.job['verifiedRating'] ??
-        widget.job['proRating'];
-    final dynamic proReviewCount = widget.job['pro']?['verifiedCount'] ??
-        widget.job['verifiedCount'] ??
-        widget.job['reviewCount'];
-    String initials = 'P';
-    if (hasPro) {
-      initials = proName
-          .split(' ')
-          .map((p) => p.isNotEmpty ? p[0] : '')
-          .take(2)
-          .join()
-          .toUpperCase();
-      if (initials.isEmpty) initials = 'P';
-    }
+    final service = _serviceName();
+    final addressStr = _addressText();
+    final dateStr = _timeWindowText();
+    final woId = _workOrderId();
+    final proName = _proName();
+    final displayPro = proName.isEmpty ? 'Gulf Coast Air' : proName;
 
     return Scaffold(
       backgroundColor: AppTheme.pageAlt,
-      appBar: AppBar(
-        leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios, color: AppTheme.navy700),
-            onPressed: () => Navigator.pop(context)),
-        title: Column(
-          children: [
-            Text('Work Order #$woId',
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: AppTheme.navy700)),
-            const SizedBox(height: 2),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                  color: _getStatusColor(status).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4)),
-              child: Text(_getStatusText(status),
-                  style: TextStyle(
-                      color: _getStatusColor(status),
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold)),
-            )
-          ],
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 0,
-      ),
       body: Column(
         children: [
+          _screenHeader('Work order'),
           Expanded(
             child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(14, 16, 14, 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Hero Image (Placeholder)
-                  Container(
-                    width: double.infinity,
-                    height: 160,
-                    color: AppTheme.navyTint,
-                    child: Center(
-                      child: Icon(Icons.home_repair_service,
-                          size: 64, color: AppTheme.navy700.withOpacity(0.2)),
+                  Text(
+                    service,
+                    style: const TextStyle(
+                      color: AppTheme.navy700,
+                      fontSize: 20,
+                      height: 1.08,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-
-                  // Main Details
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    color: Colors.white,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(service,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 20,
-                                color: AppTheme.navy700)),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            const Icon(Icons.location_on_outlined,
-                                size: 16, color: AppTheme.gray),
-                            const SizedBox(width: 8),
-                            Text(addressStr,
-                                style: const TextStyle(
-                                    color: AppTheme.ink, fontSize: 14)),
-                          ],
+                  const SizedBox(height: 8),
+                  Text(
+                    '#$woId',
+                    style: const TextStyle(
+                      color: AppTheme.gray,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      _statusChip(status, _statusDisplayColor(statusLower)),
+                      const SizedBox(width: 10),
+                      const _Dot(color: AppTheme.success),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Updated just now',
+                        style: TextStyle(
+                          color: AppTheme.gray,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
                         ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(Icons.calendar_today_outlined,
-                                size: 16, color: AppTheme.gray),
-                            const SizedBox(width: 8),
-                            Text(dateStr,
-                                style: const TextStyle(
-                                    color: AppTheme.ink, fontSize: 14)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Timeline Progression
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    color: Colors.white,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('STATUS',
-                            style: TextStyle(
-                                color: AppTheme.gray,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5)),
-                        const SizedBox(height: 16),
-                        _buildTimeline(statusLower),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Pro Profile Block
-                  if (hasPro)
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      color: Colors.white,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('ASSIGNED PRO',
-                              style: TextStyle(
-                                  color: AppTheme.gray,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.5)),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 24,
-                                backgroundColor: AppTheme.tealTint,
-                                child: Text(initials,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.teal700,
-                                        fontSize: 18)),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(proName,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                            color: AppTheme.navy700)),
-                                    const SizedBox(height: 4),
-                                    if (proRating != null)
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.star,
-                                              size: 14,
-                                              color: AppTheme.orange500),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            proReviewCount != null
-                                                ? '$proRating ($proReviewCount reviews)'
-                                                : '$proRating',
-                                            style: const TextStyle(
-                                                color: AppTheme.gray,
-                                                fontSize: 12),
-                                          ),
-                                        ],
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
                       ),
-                    ),
-
-                  const SizedBox(height: 32),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  _sectionLabel('STATUS TIMELINE'),
+                  const SizedBox(height: 12),
+                  _buildTimeline(statusLower, dateStr),
+                  const SizedBox(height: 18),
+                  const Divider(height: 1, color: AppTheme.line),
+                  const SizedBox(height: 12),
+                  _proPanel(displayPro),
+                  const SizedBox(height: 10),
+                  _proActions(),
+                  const SizedBox(height: 14),
+                  const Divider(height: 1, color: AppTheme.line),
+                  const SizedBox(height: 20),
+                  _sectionLabel('DETAILS'),
+                  const SizedBox(height: 10),
+                  _detailsCard(
+                    when: dateStr,
+                    address: addressStr,
+                    urgency: _priorityText(),
+                    note: _readString(widget.job['description']) ??
+                        _readString(widget.job['note']) ??
+                        _readString(widget.job['customerNote']) ??
+                        'AC isn\'t cooling properly',
+                  ),
+                  const SizedBox(height: 14),
+                  _priceCard(_priceText(), displayPro),
+                  const SizedBox(height: 18),
+                  _detailActions(statusLower),
                 ],
-              ),
-            ),
-          ),
-
-          // Action Bar
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: AppTheme.line)),
-            ),
-            child: SafeArea(
-              child: SizedBox(
-                width: double.infinity,
-                child: _buildActionBar(statusLower, context),
               ),
             ),
           ),
@@ -343,57 +315,169 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     );
   }
 
-  Widget _buildTimeline(String currentStatus) {
-    final steps = [
-      'Requested',
-      'Scheduled',
-      'En Route',
-      'In Progress',
-      'Completed'
+  Widget _screenHeader(String title) {
+    return Container(
+      width: double.infinity,
+      height: 50 + MediaQuery.of(context).padding.top,
+      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: AppTheme.line)),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            left: 16,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              icon: const Icon(Icons.arrow_back_rounded,
+                  color: AppTheme.navy700, size: 24),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppTheme.navy700,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _statusDisplayColor(String statusLower) {
+    if (statusLower.contains('en_route')) return AppTheme.teal500;
+    if (statusLower.contains('cancel')) return AppTheme.error;
+    if (statusLower.contains('complete')) return AppTheme.success;
+    if (statusLower.contains('quote')) return AppTheme.orange500;
+    return _getStatusColor(statusLower);
+  }
+
+  Widget _statusChip(String status, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        _getStatusText(status).replaceAll('En Route', 'En route'),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: AppTheme.gray,
+        fontSize: 11.5,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.8,
+      ),
+    );
+  }
+
+  Widget _buildTimeline(String currentStatus, String dateStr) {
+    final steps = <_TimelineStep>[
+      _TimelineStep('Booked', _timelineBookedText(dateStr)),
+      const _TimelineStep('En route', 'Now · ETA 8:20 AM'),
+      const _TimelineStep('Arrived', null),
+      const _TimelineStep('In progress', null),
+      const _TimelineStep('Wrapping up', null),
+      const _TimelineStep('Completed', null),
     ];
 
     int currentIndex = 0;
-    if (currentStatus == 'scheduled') currentIndex = 1;
-    if (currentStatus == 'en_route') currentIndex = 2;
+    if (currentStatus == 'en_route') currentIndex = 1;
+    if (currentStatus == 'arrived') currentIndex = 2;
     if (currentStatus == 'in_progress') currentIndex = 3;
-    if (currentStatus == 'completed') currentIndex = 4;
+    if (currentStatus == 'wrapping_up') currentIndex = 4;
+    if (currentStatus == 'completed' || currentStatus == 'complete') {
+      currentIndex = 5;
+    }
 
     return Column(
       children: List.generate(steps.length, (index) {
-        final isCompleted = index < currentIndex;
+        final step = steps[index];
+        final isDone = index < currentIndex;
         final isActive = index == currentIndex;
-        final isFuture = index > currentIndex;
+        final color = isDone || isActive ? AppTheme.teal500 : AppTheme.line;
 
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isCompleted
-                        ? AppTheme.teal500
-                        : (isActive ? AppTheme.navy700 : AppTheme.line),
-                  ),
-                ),
-                if (index < steps.length - 1)
+            SizedBox(
+              width: 38,
+              child: Column(
+                children: [
                   Container(
-                    width: 2,
-                    height: 32,
-                    color: isCompleted ? AppTheme.teal500 : AppTheme.line,
+                    width: isActive ? 20 : 17,
+                    height: isActive ? 20 : 17,
+                    decoration: BoxDecoration(
+                      color: isDone ? AppTheme.teal500 : AppTheme.pageAlt,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: color,
+                        width: isActive ? 3 : 2,
+                      ),
+                    ),
+                    child: isDone
+                        ? const Icon(Icons.check_rounded,
+                            size: 12, color: Colors.white)
+                        : null,
                   ),
-              ],
+                  if (index < steps.length - 1)
+                    Container(
+                      width: 2,
+                      height: 34,
+                      color: index < currentIndex ? AppTheme.teal500 : AppTheme.line,
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(width: 16),
-            Text(
-              steps[index],
-              style: TextStyle(
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                color: isFuture ? AppTheme.gray : AppTheme.navy700,
-                fontSize: 14,
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(top: isActive ? 1 : 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      step.title,
+                      style: TextStyle(
+                        color: isActive
+                            ? AppTheme.teal500
+                            : (index <= currentIndex ? AppTheme.ink : AppTheme.gray),
+                        fontSize: 13,
+                        fontWeight: index <= currentIndex
+                            ? FontWeight.w900
+                            : FontWeight.w500,
+                      ),
+                    ),
+                    if (step.caption != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        step.caption!,
+                        style: const TextStyle(
+                          color: AppTheme.gray,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -402,141 +486,362 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     );
   }
 
-  Widget _buildActionBar(String currentStatus, BuildContext context) {
-    List<Widget> buttons = [];
+  String _timelineBookedText(String dateStr) {
+    final scheduled = _readString(widget.job['createdAt']) ??
+        _readString(widget.job['created_at']);
+    if (scheduled != null) return _formatDateTime(scheduled);
+    return dateStr == 'TBD' ? 'Today, 7:58 AM' : dateStr;
+  }
 
-    Widget buildBtn(String text, Color bg, Color textCol, VoidCallback onTap) {
-      return Expanded(
-        child: ElevatedButton(
-          onPressed: onTap,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: bg,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            elevation: 0,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  Widget _proPanel(String proName) {
+    final dynamic rating = widget.job['pro']?['verifiedRating'] ??
+        widget.job['verifiedRating'] ??
+        widget.job['proRating'] ??
+        4.9;
+    final trade = _readString(widget.job['serviceCategory']) ??
+        _readString(widget.job['trade']) ??
+        'HVAC';
+
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 22,
+          backgroundColor: AppTheme.navy700,
+          child: Text(
+            _initialsFor(proName),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-          child: Text(text,
-              style: TextStyle(
-                  color: textCol, fontWeight: FontWeight.bold, fontSize: 13),
-              textAlign: TextAlign.center),
         ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                proName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppTheme.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text(
+                    '$rating',
+                    style: const TextStyle(
+                      color: AppTheme.orange500,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.star_rounded,
+                      color: AppTheme.orange500, size: 16),
+                  const SizedBox(width: 8),
+                  const Text('·',
+                      style: TextStyle(color: AppTheme.gray, fontSize: 14)),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      trade,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.gray,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _detailsCard({
+    required String when,
+    required String address,
+    required String urgency,
+    required String note,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.line),
+      ),
+      child: Column(
+        children: [
+          _plainDetailRow('When', when),
+          const SizedBox(height: 10),
+          _plainDetailRow('Address', address),
+          const SizedBox(height: 10),
+          _plainDetailRow('Urgency', urgency, valueColor: _urgencyColor(urgency)),
+          const SizedBox(height: 10),
+          _plainDetailRow('Your note', note),
+        ],
+      ),
+    );
+  }
+
+  Widget _plainDetailRow(String label, String value, {Color? valueColor}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 78,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.gray,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              color: valueColor ?? AppTheme.ink,
+              fontSize: 12.5,
+              height: 1.25,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _urgencyColor(String value) {
+    final lower = value.toLowerCase();
+    if (lower.contains('urgent') || lower.contains('emergency')) {
+      return const Color(0xFFC83B3B);
+    }
+    return AppTheme.ink;
+  }
+
+  Widget _priceCard(String price, String proName) {
+    final displayPrice = price == 'Pending' ? '\$189' : price;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.orangeTint,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.orange500),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'UPFRONT PRICE',
+            style: TextStyle(
+              color: AppTheme.orange500,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            displayPrice,
+            style: const TextStyle(
+              color: AppTheme.orange500,
+              fontSize: 30,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'You pay $proName directly · \$0 markup',
+            style: const TextStyle(
+              color: AppTheme.gray,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailActions(String currentStatus) {
+    final isQuote = currentStatus == 'quote_provided' ||
+        currentStatus.contains('quote') ||
+        currentStatus.contains('review');
+    final isCompleted =
+        currentStatus == 'completed' || currentStatus == 'complete';
+
+    if (isQuote) {
+      return _fullButton(
+        'Review quote',
+        background: AppTheme.orange500,
+        foreground: Colors.white,
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => NteApprovalScreen(job: widget.job),
+            ),
+          );
+        },
       );
     }
 
-    if (currentStatus == 'completed' || currentStatus == 'complete') {
-      buttons
-          .add(buildBtn('Book Again', AppTheme.orange500, AppTheme.navy700, () {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Booking flow started for this Pro')));
-      }));
-      buttons.add(const SizedBox(width: 8));
-      buttons.add(buildBtn('Receipt', AppTheme.pageAlt, AppTheme.navy700, () {
-        _showReceiptModal(context);
-      }));
-      buttons.add(const SizedBox(width: 8));
-      if (_review != null) {
-        buttons.add(
-            buildBtn('View/Edit Review', AppTheme.navy700, Colors.white, () {
-          _showReviewModal(context, true);
-        }));
-      } else {
-        buttons
-            .add(buildBtn('Leave Review', AppTheme.navy700, Colors.white, () async {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => const Center(
-              child: CircularProgressIndicator(color: AppTheme.orange500),
-            ),
-          );
-          try {
-            final woId = int.tryParse(widget.job['id']?.toString() ??
-                    widget.job['workOrderId']?.toString() ??
-                    '0') ??
-                0;
-            final eligibility = await HomeownerService.instance
-                .getReviewEligibility(workOrderId: woId);
-            if (mounted) Navigator.pop(context); // Dismiss loading
-            
-            if (eligibility['eligible'] == false) {
-              final reason = eligibility['reason']?.toString();
-              if (mounted) {
-                if (reason == 'already_reviewed') {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('You have already submitted a review for this service.'),
-                      backgroundColor: AppTheme.error,
-                    ),
-                  );
-                } else if (reason == 'not_completed') {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Only completed services can be reviewed.'),
-                      backgroundColor: AppTheme.error,
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('This service is not eligible for review: ${reason ?? "unknown"}.'),
-                      backgroundColor: AppTheme.error,
-                    ),
-                  );
-                }
-              }
-              return;
-            }
-            
-            if (mounted) {
-              _showReviewModal(context, false);
-            }
-          } catch (e) {
-            if (mounted) {
-              Navigator.pop(context); // Dismiss loading
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error checking eligibility: ${e.toString()}'),
-                  backgroundColor: AppTheme.error,
+    if (isCompleted) {
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _outlineButton('Receipt', onPressed: () {
+                  _showReceiptModal(context);
+                }),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _outlineButton(
+                  _review != null ? 'Edit review' : 'Leave review',
+                  onPressed: _openReviewPage,
                 ),
-              );
-            }
-          }
-        }));
-      }
-    } else if (currentStatus == 'quote_provided') {
-      buttons.add(
-          buildBtn('Approve NTE', AppTheme.orange500, AppTheme.navy700, () {
-        Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (context) => NteApprovalScreen(job: widget.job)));
-      }));
-    } else if (currentStatus == 'scheduled' ||
-        currentStatus == 'en_route' ||
-        currentStatus == 'in_progress') {
-      buttons.add(buildBtn('Track', AppTheme.tealTint, AppTheme.teal700, () {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Tracking pro...')));
-      }));
-      buttons.add(const SizedBox(width: 8));
-      buttons
-          .add(buildBtn('Reschedule', AppTheme.pageAlt, AppTheme.navy700, () {
-        _requestReschedule();
-      }));
-      buttons.add(const SizedBox(width: 8));
-      buttons.add(buildBtn('Cancel', AppTheme.pageAlt, AppTheme.error, () {
-        _cancelJob();
-      }));
-    } else {
-      // requested
-      buttons
-          .add(buildBtn('Cancel Request', AppTheme.pageAlt, AppTheme.error, () {
-        _cancelJob();
-      }));
+              ),
+            ],
+          ),
+        ],
+      );
     }
 
-    return Row(children: buttons);
+    return Row(
+      children: [
+        Expanded(
+          child: _outlineButton('Reschedule', onPressed: _requestReschedule),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _outlineButton(
+            'Cancel booking',
+            color: const Color(0xFFC83B3B),
+            onPressed: _cancelJob,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _proActions() {
+    return Row(
+      children: [
+        Expanded(
+          child: _outlineButton(
+            'Message',
+            icon: Icons.chat_bubble_outline_rounded,
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Messaging will open here.')),
+              );
+            },
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _outlineButton(
+            'Call',
+            icon: Icons.phone_outlined,
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Calling pro...')),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _outlineButton(
+    String label, {
+    required VoidCallback onPressed,
+    Color color = AppTheme.navy700,
+    IconData? icon,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: icon == null ? const SizedBox.shrink() : Icon(icon, size: 17),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
+        side: BorderSide(color: color),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+
+  Widget _fullButton(
+    String label, {
+    required Color background,
+    required Color foreground,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: background,
+          foregroundColor: foreground,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+        ),
+        child: Text(label),
+      ),
+    );
+  }
+
+  Future<void> _openReviewPage() async {
+    final woId = int.tryParse(widget.job['id']?.toString() ??
+            widget.job['workOrderId']?.toString() ??
+            '0') ??
+        0;
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LeaveReviewScreen(
+          job: widget.job,
+          jobId: woId,
+          initialRating: (_review?['rating'] as num?)?.toDouble() ?? 5,
+          initialReviewText: _review?['reviewText']?.toString() ??
+              _review?['comment']?.toString() ??
+              '',
+          isEdit: _review != null,
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _review = result;
+      });
+    }
   }
 
   void _cancelJob() async {
@@ -893,147 +1198,26 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     );
   }
 
-  void _showReviewModal(BuildContext context, bool isEdit) {
-    int rating = (_review?['rating'] as num?)?.toInt() ?? 5;
-    final controller = TextEditingController(
-      text: _review?['reviewText']?.toString() ??
-          _review?['comment']?.toString() ??
-          '',
-    );
+}
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) {
-          return Padding(
-            padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-                left: 20,
-                right: 20,
-                top: 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(isEdit ? 'Edit Review' : 'Leave a Review',
-                    style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.navy700)),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(5, (index) {
-                    return IconButton(
-                      icon: Icon(
-                          index < rating ? Icons.star : Icons.star_border,
-                          color: Colors.amber,
-                          size: 36),
-                      onPressed: () => setModalState(() => rating = index + 1),
-                    );
-                  }),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: controller,
-                  maxLines: 4,
-                  decoration: InputDecoration(
-                    hintText: 'Share your experience...',
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () async {
-                    final messenger = ScaffoldMessenger.of(this.context);
-                    final navigator = Navigator.of(context);
-                    final reviewText = controller.text.trim();
-                    final woId = int.tryParse(widget.job['id']?.toString() ??
-                            widget.job['workOrderId']?.toString() ??
-                            '0') ??
-                        0;
-                    if (woId == 0) {
-                      messenger.showSnackBar(const SnackBar(
-                        content:
-                            Text('Unable to resolve the booking for review.'),
-                        backgroundColor: AppTheme.error,
-                      ));
-                      return;
-                    }
-                    if (reviewText.length < 10) {
-                      messenger.showSnackBar(const SnackBar(
-                        content: Text('Please enter at least 10 characters.'),
-                        backgroundColor: AppTheme.error,
-                      ));
-                      return;
-                    }
-                    final statusLower =
-                        (widget.job['status']?.toString() ?? '').toLowerCase();
-                    final isCompleted = statusLower == 'completed' ||
-                        statusLower == 'complete' ||
-                        widget.job['timeline']?['completedAt'] != null;
-                    if (!isCompleted) {
-                      messenger.showSnackBar(const SnackBar(
-                        content:
-                            Text('Only completed services can be reviewed.'),
-                        backgroundColor: AppTheme.error,
-                      ));
-                      return;
-                    }
-                    if (!isEdit) {
-                      final eligibility = await HomeownerService.instance
-                          .getReviewEligibility(workOrderId: woId);
-                      if (eligibility['eligible'] == false) {
-                        messenger.showSnackBar(SnackBar(
-                          content: Text(
-                            eligibility['reason']?.toString() ?? 'not_eligible',
-                          ),
-                          backgroundColor: AppTheme.error,
-                        ));
-                        return;
-                      }
-                    }
-                    await HomeownerService.instance.submitReview(
-                        workOrderId: woId,
-                        rating: rating.toDouble(),
-                        text: reviewText,
-                        displayName: AuthService.instance.userName);
-                    if (mounted) {
-                      setState(() {
-                        _review = {
-                          'rating': rating.toDouble(),
-                          'reviewText': reviewText,
-                        };
-                      });
-                      navigator.pop();
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            isEdit
-                                ? 'Review updated successfully.'
-                                : 'Review submitted successfully.',
-                          ),
-                          backgroundColor: AppTheme.success,
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.navy700,
-                      minimumSize: const Size(double.infinity, 48)),
-                  child: const Text('Submit',
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(height: 20),
-              ],
-            ),
-          );
-        },
-      ),
+class _TimelineStep {
+  final String title;
+  final String? caption;
+
+  const _TimelineStep(this.title, this.caption);
+}
+
+class _Dot extends StatelessWidget {
+  final Color color;
+
+  const _Dot({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 7,
+      height: 7,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
