@@ -27,6 +27,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   Channel? _channel;
   bool _isCreating = true;
+  bool _isNetworkIssue = false;
   String? _error;
 
   @override
@@ -52,7 +53,8 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = AppErrorUtils.friendlyMessage(e);
+        _isNetworkIssue = AppErrorUtils.isNetworkError(e);
+        _error = _chatErrorMessage(e);
         _isCreating = false;
       });
     }
@@ -75,13 +77,21 @@ class _ChatScreenState extends State<ChatScreen> {
       return Scaffold(
         appBar: _buildAppBar(),
         body: OfflineState(
-          title: AppErrorUtils.noInternetTitle,
+          title: _isNetworkIssue
+              ? AppErrorUtils.noInternetTitle
+              : 'Messaging unavailable',
+          icon: _isNetworkIssue
+              ? Icons.wifi_off_rounded
+              : Icons.chat_bubble_outline_rounded,
           message: _error ??
               StreamService.instance.lastError ??
-              AppErrorUtils.noInternetMessage,
+              (_isNetworkIssue
+                  ? AppErrorUtils.noInternetMessage
+                  : 'This contractor is not available for messaging yet.'),
           onRetry: () {
             setState(() {
               _isCreating = true;
+              _isNetworkIssue = false;
               _error = null;
             });
             _initChannel(forceReconnect: true);
@@ -105,6 +115,19 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  String _chatErrorMessage(Object error) {
+    final raw = error.toString().toLowerCase();
+    if (raw.contains('getorcreatechannel') ||
+        raw.contains("users are involved in channel create operation") ||
+        raw.contains("don't exist")) {
+      return 'This contractor is not available for messaging yet.';
+    }
+    return AppErrorUtils.friendlyMessage(
+      error,
+      fallback: 'Chat is unavailable right now.',
     );
   }
 

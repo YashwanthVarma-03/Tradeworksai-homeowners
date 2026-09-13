@@ -1,17 +1,21 @@
 import 'dart:async';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/homeowner_service.dart';
+import '../services/auth_service.dart';
 import '../services/intake_service.dart';
+import '../services/browse_search_history.dart';
+import '../services/service_catalog.dart';
+import '../services/service_location.dart';
 import '../theme.dart';
 import '../utils/app_error_utils.dart';
 import '../utils/service_search_matcher.dart';
 import '../widgets/ai_intake_sheet.dart';
 import '../widgets/custom_widgets.dart';
+import '../widgets/service_zip_entry_dialog.dart';
 import '../widgets/service_search_bar.dart';
 import 'pro_profile.dart';
 
@@ -22,6 +26,21 @@ enum _BrowseView {
   typeAhead,
   results,
   noCoverage,
+}
+
+enum _BrowseSort { highestRated, nearest, lowestPrice }
+
+extension on _BrowseSort {
+  String get label {
+    switch (this) {
+      case _BrowseSort.highestRated:
+        return 'Highest rated';
+      case _BrowseSort.nearest:
+        return 'Nearest';
+      case _BrowseSort.lowestPrice:
+        return 'Lowest price';
+    }
+  }
 }
 
 class SearchTab extends StatefulWidget {
@@ -45,9 +64,6 @@ class SearchTab extends StatefulWidget {
 }
 
 class _SearchTabState extends State<SearchTab> {
-  static const String _recentSearchesKey = 'browse_recent_searches';
-  static const String _sharedZipKey = 'selected_service_zip';
-  static const String _sharedLocationNameKey = 'selected_service_location_name';
   static const Map<String, Color> _homeCategoryBackgrounds = {
     'HVAC': Color(0xFFE3F2FD),
     'Plumbing': Color(0xFFE0F7FA),
@@ -61,22 +77,24 @@ class _SearchTabState extends State<SearchTab> {
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
   late final ScrollController _railController;
-  final TextEditingController _locationController =
-      TextEditingController(text: 'Home · 33578');
+  final TextEditingController _locationController = TextEditingController();
   final List<String> _recentSearches = [];
+  final BrowseSearchHistory _searchHistory = BrowseSearchHistory();
   final List<_BrowsePro> _livePros = [];
   final Map<String, int> _categoryCounts = {};
   final Map<String, bool> _categoryCoverage = {};
   final Map<String, String> _liveNextSlotLabels = {};
 
   _BrowseView _view = _BrowseView.browse;
+  _BrowseSort _browseSort = _BrowseSort.highestRated;
   String _selectedCategory = 'All';
-  String _selectedZip = '33578';
+  String _selectedZip = '';
   String? _committedQuery;
   bool _isLoadingResults = false;
   bool _isLoadingCoverage = false;
   String? _resultsError;
   int _availabilityHydrationToken = 0;
+  int _prosRequestToken = 0;
 
   @override
   void initState() {
@@ -86,7 +104,11 @@ class _SearchTabState extends State<SearchTab> {
     _searchFocusNode = FocusNode();
     _railController = ScrollController();
     _searchFocusNode.addListener(_handleFocusChange);
-    _applyLocationLabel('Home', _selectedZip);
+    BrowseSearchHistory.revision.addListener(_loadRecentSearches);
+    ServiceLocation.selected.addListener(_handleSharedLocationChanged);
+    HomeownerService.instance.contractorCatalogVersion
+        .addListener(_refreshContractorCatalog);
+    _applyLocationLabel('Enter ZIP code', _selectedZip);
     _loadRecentSearches();
 
     if (widget.initialCategory != null && widget.initialCategory != 'All') {
@@ -156,6 +178,10 @@ class _SearchTabState extends State<SearchTab> {
 
   @override
   void dispose() {
+    BrowseSearchHistory.revision.removeListener(_loadRecentSearches);
+    ServiceLocation.selected.removeListener(_handleSharedLocationChanged);
+    HomeownerService.instance.contractorCatalogVersion
+        .removeListener(_refreshContractorCatalog);
     _searchFocusNode.removeListener(_handleFocusChange);
     _searchFocusNode.dispose();
     _railController.dispose();
@@ -164,9 +190,27 @@ class _SearchTabState extends State<SearchTab> {
     super.dispose();
   }
 
+  void _refreshContractorCatalog() {
+    if (!mounted || _isLoadingResults) return;
+
+    // A submitted review invalidates the shared catalog cache. Reload the
+    // exact browse context that is already visible, so its rating/count and
+    // sort order change without requiring a manual pull-to-refresh.
+    final query = _committedQuery?.trim();
+    if (query != null && query.isNotEmpty) {
+      unawaited(_runQuerySearch(query));
+      return;
+    }
+    if (_selectedCategory == 'All') {
+      if (widget.initialAllShowsCategories && _livePros.isEmpty) return;
+      unawaited(_runAllServicesSearch());
+      return;
+    }
+    unawaited(_runCategorySearch(_selectedCategory));
+  }
+
   Future<void> _loadRecentSearches() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getStringList(_recentSearchesKey) ?? const [];
+    final stored = await _searchHistory.load();
     if (!mounted) return;
     setState(() {
       _recentSearches
@@ -176,24 +220,22 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Future<void> _saveRecentSearch(String query) async {
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) return;
-    _recentSearches.removeWhere(
-      (item) => item.toLowerCase() == trimmed.toLowerCase(),
-    );
-    _recentSearches.insert(0, trimmed);
-    if (_recentSearches.length > 6) {
-      _recentSearches.removeRange(6, _recentSearches.length);
-    }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_recentSearchesKey, _recentSearches);
+    final saved = await _searchHistory.save(query);
     if (mounted) {
-      setState(() {});
+      setState(() {
+        _recentSearches
+          ..clear()
+          ..addAll(saved);
+      });
     }
   }
 
   void _applyLocationLabel(String city, String zip) {
     final normalizedCity = city.trim().isEmpty ? 'Home' : city.trim();
+    if (zip.trim().isEmpty) {
+      _locationController.text = normalizedCity;
+      return;
+    }
     final separator = String.fromCharCode(183);
     _locationController.text = '$normalizedCity $separator $zip';
   }
@@ -209,7 +251,13 @@ class _SearchTabState extends State<SearchTab> {
 
   Future<void> _loadLocationAndResults() async {
     await _loadSharedLocationOverride();
+    if (await _requestGuestZipIfNeeded()) {
+      return;
+    }
     await _loadLocationFromProfile();
+    if (_selectedZip.isEmpty) {
+      return;
+    }
     await _refreshZipCoverage();
     _locationController.text = _normalizeLocationText(_locationController.text);
     if (!mounted) return;
@@ -239,6 +287,11 @@ class _SearchTabState extends State<SearchTab> {
   Future<void> _loadLocationFromProfile() async {
     final sharedZip = await _getSharedZipOverride();
     if (sharedZip != null) {
+      return;
+    }
+    // Browse is public. Guest location comes from the shared ZIP/fallback,
+    // while account addresses are only consulted after authentication.
+    if (!AuthService.instance.isAuthenticated) {
       return;
     }
     try {
@@ -273,40 +326,63 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Future<String?> _getSharedZipOverride() async {
-    final prefs = await SharedPreferences.getInstance();
-    final zip = prefs.getString(_sharedZipKey)?.trim() ?? '';
-    return zip.length == 5 ? zip : null;
+    return (await ServiceLocation.load())?.zip;
   }
 
   Future<void> _loadSharedLocationOverride() async {
-    final prefs = await SharedPreferences.getInstance();
-    final zip = prefs.getString(_sharedZipKey)?.trim() ?? '';
-    if (zip.length != 5) {
+    final location = await ServiceLocation.load();
+    if (location == null) {
       return;
     }
-    final locationName = prefs.getString(_sharedLocationNameKey)?.trim() ?? '';
-    final resolvedLocation = locationName.isEmpty ? 'Home' : locationName;
+    final resolvedLocation =
+        location.locationName.isEmpty ? 'Home' : location.locationName;
     if (!mounted) {
-      _selectedZip = zip;
-      _applyLocationLabel(resolvedLocation, zip);
+      _selectedZip = location.zip;
+      _applyLocationLabel(resolvedLocation, location.zip);
       return;
     }
     setState(() {
-      _selectedZip = zip;
-      _applyLocationLabel(resolvedLocation, zip);
+      _selectedZip = location.zip;
+      _applyLocationLabel(resolvedLocation, location.zip);
     });
   }
 
-  Future<void> _saveSharedLocationOverride(String zip, String locationName) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_sharedZipKey, zip);
-    await prefs.setString(_sharedLocationNameKey, locationName);
+  Future<void> _saveSharedLocationOverride(
+      String zip, String locationName) async {
+    await ServiceLocation.save(zip: zip, locationName: locationName);
   }
 
-  List<_BrowseCategory> get _visibleRailCategories =>
-      _allCategories
-          .where((cat) => _categorySlugForName(cat.name) != null)
-          .toList();
+  Future<bool> _requestGuestZipIfNeeded() async {
+    if (AuthService.instance.isAuthenticated) {
+      return false;
+    }
+    final sharedZip = await _getSharedZipOverride();
+    if (!mounted || sharedZip != null) {
+      return false;
+    }
+
+    final zip = await showServiceZipEntryDialog(
+      context,
+      initialZip: '',
+    );
+    if (zip == null || !mounted) {
+      return false;
+    }
+    await _applyLocationInput(zip);
+    return true;
+  }
+
+  void _handleSharedLocationChanged() {
+    final location = ServiceLocation.selected.value;
+    if (location == null || !mounted || location.zip == _selectedZip) {
+      return;
+    }
+    unawaited(_applyLocationInput(location.zip));
+  }
+
+  List<_BrowseCategory> get _visibleRailCategories => _allCategories
+      .where((cat) => _categorySlugForName(cat.name) != null)
+      .toList();
 
   List<_BrowseCategory> get _railCategoriesForCurrentSelection {
     final visible = [..._visibleRailCategories];
@@ -329,8 +405,7 @@ class _SearchTabState extends State<SearchTab> {
     final categoryIndex =
         visible.indexWhere((cat) => cat.name == _selectedCategory);
     if (_selectedCategory != 'All' && categoryIndex == -1) return;
-    final selectedIndex =
-        _selectedCategory == 'All' ? 0 : categoryIndex + 1;
+    final selectedIndex = _selectedCategory == 'All' ? 0 : categoryIndex + 1;
     if (selectedIndex < 0) return;
     final targetOffset = (selectedIndex * 102.0 - 10).clamp(
       0.0,
@@ -403,8 +478,16 @@ class _SearchTabState extends State<SearchTab> {
         }
       }
 
-      final city = _readText(coverage['city']) ?? 'Home';
+      final city = _readText(coverage['city']) ??
+          _readText(coverage['areaName']) ??
+          _readText(coverage['area_name']) ??
+          'Home';
+      final state = _readText(coverage['state']);
+      final resolvedLocation = [city, state]
+          .where((part) => part != null && part.trim().isNotEmpty)
+          .join(', ');
       final returnedZip = _readText(coverage['zip']) ?? zip;
+      await _saveSharedLocationOverride(returnedZip, resolvedLocation);
 
       if (!mounted) {
         _categoryCounts
@@ -414,7 +497,7 @@ class _SearchTabState extends State<SearchTab> {
           ..clear()
           ..addAll(nextCoverage);
         _selectedZip = returnedZip;
-        _applyLocationLabel(city, returnedZip);
+        _applyLocationLabel(resolvedLocation, returnedZip);
         return;
       }
 
@@ -426,7 +509,7 @@ class _SearchTabState extends State<SearchTab> {
           ..clear()
           ..addAll(nextCoverage);
         _selectedZip = returnedZip;
-        _applyLocationLabel(city, returnedZip);
+        _applyLocationLabel(resolvedLocation, returnedZip);
         _isLoadingCoverage = false;
       });
     } catch (_) {
@@ -467,10 +550,6 @@ class _SearchTabState extends State<SearchTab> {
     return _categoryCounts[category.name] ?? 0;
   }
 
-  bool _isCategoryCovered(_BrowseCategory category) {
-    return _categoryCoverage[category.name] ?? false;
-  }
-
   int get _allProsCount {
     if (_categoryCounts.isEmpty) {
       return 0;
@@ -501,12 +580,14 @@ class _SearchTabState extends State<SearchTab> {
         if (_searchController.text.trim().isEmpty) {
           _view = _BrowseView.searchFocused;
         } else if (_committedQuery == _searchController.text.trim()) {
-          _view = _livePros.isEmpty ? _BrowseView.noCoverage : _BrowseView.results;
+          _view =
+              _livePros.isEmpty ? _BrowseView.noCoverage : _BrowseView.results;
         } else {
           _view = _BrowseView.typeAhead;
         }
       } else if (_committedQuery != null) {
-        _view = _livePros.isEmpty ? _BrowseView.noCoverage : _BrowseView.results;
+        _view =
+            _livePros.isEmpty ? _BrowseView.noCoverage : _BrowseView.results;
       } else if (_selectedCategory == 'All') {
         _view = _BrowseView.browse;
       } else {
@@ -527,23 +608,30 @@ class _SearchTabState extends State<SearchTab> {
                 .replaceAll(RegExp(r'\s+·\s+'), ' ')
                 .replaceAll(RegExp(r'^[,\s]+|[,\s]+$'), '')
                 .trim();
-    await _saveSharedLocationOverride(nextZip, cityLabel);
-
     if (!mounted) {
       _selectedZip = nextZip;
       _applyLocationLabel(cityLabel, nextZip);
+      await _saveSharedLocationOverride(nextZip, cityLabel);
       return;
     }
 
     setState(() {
       _selectedZip = nextZip;
       _applyLocationLabel(cityLabel, nextZip);
+      _livePros.clear();
+      _liveNextSlotLabels.clear();
+      _isLoadingResults = true;
+      _resultsError = null;
+      _prosRequestToken++;
     });
+    await _saveSharedLocationOverride(nextZip, cityLabel);
     await _refreshZipCoverage();
 
     if (_committedQuery != null && _committedQuery!.isNotEmpty) {
       await _runQuerySearch(_committedQuery!);
-    } else if (_selectedCategory != 'All') {
+    } else if (_selectedCategory == 'All') {
+      await _runAllServicesSearch();
+    } else {
       await _runCategorySearch(_selectedCategory);
     }
   }
@@ -657,6 +745,8 @@ class _SearchTabState extends State<SearchTab> {
 
   Future<void> _runAllServicesSearch() async {
     final categories = _categoriesWithLivePros;
+    final requestToken = ++_prosRequestToken;
+    final requestedZip = _selectedZip;
     if (!mounted) return;
     setState(() {
       _selectedCategory = 'All';
@@ -677,7 +767,7 @@ class _SearchTabState extends State<SearchTab> {
       if (slug == null) continue;
       try {
         final response = await HomeownerService.instance.searchPros(
-          zip: _selectedZip,
+          zip: requestedZip,
           categorySlug: slug,
         );
         final results = (response['results'] as List? ?? const [])
@@ -708,18 +798,48 @@ class _SearchTabState extends State<SearchTab> {
       }
     }
 
-    if (!mounted) return;
+    if (!mounted ||
+        requestToken != _prosRequestToken ||
+        requestedZip != _selectedZip) {
+      return;
+    }
     setState(() {
+      final discoveredCounts = <String, int>{
+        for (final category in _allCategories) category.name: 0,
+      };
+      final discoveredCoverage = <String, bool>{
+        for (final category in _allCategories) category.name: false,
+      };
+      for (final pro in mergedPros) {
+        final categoryName = _categoryNameForLivePro(pro.category);
+        if (categoryName == null) continue;
+        discoveredCounts[categoryName] =
+            (discoveredCounts[categoryName] ?? 0) + 1;
+        discoveredCoverage[categoryName] = true;
+      }
       _livePros
         ..clear()
         ..addAll(mergedPros);
       _liveNextSlotLabels.clear();
+      _categoryCounts.addAll(discoveredCounts);
+      _categoryCoverage.addAll(discoveredCoverage);
       _isLoadingResults = false;
       _resultsError = mergedPros.isEmpty ? firstError : null;
       _view = mergedPros.isEmpty ? _BrowseView.noCoverage : _BrowseView.browse;
     });
     unawaited(_hydrateNextAvailability(mergedPros));
     _queueSelectedRailVisibility();
+  }
+
+  String? _categoryNameForLivePro(String rawCategory) {
+    final normalized =
+        _normalizeCoverageCategoryName(rawCategory) ?? rawCategory;
+    for (final category in _allCategories) {
+      if (category.name.toLowerCase() == normalized.toLowerCase()) {
+        return category.name;
+      }
+    }
+    return null;
   }
 
   _BrowseView _resolveSearchView(String query) {
@@ -733,6 +853,16 @@ class _SearchTabState extends State<SearchTab> {
     // A high-confidence local match is kept as a safety net for typo-only
     // requests. The AI intake can still enrich normal language queries.
     final localCategory = _resolveSearchCategory(query);
+    if (localCategory != null) {
+      await _runCategorySearch(localCategory, overrideQuery: query);
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _isLoadingResults = true;
+      _resultsError = null;
+      _view = _BrowseView.results;
+    });
     try {
       final intakeData = await IntakeService.instance.assist(
         text: query,
@@ -753,10 +883,6 @@ class _SearchTabState extends State<SearchTab> {
       }
 
       if (resolution.outcome == 'clarify') {
-        if (localCategory != null) {
-          await _runCategorySearch(localCategory, overrideQuery: query);
-          return;
-        }
         if (!mounted) return;
         setState(() {
           _livePros.clear();
@@ -775,7 +901,8 @@ class _SearchTabState extends State<SearchTab> {
               ? _categoryNameForSlug(resolution.categorySlug!)
               : null);
       if (resolvedCategory == null) {
-        throw Exception('AI intake could not resolve this request to a supported category.');
+        throw Exception(
+            'AI intake could not resolve this request to a supported category.');
       }
 
       await _runCategorySearch(
@@ -810,6 +937,8 @@ class _SearchTabState extends State<SearchTab> {
     String urgency = 'standard',
     String? forcedSlug,
   }) async {
+    final requestToken = ++_prosRequestToken;
+    final requestedZip = _selectedZip;
     final slug = forcedSlug ?? _categorySlugForName(category);
     if (slug == null) {
       if (!mounted) return;
@@ -832,7 +961,7 @@ class _SearchTabState extends State<SearchTab> {
 
     try {
       final response = await HomeownerService.instance.searchPros(
-        zip: _selectedZip,
+        zip: requestedZip,
         categorySlug: slug,
         urgency: urgency,
       );
@@ -844,16 +973,19 @@ class _SearchTabState extends State<SearchTab> {
               ))
           .toList();
 
-      if (!mounted) return;
+      if (!mounted ||
+          requestToken != _prosRequestToken ||
+          requestedZip != _selectedZip) {
+        return;
+      }
       setState(() {
         _livePros
           ..clear()
           ..addAll(results);
         _liveNextSlotLabels.clear();
-        _categoryCounts[category] =
-            response['count'] is num
-                ? (response['count'] as num).toInt()
-                : results.length;
+        _categoryCounts[category] = response['count'] is num
+            ? (response['count'] as num).toInt()
+            : results.length;
         _categoryCoverage[category] =
             response['covered'] == true || results.isNotEmpty;
         _isLoadingResults = false;
@@ -862,7 +994,11 @@ class _SearchTabState extends State<SearchTab> {
       });
       unawaited(_hydrateNextAvailability(results));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted ||
+          requestToken != _prosRequestToken ||
+          requestedZip != _selectedZip) {
+        return;
+      }
       setState(() {
         _livePros.clear();
         _isLoadingResults = false;
@@ -873,6 +1009,12 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Future<void> _hydrateNextAvailability(List<_BrowsePro> pros) async {
+    // Public search already returns `nextAvailable`. Avoid a second wave of
+    // per-pro availability requests for guests; those endpoints are optional
+    // enrichment and must never make public browsing noisy or fragile.
+    if (!AuthService.instance.isAuthenticated) {
+      return;
+    }
     final token = ++_availabilityHydrationToken;
     final now = DateTime.now();
     final fromDate = DateFormat('yyyy-MM-dd').format(now);
@@ -913,7 +1055,9 @@ class _SearchTabState extends State<SearchTab> {
     }
 
     await Future.wait(pros.take(12).map(loadForPro));
-    if (!mounted || token != _availabilityHydrationToken || nextLabels.isEmpty) {
+    if (!mounted ||
+        token != _availabilityHydrationToken ||
+        nextLabels.isEmpty) {
       return;
     }
     setState(() {
@@ -997,14 +1141,16 @@ class _SearchTabState extends State<SearchTab> {
 
     for (final service in _serviceCatalog) {
       final serviceName = _normalizeSearchText(service.name);
-      if (serviceName.contains(normalized) || normalized.contains(serviceName)) {
+      if (serviceName.contains(normalized) ||
+          normalized.contains(serviceName)) {
         return service.category;
       }
     }
 
     for (final category in _allCategories) {
       final categoryName = _normalizeSearchText(category.name);
-      if (categoryName.contains(normalized) || normalized.contains(categoryName)) {
+      if (categoryName.contains(normalized) ||
+          normalized.contains(categoryName)) {
         return category.name;
       }
     }
@@ -1071,7 +1217,9 @@ class _SearchTabState extends State<SearchTab> {
       for (final category in _allCategories) category.name: [category.name],
     };
     for (final service in _serviceCatalog) {
-      terms.putIfAbsent(service.category, () => [service.category]).add(service.name);
+      terms
+          .putIfAbsent(service.category, () => [service.category])
+          .add(service.name);
     }
     for (final entry in keywordMap.entries) {
       terms.putIfAbsent(entry.value, () => [entry.value]).add(entry.key);
@@ -1531,33 +1679,9 @@ class _SearchTabState extends State<SearchTab> {
         ),
       ];
 
-  List<_BrowseService> get _popularServices => const [
-        _BrowseService('AC repair', 'HVAC'),
-        _BrowseService('Drain cleaning', 'Plumbing'),
-        _BrowseService('Water heater replacement', 'Plumbing'),
-        _BrowseService('Ceiling fan install', 'Electrical'),
-        _BrowseService('Fence repair', 'Fencing & Decks'),
-        _BrowseService('Interior painting', 'Painting'),
-        _BrowseService('Lawn maintenance', 'Landscaping'),
-        _BrowseService('Smart thermostat install', 'HVAC'),
-      ];
-
-  List<_BrowseService> get _serviceCatalog {
-    final ordered = <_BrowseService>[];
-    final seen = <String>{};
-
-    void addService(_BrowseService service) {
-      final key = service.name.toLowerCase();
-      if (seen.add(key)) {
-        ordered.add(service);
-      }
-    }
-
-    for (final service in _popularServices) {
-      addService(service);
-    }
-    return ordered;
-  }
+  List<_BrowseService> get _serviceCatalog => ServiceCatalog.items
+      .map((service) => _BrowseService(service.name, service.category))
+      .toList(growable: false);
 
   List<_BrowsePro> get _pros => const [
         _BrowsePro(
@@ -1907,11 +2031,10 @@ class _SearchTabState extends State<SearchTab> {
         break;
       case _BrowseView.browse:
       default:
-        body = (visiblePros.isEmpty &&
-                !_isLoadingResults &&
-                _resultsError == null)
-            ? _buildNoCoverage()
-            : _buildBrowseDefault(visiblePros);
+        body =
+            (visiblePros.isEmpty && !_isLoadingResults && _resultsError == null)
+                ? _buildNoCoverage()
+                : _buildBrowseDefault(visiblePros);
         break;
     }
 
@@ -1919,22 +2042,10 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildBrowseDefault(List<_BrowsePro> visiblePros) {
+    final sortedPros = _sortedBrowsePros(visiblePros);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(10, 30, 10, 18),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: const Text(
-            'BROWSE & SEARCH',
-            style: TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2.2,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
         _buildSearchInputPill(),
         const SizedBox(height: 8),
         _buildCompactLocationChip(),
@@ -1947,28 +2058,38 @@ class _SearchTabState extends State<SearchTab> {
             Text(
               '${visiblePros.length} Select-certified pros',
               style: const TextStyle(
-                color: AppTheme.navy700,
-                fontSize: 15,
+                color: Color(0xFF1E293B),
+                fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
             ),
-            InkWell(
-              onTap: () {},
-              child: const Row(
+            PopupMenuButton<_BrowseSort>(
+              tooltip: 'Sort contractors',
+              initialValue: _browseSort,
+              onSelected: (sort) => setState(() => _browseSort = sort),
+              itemBuilder: (context) => _BrowseSort.values
+                  .map(
+                    (sort) => PopupMenuItem<_BrowseSort>(
+                      value: sort,
+                      child: Text(sort.label),
+                    ),
+                  )
+                  .toList(),
+              child: Row(
                 children: [
                   Text(
-                    'Highest rated',
-                    style: TextStyle(
-                      color: AppTheme.teal700,
-                      fontSize: 12.5,
+                    _browseSort.label,
+                    style: const TextStyle(
+                      color: AppTheme.teal500,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  SizedBox(width: 2),
-                  Icon(
+                  const SizedBox(width: 2),
+                  const Icon(
                     Icons.keyboard_arrow_down_rounded,
-                    color: AppTheme.teal700,
-                    size: 18,
+                    color: AppTheme.teal500,
+                    size: 14,
                   ),
                 ],
               ),
@@ -1986,10 +2107,11 @@ class _SearchTabState extends State<SearchTab> {
         else if (_resultsError != null)
           _buildInlineState(_resultsError!)
         else if (visiblePros.isEmpty)
-          _buildInlineState('No live contractors were returned for $_selectedZip.')
+          _buildInlineState(
+              'No live contractors were returned for $_selectedZip.')
         else
-          ...visiblePros.map((pro) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+          ...sortedPros.map((pro) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
                 child: _buildBrowseCard(pro),
               )),
       ],
@@ -2001,37 +2123,13 @@ class _SearchTabState extends State<SearchTab> {
       alignment: Alignment.centerLeft,
       child: GestureDetector(
         onTap: () async {
-          final controller =
-              TextEditingController(text: _locationController.text);
-          await showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Change location'),
-              content: TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  hintText: 'City, State or ZIP',
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final raw = controller.text.trim();
-                    Navigator.pop(context);
-                    await _applyLocationInput(raw);
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            ),
+          final nextZip = await showServiceZipEntryDialog(
+            context,
+            initialZip: _selectedZip,
           );
+          if (nextZip != null) await _applyLocationInput(nextZip);
         },
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4),
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
           decoration: BoxDecoration(
             color: const Color(0xFFEAF5FD),
@@ -2069,22 +2167,22 @@ class _SearchTabState extends State<SearchTab> {
 
   Widget _buildAllCategories() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
       children: [
         Row(
           children: [
             Expanded(
               child: Text(
-                'Serving $_selectedZip',
+                'All services',
                 style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
             Text(
-              '${_allProsCount} live pros · 31 categories',
+              '${_serviceCatalog.length} services',
               style: const TextStyle(
                 color: AppTheme.gray,
                 fontSize: 12,
@@ -2094,24 +2192,22 @@ class _SearchTabState extends State<SearchTab> {
           ],
         ),
         const SizedBox(height: 14),
-        ..._allCategories.map(
-          (category) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _AllServicesRow(
-              category: category,
-              services: _servicesForCategory(category.name),
+        const Text(
+          'Choose a service to see available pros near you.',
+          style: TextStyle(color: AppTheme.gray, fontSize: 13),
+        ),
+        const SizedBox(height: 12),
+        ..._serviceCatalog.map(
+          (service) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _AllServiceListRow(
+              service: service,
               onTap: () {
-                if (!_isCategoryCovered(category)) {
-                  setState(() {
-                    _selectedCategory = category.name;
-                    _view = _BrowseView.noCoverage;
-                  });
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _ensureSelectedRailVisible();
-                  });
-                  return;
-                }
-                _selectCategory(category.name);
+                _searchController.text = service.name;
+                _searchController.selection = TextSelection.collapsed(
+                  offset: service.name.length,
+                );
+                unawaited(_submitSearch(service.name));
               },
             ),
           ),
@@ -2122,7 +2218,7 @@ class _SearchTabState extends State<SearchTab> {
 
   Widget _buildSearchFocused() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
       children: [
         _buildSearchInputPill(),
         const SizedBox(height: 8),
@@ -2166,12 +2262,12 @@ class _SearchTabState extends State<SearchTab> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppTheme.line),
             ),
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Browse all 31 categories',
-                  style: TextStyle(
+                  'Browse all ${_allCategories.length} categories',
+                  style: const TextStyle(
                     color: AppTheme.navy700,
                     fontWeight: FontWeight.w600,
                   ),
@@ -2187,7 +2283,7 @@ class _SearchTabState extends State<SearchTab> {
 
   Widget _buildTypeAhead(List<_BrowsePro> matches) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       children: [
         _buildSearchInputPill(),
         const SizedBox(height: 14),
@@ -2225,7 +2321,7 @@ class _SearchTabState extends State<SearchTab> {
 
   Widget _buildResults(List<_BrowsePro> matches) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       children: [
         _buildSearchInputPill(),
         const SizedBox(height: 12),
@@ -2250,27 +2346,14 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildNoCoverage() {
-    final subtitle =
-        _selectedCategory == 'All' || _selectedCategory.trim().isEmpty
-            ? 'TradeWorks is zip-gated to guarantee response times and quality. We have not expanded into cleaning to Cape Coral $_selectedZip yet.'
-            : 'TradeWorks is zip-gated to guarantee response times and quality. We have not expanded ${_selectedCategory.toLowerCase()} service in $_selectedZip yet.';
+    final subtitle = _selectedCategory == 'All' ||
+            _selectedCategory.trim().isEmpty
+        ? 'TradeWorks is zip-gated to guarantee response times and quality. We have not expanded into cleaning to Cape Coral $_selectedZip yet.'
+        : 'TradeWorks is zip-gated to guarantee response times and quality. We have not expanded ${_selectedCategory.toLowerCase()} service in $_selectedZip yet.';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(10, 30, 10, 28),
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: const Text(
-            'BROWSE & SEARCH',
-            style: TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2.2,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
         _buildSearchInputPill(),
         const SizedBox(height: 8),
         _buildCompactLocationChip(),
@@ -2292,7 +2375,7 @@ class _SearchTabState extends State<SearchTab> {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
-                  Icons.location_on_outlined,
+                  Icons.location_on,
                   size: 36,
                   color: AppTheme.navy700,
                 ),
@@ -2378,7 +2461,8 @@ class _SearchTabState extends State<SearchTab> {
       if (_view != _BrowseView.searchFocused &&
           _view != _BrowseView.typeAhead) {
         setState(() {
-          _view = typed.isEmpty ? _BrowseView.searchFocused : _BrowseView.typeAhead;
+          _view =
+              typed.isEmpty ? _BrowseView.searchFocused : _BrowseView.typeAhead;
         });
       }
     }
@@ -2391,7 +2475,15 @@ class _SearchTabState extends State<SearchTab> {
           ? AppTheme.orange500
           : const Color(0xFFD9E2EC),
       onTap: focusSearchField,
-      onTapOutside: (_) => _searchFocusNode.unfocus(),
+      // Keep the focused suggestions mounted long enough for their rows to
+      // receive the gesture. Unfocusing on pointer-down replaces this view
+      // before Recent and Popular rows can receive pointer-up.
+      onTapOutside: (_) {
+        if (_view != _BrowseView.searchFocused &&
+            _view != _BrowseView.typeAhead) {
+          _searchFocusNode.unfocus();
+        }
+      },
       onChanged: (value) {
         setState(() {
           if (value.trim().isEmpty) {
@@ -2408,38 +2500,41 @@ class _SearchTabState extends State<SearchTab> {
     );
   }
 
+  List<_BrowsePro> _sortedBrowsePros(List<_BrowsePro> pros) {
+    final sorted = [...pros];
+    switch (_browseSort) {
+      case _BrowseSort.highestRated:
+        sorted.sort((a, b) {
+          final rating = b.rating.compareTo(a.rating);
+          if (rating != 0) return rating;
+          final reviews = b.reviews.compareTo(a.reviews);
+          if (reviews != 0) return reviews;
+          return a.distanceMiles.compareTo(b.distanceMiles);
+        });
+      case _BrowseSort.nearest:
+        sorted.sort((a, b) {
+          final distance = a.distanceMiles.compareTo(b.distanceMiles);
+          if (distance != 0) return distance;
+          return b.rating.compareTo(a.rating);
+        });
+      case _BrowseSort.lowestPrice:
+        sorted.sort((a, b) {
+          final price = a.price.compareTo(b.price);
+          if (price != 0) return price;
+          return b.rating.compareTo(a.rating);
+        });
+    }
+    return sorted;
+  }
+
   Widget _buildLocationPill() {
     return GestureDetector(
-      onTap: () {
-        showDialog(
-          context: context,
-          builder: (context) {
-            final controller = TextEditingController(text: _locationController.text);
-            return AlertDialog(
-              title: const Text('Change location'),
-              content: TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  hintText: 'City, State or ZIP',
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final raw = controller.text.trim();
-                    Navigator.pop(context);
-                    await _applyLocationInput(raw);
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
+      onTap: () async {
+        final nextZip = await showServiceZipEntryDialog(
+          context,
+          initialZip: _selectedZip,
         );
+        if (nextZip != null) await _applyLocationInput(nextZip);
       },
       child: Container(
         width: double.infinity,
@@ -2451,8 +2546,7 @@ class _SearchTabState extends State<SearchTab> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.location_on_outlined,
-                color: AppTheme.gray, size: 20),
+            const Icon(Icons.location_on, color: AppTheme.gray, size: 20),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -2491,7 +2585,8 @@ class _SearchTabState extends State<SearchTab> {
       _RailChip(
         label: 'All',
         meta: _isLoadingCoverage ? '...' : '${_allProsCount} pros',
-        icon: Icons.grid_view_rounded,
+        category: 'All',
+        fallbackIcon: Icons.grid_view_rounded,
         accent: AppTheme.orange500,
         tint: homeBackgroundFor('All'),
         selected: _selectedCategory == 'All',
@@ -2506,12 +2601,12 @@ class _SearchTabState extends State<SearchTab> {
             meta: _isLoadingCoverage
                 ? '...'
                 : '${_proCountForCategory(category)} pros',
-            icon: token.icon,
+            category: category.name,
+            fallbackIcon: token.icon,
             accent: token.color,
             tint: homeBackgroundFor(category.name),
             selected: _selectedCategory == category.name,
-            enabled:
-                !_isLoadingCoverage && _proCountForCategory(category) > 0,
+            enabled: !_isLoadingCoverage && _proCountForCategory(category) > 0,
             onTap: () => _selectCategory(category.name),
           );
         },
@@ -2520,14 +2615,23 @@ class _SearchTabState extends State<SearchTab> {
 
     return SizedBox(
       height: 80,
-      child: ListView.separated(
-        controller: _railController,
-        clipBehavior: Clip.none,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        scrollDirection: Axis.horizontal,
-        itemBuilder: (context, index) => chips[index],
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemCount: chips.length,
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: const {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.stylus,
+          },
+        ),
+        child: ListView.separated(
+          controller: _railController,
+          clipBehavior: Clip.none,
+          padding: EdgeInsets.zero,
+          scrollDirection: Axis.horizontal,
+          itemBuilder: (context, index) => chips[index],
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemCount: chips.length,
+        ),
       ),
     );
   }
@@ -2658,7 +2762,8 @@ class _SearchTabState extends State<SearchTab> {
                     const SizedBox(height: 2),
                     Text(
                       '${pro.category} · ${pro.distanceMiles.toStringAsFixed(1)} mi',
-                      style: const TextStyle(color: AppTheme.gray, fontSize: 12),
+                      style:
+                          const TextStyle(color: AppTheme.gray, fontSize: 12),
                     ),
                   ],
                 ),
@@ -2674,13 +2779,13 @@ class _SearchTabState extends State<SearchTab> {
     final nextAvailable = _nextAvailableLabelFor(pro);
     return InkWell(
       onTap: () => _openProProfile(pro),
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFDCE5F0)),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE6E8EC)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2697,9 +2802,9 @@ class _SearchTabState extends State<SearchTab> {
                       Text(
                         pro.name,
                         style: const TextStyle(
-                          color: AppTheme.navy700,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1E293B),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
                           height: 1.1,
                         ),
                       ),
@@ -2707,9 +2812,9 @@ class _SearchTabState extends State<SearchTab> {
                       Text(
                         '${pro.category} · ${pro.distanceMiles.toStringAsFixed(1)} mi · ${pro.completedWorkOrders} orders',
                         style: const TextStyle(
-                          color: AppTheme.gray,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
                           height: 1.1,
                         ),
                       ),
@@ -2724,7 +2829,7 @@ class _SearchTabState extends State<SearchTab> {
                       'From \$${pro.price}',
                       style: const TextStyle(
                         color: AppTheme.navy700,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         fontSize: 14,
                         height: 1.1,
                       ),
@@ -2733,9 +2838,9 @@ class _SearchTabState extends State<SearchTab> {
                     Text(
                       pro.priceLabel,
                       style: TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF64748B),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w400,
                         height: 1.1,
                       ),
                     ),
@@ -2748,9 +2853,9 @@ class _SearchTabState extends State<SearchTab> {
               children: [
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFF5EA),
+                    color: const Color(0xFFFFF7ED),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Row(
@@ -2765,9 +2870,9 @@ class _SearchTabState extends State<SearchTab> {
                       Text(
                         '${pro.reviews} reviews (${pro.rating.toStringAsFixed(1)})',
                         style: const TextStyle(
-                          color: AppTheme.navy700,
+                          color: Color(0xFF1E293B),
                           fontWeight: FontWeight.w700,
-                          fontSize: 11,
+                          fontSize: 13,
                           height: 1.0,
                         ),
                       ),
@@ -2777,9 +2882,9 @@ class _SearchTabState extends State<SearchTab> {
                 const Spacer(),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE7FBF5),
+                    color: const Color(0xFFEFF6FF),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
@@ -2794,13 +2899,13 @@ class _SearchTabState extends State<SearchTab> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             const Divider(
               height: 1,
               thickness: 1,
-              color: Color(0xFFE7EDF5),
+              color: Color(0xFFE6E8EC),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -2810,9 +2915,9 @@ class _SearchTabState extends State<SearchTab> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: AppTheme.gray,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
                       height: 1.2,
                     ),
                   ),
@@ -2820,18 +2925,17 @@ class _SearchTabState extends State<SearchTab> {
                 const SizedBox(width: 12),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF7F9FC),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE1E8F0)),
+                    color: const Color(0xFFF5F7FA),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: const Text(
                     'View profile',
                     style: TextStyle(
                       color: AppTheme.navy700,
                       fontWeight: FontWeight.w700,
-                      fontSize: 12.5,
+                      fontSize: 12,
                       height: 1.0,
                     ),
                   ),
@@ -2845,11 +2949,11 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildBrowseProfileImage(_BrowsePro pro) {
-    final borderRadius = BorderRadius.circular(12);
+    final borderRadius = BorderRadius.circular(8);
     final imageUrl = _safeNetworkImageUrl(pro.photoUrl);
     return Container(
-      width: 40,
-      height: 40,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
         color: _avatarColorForCategory(pro.category),
         borderRadius: borderRadius,
@@ -2999,7 +3103,8 @@ class _SearchTabState extends State<SearchTab> {
                   const SizedBox(width: 6),
                   Text(
                     pro.priceLabel,
-                    style: const TextStyle(color: AppTheme.gray, fontSize: 11.5),
+                    style:
+                        const TextStyle(color: AppTheme.gray, fontSize: 11.5),
                   ),
                   const Spacer(),
                   const Text(
@@ -3041,8 +3146,7 @@ class _SearchTabState extends State<SearchTab> {
     if (query.isEmpty) return _allCategories.where((c) => c.covered).toList();
     final directMatches = _allCategories
         .where((category) =>
-            category.covered &&
-            category.name.toLowerCase().contains(query))
+            category.covered && category.name.toLowerCase().contains(query))
         .toList();
     if (directMatches.isNotEmpty) return directMatches;
 
@@ -3083,14 +3187,6 @@ class _SearchTabState extends State<SearchTab> {
     if (!url.startsWith('http')) return null;
     if (url.contains('/storage/v1/object/sign/')) return null;
     return url;
-  }
-
-  List<String> _servicesForCategory(String categoryName) {
-    return _serviceCatalog
-        .where((service) => service.category == categoryName)
-        .map((service) => service.name)
-        .take(3)
-        .toList();
   }
 }
 
@@ -3234,7 +3330,8 @@ class _BrowsePro {
       map['trade'],
       read(map['specialty'], read(map['category'], category)),
     );
-    final priceLabel = titleCase(read(map['fromUnit'], read(map['priceLabel'])));
+    final priceLabel =
+        titleCase(read(map['fromUnit'], read(map['priceLabel'])));
     final selectedCertified =
         map['selectedCertified'] == true || map['isSelectCertified'] == true;
 
@@ -3317,7 +3414,8 @@ class _BrowsePro {
 class _RailChip extends StatelessWidget {
   final String label;
   final String meta;
-  final IconData icon;
+  final String category;
+  final IconData fallbackIcon;
   final Color accent;
   final Color tint;
   final bool selected;
@@ -3327,7 +3425,8 @@ class _RailChip extends StatelessWidget {
   const _RailChip({
     required this.label,
     required this.meta,
-    required this.icon,
+    required this.category,
+    required this.fallbackIcon,
     required this.accent,
     required this.tint,
     required this.selected,
@@ -3349,7 +3448,7 @@ class _RailChip extends StatelessWidget {
       label: '$label, $meta${enabled ? '' : ', unavailable'}',
       child: InkWell(
         onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         child: Container(
           width: 88,
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
@@ -3359,7 +3458,7 @@ class _RailChip extends StatelessWidget {
                 : enabled
                     ? tint
                     : AppTheme.pageAlt,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: active
                   ? Colors.transparent
@@ -3367,12 +3466,13 @@ class _RailChip extends StatelessWidget {
                       ? accent.withOpacity(0.25)
                       : AppTheme.line,
             ),
-            boxShadow: active
+            boxShadow: enabled
                 ? [
                     BoxShadow(
-                      color: accent.withOpacity(0.22),
-                      blurRadius: 14,
-                      offset: const Offset(0, 6),
+                      color: accent.withOpacity(active ? 0.26 : 0.16),
+                      blurRadius: active ? 14 : 10,
+                      spreadRadius: active ? 1 : 0,
+                      offset: Offset(0, active ? 6 : 3),
                     ),
                   ]
                 : null,
@@ -3380,10 +3480,15 @@ class _RailChip extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                color: active ? Colors.white : enabled ? accent : AppTheme.gray,
-                size: 19,
+              ServiceCategoryIcon(
+                category: category,
+                size: 28,
+                fallbackIcon: fallbackIcon,
+                fallbackColor: active
+                    ? Colors.white
+                    : enabled
+                        ? accent
+                        : AppTheme.gray,
               ),
               const SizedBox(height: 5),
               Text(
@@ -3416,101 +3521,75 @@ class _RailChip extends StatelessWidget {
   }
 }
 
-class _AllServicesRow extends StatelessWidget {
-  final _BrowseCategory category;
-  final List<String> services;
+class _AllServiceListRow extends StatelessWidget {
+  final _BrowseService service;
   final VoidCallback onTap;
 
-  const _AllServicesRow({
-    required this.category,
-    required this.services,
+  const _AllServiceListRow({
+    required this.service,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final tint = category.color == AppTheme.navy700
-        ? AppTheme.navyTint
-        : category.color == AppTheme.orange500
-            ? AppTheme.orangeTint
-            : AppTheme.tealTint;
-    final dimmed = !category.covered;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Opacity(
-        opacity: dimmed ? 0.45 : 1,
+    final token = TradeWorksCategoryTokens.forName(service.category);
+    return Semantics(
+      button: true,
+      label: 'Browse ${service.name}',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: AppTheme.line),
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 50,
-                height: 50,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  color: tint,
-                  borderRadius: BorderRadius.circular(16),
+                  color: token.tint,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(category.icon, color: category.color, size: 24),
+                child: ServiceCategoryIcon(
+                  category: service.category,
+                  size: 24,
+                  fallbackIcon: token.icon,
+                  fallbackColor: token.color,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            category.name,
-                            style: const TextStyle(
-                              color: AppTheme.navy700,
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          dimmed ? 'No pros' : '${category.prosCount} pros',
-                          style: TextStyle(
-                            color: dimmed ? AppTheme.gray : category.color,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
                     Text(
-                      '${category.serviceCount} services',
+                      service.name,
                       style: const TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
+                        color: AppTheme.navy700,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 2),
                     Text(
-                      services.isEmpty
-                          ? 'Browse this category'
-                          : services.join(' · '),
+                      service.category,
                       style: const TextStyle(
-                        color: AppTheme.ink,
-                        fontSize: 12.5,
-                        height: 1.45,
+                        color: AppTheme.gray,
+                        fontSize: 12,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(Icons.chevron_right, color: AppTheme.gray),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppTheme.gray,
+              ),
             ],
           ),
         ),
@@ -3553,7 +3632,12 @@ class _CategoryGridTile extends StatelessWidget {
                     : category.color == AppTheme.orange500
                         ? AppTheme.orangeTint
                         : AppTheme.tealTint,
-                child: Icon(category.icon, color: category.color, size: 18),
+                child: ServiceCategoryIcon(
+                  category: category.name,
+                  size: 26,
+                  fallbackIcon: category.icon,
+                  fallbackColor: category.color,
+                ),
               ),
               const SizedBox(height: 8),
               Text(

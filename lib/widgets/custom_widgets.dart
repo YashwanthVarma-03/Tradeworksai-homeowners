@@ -301,6 +301,147 @@ class TradeWorksCategoryTokens {
   static CategoryToken forName(String name) => all[name] ?? fallback;
 }
 
+/// The supplied service artwork is deliberately one-to-one with the Browse
+/// rail categories. Keep this registry as the single source of truth so a
+/// service is never accidentally rendered with another service's icon.
+class ServiceCategoryIcons {
+  static const String _basePath = 'assets/icons/services';
+  static const String _cleanBasePath = '$_basePath/clean';
+
+  static const Map<String, String> _assets = {
+    'All': '$_basePath/32.svg',
+    'Moving': '$_basePath/1.svg',
+    'Appliance Repair': '$_basePath/2.svg',
+    'Concrete': '$_basePath/3.svg',
+    'Garage Doors': '$_basePath/4.svg',
+    'Flooring': '$_basePath/5.svg',
+    'Plumbing': '$_basePath/6.svg',
+    'HVAC': '$_basePath/7.svg',
+    'Electrical': '$_basePath/8.svg',
+    'Cleaning': '$_basePath/9.svg',
+    'Landscaping': '$_basePath/10.svg',
+    'Painting': '$_basePath/11.svg',
+    'Water Treatment': '$_basePath/12.svg',
+    'Roofing': '$_basePath/13.svg',
+    'Windows & Doors': '$_basePath/14.svg',
+    'Smart Home': '$_basePath/15.svg',
+    'Solar Energy': '$_basePath/16.svg',
+    'Tree Service': '$_basePath/17.svg',
+    'Pest Control': '$_basePath/18.svg',
+    'Home Security': '$_basePath/19.svg',
+    'Insulation': '$_basePath/20.svg',
+    'Locksmith': '$_basePath/21.svg',
+    'Junk Removal': '$_basePath/22.svg',
+    'Remodeling': '$_basePath/23.svg',
+    'Fencing & Decks': '$_basePath/24.svg',
+    'Drywall & Plaster': '$_basePath/25.svg',
+    'Gutters': '$_basePath/26.svg',
+    'Screen Repair': '$_basePath/27.svg',
+    'Pool & Spa': '$_basePath/28.svg',
+    'Fireplace & Chimney': '$_basePath/29.svg',
+    'Siding': '$_basePath/30.svg',
+    'Concrete & Masonry': '$_basePath/31.svg',
+  };
+
+  static String? assetFor(String category) => _cleanAssetFor(category);
+
+  static String? sourceAssetFor(String category) =>
+      _assets[category == 'All 31' ? 'All' : category];
+
+  static String? _cleanAssetFor(String category) {
+    final source = sourceAssetFor(category);
+    return source
+        ?.replaceFirst(_basePath, _cleanBasePath)
+        .replaceFirst('.svg', '.png');
+  }
+
+  static bool get hasUniqueBrowseAssets {
+    final values = _assets.values.toSet();
+    return values.length == _assets.length && _assets.length == 32;
+  }
+
+  // The source artwork has varying visual density. These values keep each
+  // supplied icon optically balanced within the same tile frame.
+  static const Map<String, double> _scales = {
+    'All': 0.88,
+    'Moving': 0.94,
+    'Appliance Repair': 0.98,
+    'Concrete': 0.94,
+    'Garage Doors': 0.96,
+    'Flooring': 0.94,
+    'Plumbing': 0.96,
+    'HVAC': 0.94,
+    'Electrical': 0.98,
+    'Cleaning': 0.93,
+    'Landscaping': 0.95,
+    'Painting': 0.95,
+    'Water Treatment': 0.96,
+    'Roofing': 0.96,
+    'Windows & Doors': 0.94,
+    'Smart Home': 0.95,
+    'Solar Energy': 0.94,
+    'Tree Service': 0.95,
+    'Pest Control': 0.94,
+    'Home Security': 0.96,
+    'Insulation': 0.95,
+    'Locksmith': 0.96,
+    'Junk Removal': 0.95,
+    'Remodeling': 0.94,
+    'Fencing & Decks': 0.94,
+    'Drywall & Plaster': 0.95,
+    'Gutters': 0.96,
+    'Screen Repair': 0.94,
+    'Pool & Spa': 0.95,
+    'Fireplace & Chimney': 0.95,
+    'Siding': 0.94,
+    'Concrete & Masonry': 0.94,
+  };
+
+  static double scaleFor(String category) =>
+      _scales[category == 'All 31' ? 'All' : category] ?? 0.95;
+}
+
+class ServiceCategoryIcon extends StatelessWidget {
+  final String category;
+  final double size;
+  final IconData fallbackIcon;
+  final Color fallbackColor;
+
+  const ServiceCategoryIcon({
+    super.key,
+    required this.category,
+    required this.size,
+    required this.fallbackIcon,
+    required this.fallbackColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      image: true,
+      label: '$category service icon',
+      child: SizedBox.square(
+        dimension: size,
+        child: Center(
+          child: ExcludeSemantics(
+            // The supplied legacy PNG artwork is too fine at mobile sizes.
+            // Render the app's Material glyphs instead: they stay crisp across
+            // densities and carry a consistent, stronger visual weight.
+            child: Transform.scale(
+              scale: 1.14,
+              child: Icon(
+                fallbackIcon,
+                color: fallbackColor,
+                size: size,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class TradeWorksCategoryTile extends StatelessWidget {
   final String label;
   final String? meta;
@@ -359,7 +500,12 @@ class TradeWorksCategoryTile extends StatelessWidget {
                 color: selected ? Colors.white.withOpacity(0.16) : Colors.white,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(token.icon, color: iconColor, size: 20),
+              child: ServiceCategoryIcon(
+                category: label,
+                size: 28,
+                fallbackIcon: token.icon,
+                fallbackColor: iconColor,
+              ),
             ),
             const SizedBox(height: 7),
             Text(
@@ -382,7 +528,8 @@ class TradeWorksCategoryTile extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected ? Colors.white.withOpacity(0.88) : AppTheme.gray,
+                  color:
+                      selected ? Colors.white.withOpacity(0.88) : AppTheme.gray,
                   fontWeight: FontWeight.w500,
                   fontSize: 9.5,
                 ),
@@ -431,7 +578,8 @@ class _AnimatedEntranceState extends State<AnimatedEntrance>
       CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
     );
 
-    _slideAnimation = Tween<double>(begin: widget.slideOffset, end: 0.0).animate(
+    _slideAnimation =
+        Tween<double>(begin: widget.slideOffset, end: 0.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
     );
 
@@ -481,7 +629,8 @@ Route createPremiumRoute(Widget page) {
       var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
       var offsetAnimation = animation.drive(tween);
 
-      var fadeTween = Tween<double>(begin: 0.0, end: 1.0).chain(CurveTween(curve: curve));
+      var fadeTween =
+          Tween<double>(begin: 0.0, end: 1.0).chain(CurveTween(curve: curve));
       var fadeAnimation = animation.drive(fadeTween);
 
       return FadeTransition(
@@ -567,40 +716,46 @@ class SlidingSegmentControl extends StatelessWidget {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                            AnimatedDefaultTextStyle(
-                              duration: const Duration(milliseconds: 200),
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: isSelected ? Colors.white : AppTheme.gray,
-                                fontSize: 12.5,
-                              ),
-                              child: Text(item.label),
-                            ),
-                            if (item.count != null && item.count! > 0) ...[
-                              const SizedBox(width: 5),
-                              AnimatedContainer(
+                              AnimatedDefaultTextStyle(
                                 duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: isSelected ? Colors.white.withOpacity(0.24) : AppTheme.line,
-                                  borderRadius: BorderRadius.circular(9),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color:
+                                      isSelected ? Colors.white : AppTheme.gray,
+                                  fontSize: 12.5,
                                 ),
-                                child: Text(
-                                  item.count.toString(),
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: isSelected ? Colors.white : AppTheme.gray,
+                                child: Text(item.label),
+                              ),
+                              if (item.count != null && item.count! > 0) ...[
+                                const SizedBox(width: 5),
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 5, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? Colors.white.withOpacity(0.24)
+                                        : AppTheme.line,
+                                    borderRadius: BorderRadius.circular(9),
+                                  ),
+                                  child: Text(
+                                    item.count.toString(),
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : AppTheme.gray,
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                }),
+                    );
+                  }),
                 ),
               ),
             ],
@@ -610,5 +765,3 @@ class SlidingSegmentControl extends StatelessWidget {
     );
   }
 }
-
-

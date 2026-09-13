@@ -49,7 +49,6 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
   bool _speechReady = false;
   bool _isListening = false;
   String? _message;
-  String? _clarifyingQuestion;
 
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -250,7 +249,6 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
               'Please share one more detail so we can match the right service.';
           setState(() {
             _isSubmitting = false;
-            _clarifyingQuestion = clarifyMessage;
             _message = clarifyMessage;
             _spokenText = '';
           });

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
+import '../../widgets/app_notification.dart';
 
 class QuoteReviewScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -53,7 +54,9 @@ class _QuoteReviewScreenState extends State<QuoteReviewScreen> {
           DateTime.now().add(const Duration(days: 1)).toIso8601String();
       final endsAt = widget.job['proposedEnd'] ??
           widget.job['scheduledEnd'] ??
-          DateTime.now().add(const Duration(days: 1, hours: 2)).toIso8601String();
+          DateTime.now()
+              .add(const Duration(days: 1, hours: 2))
+              .toIso8601String();
       final contractorId = widget.job['contractorId']?.toString() ??
           widget.job['pro']?['contractorId']?.toString();
 
@@ -78,8 +81,10 @@ class _QuoteReviewScreenState extends State<QuoteReviewScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isProcessing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        AppNotification.showError(
+          context,
+          e,
+          fallback: 'We couldn\'t accept this quote. Please try again.',
         );
       }
     }
@@ -94,19 +99,19 @@ class _QuoteReviewScreenState extends State<QuoteReviewScreen> {
         reason: 'homeowner_declined_all',
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Quotes declined.'),
-            backgroundColor: AppTheme.error,
-          ),
+        AppNotification.showInfo(
+          context,
+          'Quote declined.',
         );
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isProcessing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        AppNotification.showError(
+          context,
+          e,
+          fallback: 'We couldn\'t decline this quote. Please try again.',
         );
       }
     }
@@ -443,7 +448,8 @@ class _QuoteReviewScreenState extends State<QuoteReviewScreen> {
           elevation: 0,
           padding: const EdgeInsets.symmetric(vertical: 13),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
+          textStyle:
+              const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
         ),
         child: _isProcessing
             ? const SizedBox(

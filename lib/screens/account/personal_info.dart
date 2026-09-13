@@ -5,6 +5,7 @@ import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../utils/app_error_utils.dart';
 import '../../widgets/offline_state.dart';
+import '../../widgets/app_notification.dart';
 
 class PersonalInfoScreen extends StatefulWidget {
   const PersonalInfoScreen({super.key});
@@ -132,11 +133,11 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppErrorUtils.friendlyMessage(e)),
-          backgroundColor: AppTheme.error,
-        ),
+      AppNotification.showError(
+        context,
+        e,
+        fallback:
+            'We couldn\'t save your personal information. Please try again.',
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);

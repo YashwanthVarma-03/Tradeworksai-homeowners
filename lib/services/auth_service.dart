@@ -1,11 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'api_config.dart';
 import 'stream_service.dart';
 
 class AuthService extends ChangeNotifier {
@@ -14,9 +12,8 @@ class AuthService extends ChangeNotifier {
   AuthService._internal();
 
   bool isTesting = false;
-  static const String googleClientId =
-      '71668222585-50stjb9s6ias4g5su87fsmdiaikh4iec.apps.googleusercontent.com';
-  GoogleSignIn? _googleSignIn;
+  static const String _nativeGoogleCallbackUrl =
+      'com.tradeworksai.homeowners://login-callback';
 
   SharedPreferences? _prefs;
   StreamSubscription<AuthState>? _authSubscription;
@@ -146,43 +143,17 @@ class AuthService extends ChangeNotifier {
     await _syncFromSession(response.session);
   }
 
-  Future<void> googleSignIn({
-    required String idToken,
-    required String accessToken,
-  }) async {
-    final response = await _client.auth.signInWithIdToken(
-      provider: OAuthProvider.google,
-      idToken: idToken,
-      accessToken: accessToken,
-    );
-    if (response.session == null) {
-      throw Exception('Google Sign-In did not return a session.');
-    }
-    await _syncFromSession(response.session);
-  }
-
   Future<void> signInWithGoogleInteractive() async {
-    final googleAuth = _resolvedGoogleSignIn();
-    final account = await googleAuth.signIn();
-    if (account == null) {
-      throw Exception('Google sign-in was cancelled.');
-    }
-
-    final auth = await account.authentication;
-    final accessToken = auth.accessToken;
-    final idToken = auth.idToken;
-
-    if (accessToken == null || accessToken.isEmpty) {
-      throw Exception('Google did not return an access token.');
-    }
-    if (idToken == null || idToken.isEmpty) {
-      throw Exception('Google did not return an ID token.');
-    }
-
-    await googleSignIn(
-      idToken: idToken,
-      accessToken: accessToken,
+    // This matches the website's auth flow. Supabase owns the Google exchange
+    // and establishes the app session after the browser redirects back.
+    final launched = await _client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: kIsWeb ? Uri.base.origin : _nativeGoogleCallbackUrl,
+      authScreenLaunchMode: LaunchMode.externalApplication,
     );
+    if (!launched) {
+      throw Exception('Unable to open Google sign-in. Please try again.');
+    }
   }
 
   Future<void> simulateGoogleSignInSuccess() async {
@@ -227,12 +198,6 @@ class AuthService extends ChangeNotifier {
     await _clearSession(notify: false);
     try {
       await _client.auth.signOut();
-    } catch (_) {}
-    try {
-      final googleSignIn = _googleSignIn;
-      if (googleSignIn != null) {
-        await googleSignIn.signOut();
-      }
     } catch (_) {}
     await StreamService.instance.disconnect();
     notifyListeners();
@@ -486,20 +451,4 @@ class AuthService extends ChangeNotifier {
     return null;
   }
 
-  GoogleSignIn _resolvedGoogleSignIn() {
-    if (_googleSignIn != null) {
-      return _googleSignIn!;
-    }
-
-    final webClientId = ApiConfig.googleWebClientId.trim().isNotEmpty
-        ? ApiConfig.googleWebClientId.trim()
-        : googleClientId;
-
-    _googleSignIn = GoogleSignIn(
-      scopes: const ['email', 'profile'],
-      serverClientId: googleClientId,
-      clientId: kIsWeb ? webClientId : null,
-    );
-    return _googleSignIn!;
-  }
 }

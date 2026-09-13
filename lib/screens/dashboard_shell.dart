@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
@@ -12,7 +13,9 @@ import 'reward_tab.dart';
 import 'profile_tab.dart';
 import 'category_guides_screen.dart';
 import 'inbox_tab.dart';
-import 'onboarding_slider.dart';
+import 'guest_experience.dart';
+import 'login_page.dart';
+import 'signup_page.dart';
 import 'support_page.dart';
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
@@ -25,27 +28,57 @@ class DashboardShell extends StatefulWidget {
   State<DashboardShell> createState() => _DashboardShellState();
 }
 
-class _DashboardShellState extends State<DashboardShell> {
+class _DashboardShellState extends State<DashboardShell>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
   int _bookingsInitialSegment = 0;
   Key _bookingsTabKey = UniqueKey();
-
-  bool get _showTopBrandNav =>
-      _currentIndex != 1 &&
-      _currentIndex != 2 &&
-      _currentIndex != 3 &&
-      _currentIndex != 4;
+  Timer? _backgroundSyncTimer;
 
   @override
   void initState() {
     super.initState();
     AppTabNavigation.requestedTab.addListener(_applyRequestedTab);
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (AuthService.instance.isAuthenticated) {
+        unawaited(HomeownerService.instance.primeAuthenticatedCache());
+        _startBackgroundSync();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _backgroundSyncTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     AppTabNavigation.requestedTab.removeListener(_applyRequestedTab);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (AuthService.instance.isAuthenticated) {
+        unawaited(HomeownerService.instance.syncInBackground());
+        _startBackgroundSync();
+      }
+      return;
+    }
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _backgroundSyncTimer?.cancel();
+      _backgroundSyncTimer = null;
+    }
+  }
+
+  void _startBackgroundSync() {
+    if (!AuthService.instance.isAuthenticated) return;
+    _backgroundSyncTimer?.cancel();
+    _backgroundSyncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(HomeownerService.instance.syncInBackground());
+    });
   }
 
   void _applyRequestedTab() {
@@ -128,6 +161,85 @@ class _DashboardShellState extends State<DashboardShell> {
 
   @override
   Widget build(BuildContext context) {
+    final isGuest = !AuthService.instance.isAuthenticated;
+    void openLogin() => Navigator.push(
+          context,
+          createPremiumRoute(const LoginPage()),
+        );
+    void openSignup() => Navigator.push(
+          context,
+          createPremiumRoute(const SignupPage()),
+        );
+    Future<void> openBrowse({String? query, String? category}) async {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BrowseScreen(
+            initialSearchQuery: query,
+            initialCategory: category,
+            initialAllShowsCategories: category == 'All',
+            showAppBar: true,
+          ),
+        ),
+      );
+    }
+
+    if (isGuest) {
+      final guestTabs = <Widget>[
+        HomeTab(
+          isGuest: true,
+          onBookTap: () => openBrowse(),
+          onJobTap: (_) {},
+          onInboxTap: () {},
+          onHelpTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SupportPage()),
+            );
+          },
+          onSearchQuery: (query) => openBrowse(query: query),
+          onCategorySelected: (category) => openBrowse(category: category),
+          onGuidesTap: _openCategoryGuides,
+          onManageHomeTap: openSignup,
+          onCreateAccount: openSignup,
+          onSignIn: openLogin,
+        ),
+        const BrowseScreen(),
+        GuestGateTab(
+          icon: Icons.calendar_today_outlined,
+          title: 'Sign in to view bookings',
+          message:
+              'Create an account to book services, track your work orders, and manage appointments.',
+          onCreateAccount: openSignup,
+          onSignIn: openLogin,
+        ),
+        GuestGateTab(
+          icon: Icons.card_giftcard_outlined,
+          title: 'Sign in to earn rewards',
+          message:
+              'Create an account to earn 3–7% back as service credits on every booking.',
+          onCreateAccount: openSignup,
+          onSignIn: openLogin,
+        ),
+        GuestGateTab(
+          icon: Icons.person_outline,
+          title: 'Sign in to your account',
+          message:
+              'Create an account to manage your profile, payment methods, home details, and preferences.',
+          onCreateAccount: openSignup,
+          onSignIn: openLogin,
+        ),
+      ];
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F7FA),
+        body: SafeArea(
+            child: IndexedStack(index: _currentIndex, children: guestTabs)),
+        bottomNavigationBar: MainBottomNavigation(
+          currentIndex: _currentIndex,
+          onTap: (index) => setState(() => _currentIndex = index),
+        ),
+      );
+    }
     final List<Widget> tabs = [
       HomeTab(
         onBookTap: () async {
@@ -156,6 +268,12 @@ class _DashboardShellState extends State<DashboardShell> {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const InboxScreen()),
+          );
+        },
+        onHelpTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const SupportPage()),
           );
         },
         onSearchQuery: (query) async {
@@ -256,7 +374,7 @@ class _DashboardShellState extends State<DashboardShell> {
           if (context.mounted) {
             Navigator.pushAndRemoveUntil(
               context,
-              createPremiumRoute(const OnboardingSlider()),
+              createPremiumRoute(const DashboardShell()),
               (route) => false,
             );
           }
@@ -285,7 +403,6 @@ class _DashboardShellState extends State<DashboardShell> {
           child: SafeArea(
             child: Column(
               children: [
-                if (_showTopBrandNav) _buildTradeWorksNav(),
                 Expanded(
                   child: IndexedStack(
                     index: _currentIndex,
@@ -300,98 +417,6 @@ class _DashboardShellState extends State<DashboardShell> {
       bottomNavigationBar: MainBottomNavigation(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
-      ),
-    );
-  }
-
-  Widget _buildTradeWorksNav() {
-    return Container(
-      height: 54,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppTheme.line, width: 0.5)),
-      ),
-      child: Row(
-        children: [
-          Image.asset(
-            'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
-            width: 30,
-            height: 30,
-            fit: BoxFit.contain,
-          ),
-          const SizedBox(width: 10),
-          const Text(
-            'TradeWorks',
-            style: TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: AppTheme.teal500,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: const Text(
-              'AI',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const Spacer(),
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              IconButton(
-                tooltip: 'Inbox',
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const InboxScreen(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.mail_outline,
-                    color: AppTheme.navy700, size: 21),
-              ),
-              Positioned(
-                right: 10,
-                top: 13,
-                child: Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: AppTheme.orange500,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.white, width: 1),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          IconButton(
-            tooltip: 'Help',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const SupportPage(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.help_outline,
-                color: AppTheme.navy700, size: 21),
-          ),
-        ],
       ),
     );
   }
@@ -560,14 +585,6 @@ class BrowseScreen extends StatelessWidget {
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back_ios, color: AppTheme.navy700),
                 onPressed: () => Navigator.pop(context),
-              ),
-              title: Text(
-                'Browse Services',
-                style: AppTheme.headingStyle.copyWith(
-                  color: AppTheme.navy700,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
               ),
               elevation: 0,
               backgroundColor: Colors.white,

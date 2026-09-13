@@ -41,9 +41,7 @@ class MainBottomNavigation extends StatelessWidget {
         onTap: onTap,
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
-        selectedItemColor: (currentIndex == 2 || currentIndex == 3)
-            ? AppTheme.orange500
-            : AppTheme.navy700,
+        selectedItemColor: AppTheme.orange500,
         unselectedItemColor: AppTheme.gray,
         selectedLabelStyle:
             const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
@@ -51,28 +49,28 @@ class MainBottomNavigation extends StatelessWidget {
             const TextStyle(fontWeight: FontWeight.w500, fontSize: 11),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
+            icon: Icon(Icons.home, size: 25),
+            activeIcon: Icon(Icons.home, size: 25),
             label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.search_outlined),
-            activeIcon: Icon(Icons.search),
+            icon: Icon(Icons.search, size: 25),
+            activeIcon: Icon(Icons.search, size: 25),
             label: 'Search',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today_outlined),
-            activeIcon: Icon(Icons.calendar_today),
+            icon: Icon(Icons.calendar_month, size: 25),
+            activeIcon: Icon(Icons.calendar_month, size: 25),
             label: 'Bookings',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.card_giftcard_outlined),
-            activeIcon: Icon(Icons.card_giftcard),
+            icon: Icon(Icons.redeem, size: 25),
+            activeIcon: Icon(Icons.redeem, size: 25),
             label: 'Rewards',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
+            icon: Icon(Icons.person, size: 25),
+            activeIcon: Icon(Icons.person, size: 25),
             label: 'Profile',
           ),
         ],

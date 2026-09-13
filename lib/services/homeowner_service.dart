@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -55,6 +56,16 @@ class HomeownerService {
   Map<String, dynamic>? _cachedWorkOrdersResponse;
   DateTime? _cachedWorkOrdersAt;
   Future<Map<String, dynamic>>? _workOrdersInFlight;
+
+  /// A lightweight app-wide signal emitted after the authenticated cache has
+  /// been refreshed. Mounted tabs listen to this instead of independently
+  /// polling or replacing their content with a loading state.
+  final ValueNotifier<int> syncVersion = ValueNotifier<int>(0);
+
+  /// Emitted whenever public contractor catalog data (ratings, review counts,
+  /// availability or profile details) must be reloaded by Browse.
+  final ValueNotifier<int> contractorCatalogVersion = ValueNotifier<int>(0);
+  Future<void>? _backgroundSyncInFlight;
   final Map<int, Map<String, dynamic>> _reviewEligibilityCache = {};
   final Map<int, DateTime> _reviewEligibilityCacheAt = {};
   final Map<int, Future<Map<String, dynamic>>> _reviewEligibilityInFlight = {};
@@ -81,6 +92,7 @@ class HomeownerService {
   static const Duration _coverageCacheTtl = Duration(hours: 12);
   static const Duration _contractorProfileCacheTtl = Duration(hours: 1);
   static const Duration _availabilityCacheTtl = Duration(minutes: 1);
+  static const Duration _offlineFallbackCacheTtl = Duration(days: 7);
 
   String _normalizeWorkOrderStatus(dynamic rawStatus) {
     final status = rawStatus?.toString().trim().toLowerCase() ?? '';
@@ -468,19 +480,30 @@ class HomeownerService {
               final categoriesToTry = ['hvac', 'plumbing', 'electrical'];
               final lowerCat = categoryRaw.toLowerCase();
               String primaryCat = lowerCat;
-              if (lowerCat.contains('hvac') || lowerCat.contains('ac') || lowerCat.contains('air') || lowerCat.contains('heat') || lowerCat.contains('cool')) {
+              if (lowerCat.contains('hvac') ||
+                  lowerCat.contains('ac') ||
+                  lowerCat.contains('air') ||
+                  lowerCat.contains('heat') ||
+                  lowerCat.contains('cool')) {
                 primaryCat = 'hvac';
-              } else if (lowerCat.contains('plumb') || lowerCat.contains('leak') || lowerCat.contains('water') || lowerCat.contains('drain') || lowerCat.contains('pipe')) {
+              } else if (lowerCat.contains('plumb') ||
+                  lowerCat.contains('leak') ||
+                  lowerCat.contains('water') ||
+                  lowerCat.contains('drain') ||
+                  lowerCat.contains('pipe')) {
                 primaryCat = 'plumbing';
-              } else if (lowerCat.contains('electr') || lowerCat.contains('light') || lowerCat.contains('wire') || lowerCat.contains('outlet')) {
+              } else if (lowerCat.contains('electr') ||
+                  lowerCat.contains('light') ||
+                  lowerCat.contains('wire') ||
+                  lowerCat.contains('outlet')) {
                 primaryCat = 'electrical';
               }
-              
+
               if (categoriesToTry.contains(primaryCat)) {
                 categoriesToTry.remove(primaryCat);
                 categoriesToTry.insert(0, primaryCat);
               }
-              
+
               for (final catSlug in categoriesToTry) {
                 try {
                   final searchResult = await searchPros(
@@ -493,9 +516,10 @@ class HomeownerService {
                       if (res is Map) {
                         final resSlug = _readRawString(res['slug']);
                         if (resSlug == slug) {
-                          final resolvedId = _readRawString(res['contractorId']) ??
-                              _readRawString(res['contractor_id']) ??
-                              _readRawString(res['id']);
+                          final resolvedId =
+                              _readRawString(res['contractorId']) ??
+                                  _readRawString(res['contractor_id']) ??
+                                  _readRawString(res['id']);
                           if (resolvedId != null) {
                             return resolvedId;
                           }
@@ -514,6 +538,7 @@ class HomeownerService {
   }
 
   String? get _userId => AuthService.instance.userId;
+
   /// Demo/mock mode is permanently disabled for the commercial build.
   /// It previously auto-enabled on `localhost`/`127.0.0.1`, which meant
   /// every local dev/staging run silently faked contractor availability,
@@ -566,10 +591,10 @@ class HomeownerService {
         'serviceCategory': 'HVAC',
         'priority': 'Standard',
         'createdAt': now.subtract(const Duration(days: 1)).toIso8601String(),
-        'scheduledStart': now.add(const Duration(days: 1, hours: 4))
-            .toIso8601String(),
-        'scheduledEnd': now.add(const Duration(days: 1, hours: 6))
-            .toIso8601String(),
+        'scheduledStart':
+            now.add(const Duration(days: 1, hours: 4)).toIso8601String(),
+        'scheduledEnd':
+            now.add(const Duration(days: 1, hours: 6)).toIso8601String(),
         'address': Map<String, dynamic>.from(_mockAddresses!.first),
         'pro': {
           'id': 'pro-hvac-1',
@@ -588,7 +613,8 @@ class HomeownerService {
   Future<SharedPreferences> _getPreferences() {
     final existing = _preferences;
     if (existing != null) return Future.value(existing);
-    return _preferencesInFlight ??= SharedPreferences.getInstance().then((prefs) {
+    return _preferencesInFlight ??=
+        SharedPreferences.getInstance().then((prefs) {
       _preferences = prefs;
       return prefs;
     });
@@ -642,6 +668,78 @@ class HomeownerService {
     );
   }
 
+  /// Restores user-scoped data from disk for immediate launch rendering.
+  /// Callers must refresh in the background after using these fallbacks.
+  Future<Map<String, dynamic>?> loadCachedWorkOrders() async {
+    if (_isDemo || _userId == null) return null;
+    final cached = await _readPersistentCache(
+      'work-orders',
+      _offlineFallbackCacheTtl,
+    );
+    return cached == null ? null : _withNormalizedTabs(cached);
+  }
+
+  Future<Map<String, dynamic>?> loadCachedProfile() async {
+    if (_isDemo || _userId == null) return null;
+    return _readPersistentCache('profile', _offlineFallbackCacheTtl);
+  }
+
+  Future<Map<String, dynamic>?> loadCachedRewards() async {
+    if (_isDemo || _userId == null) return null;
+    return _readPersistentCache('rewards', _offlineFallbackCacheTtl);
+  }
+
+  /// Refreshes the user-scoped cache without making a screen wait for it.
+  /// Concurrent callers intentionally share one network pass.
+  Future<void> syncInBackground() {
+    if (_isDemo || _userId == null) return Future.value();
+    final pending = _backgroundSyncInFlight;
+    if (pending != null) return pending;
+
+    final refresh = _refreshAuthenticatedCache();
+    _backgroundSyncInFlight = refresh;
+    return refresh;
+  }
+
+  Future<void> _refreshAuthenticatedCache() async {
+    try {
+      final refreshed = await Future.wait([
+        _refreshResource(() => fetchProfile(forceRefresh: true)),
+        _refreshResource(() => fetchWorkOrders(forceRefresh: true)),
+        _refreshResource(() => fetchRewards(forceRefresh: true)),
+      ]);
+      if (refreshed.any((didRefresh) => didRefresh)) {
+        syncVersion.value++;
+      }
+    } catch (_) {
+      // Keep the last successful snapshot visible during an intermittent
+      // connection failure. The next lifecycle or scheduled refresh retries.
+    } finally {
+      _backgroundSyncInFlight = null;
+    }
+  }
+
+  Future<bool> _refreshResource(
+    Future<Map<String, dynamic>> Function() request,
+  ) async {
+    try {
+      await request();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Emits a cross-tab update for a local/demo mutation whose state is already
+  /// held in memory.
+  void notifyLocalDataChanged() {
+    syncVersion.value++;
+  }
+
+  /// Preloads the authenticated home experience once per shell lifetime.
+  /// Request coalescing ensures simultaneous tabs share the same requests.
+  Future<void> primeAuthenticatedCache() => syncInBackground();
+
   Future<void> _removePersistentCache(String resource) async {
     final prefs = await _getPreferences();
     await prefs.remove(_persistentCacheKey(resource));
@@ -686,6 +784,28 @@ class HomeownerService {
     _contractorProfileCacheAt.clear();
     _contractorProfileInFlight.clear();
     await _removePersistentCacheGroup('contractor-profile:');
+  }
+
+  Future<void> _invalidateContractorSearchCache() async {
+    _searchProsCache.clear();
+    _searchProsCacheAt.clear();
+
+    // Search results can be saved under either the signed-in homeowner or the
+    // public visitor scope. A new public review affects both views.
+    final prefs = await _getPreferences();
+    final keys = prefs
+        .getKeys()
+        .where(
+          (key) =>
+              key.startsWith(_persistentCachePrefix) &&
+              key.contains(':search:'),
+        )
+        .toList(growable: false);
+    await Future.wait(keys.map(prefs.remove));
+  }
+
+  void _notifyContractorCatalogChanged() {
+    contractorCatalogVersion.value++;
   }
 
   void _invalidateReviewEligibilityCache([int? workOrderId]) {
@@ -741,8 +861,7 @@ class HomeownerService {
     String? fallbackMessage,
   }) {
     final raw = error.toString().toLowerCase();
-    final shouldCache =
-        AppErrorUtils.isNetworkError(error) ||
+    final shouldCache = AppErrorUtils.isNetworkError(error) ||
         raw.contains('empty response') ||
         raw.contains('returned an empty response') ||
         raw.contains('got an empty response');
@@ -780,7 +899,7 @@ class HomeownerService {
         response = await _postRaw(fallbackEndpoint, body);
       }
 
-      if (response.statusCode == 404 && fallbackEndpoint != null) {
+      if (fallbackEndpoint != null && _shouldUseFallbackEndpoint(response)) {
         response = await _postRaw(fallbackEndpoint, body);
       }
 
@@ -794,8 +913,14 @@ class HomeownerService {
       }
 
       if (_isAuthenticationFailure(response.statusCode, data)) {
-        await AuthService.instance.invalidateSession();
-        throw Exception('Your session has expired. Please sign in again.');
+        // Public surfaces may receive an auth response while a visitor has no
+        // session. Do not turn that into a Supabase local sign-out or noisy
+        // browser log; only invalidate a session that actually exists.
+        if (AuthService.instance.isAuthenticated) {
+          await AuthService.instance.invalidateSession();
+          throw Exception('Your session has expired. Please sign in again.');
+        }
+        throw Exception('Please sign in to continue.');
       }
 
       if (response.statusCode >= 400) {
@@ -826,10 +951,34 @@ class HomeownerService {
       if (fallbackEndpoint != null) {
         _cacheRecentFailure(fallbackEndpoint, e);
       }
-      if (kDebugMode) {
-        print('HomeownerService POST Error on $endpoint: $e');
-      }
       rethrow;
+    }
+  }
+
+  /// Some deployed API generations return a successful HTTP status with an
+  /// application-level `not_found` or `server_error` payload. Treat those the
+  /// same as an HTTP 404/5xx and use the maintained legacy endpoint when one
+  /// is available, instead of exposing a transient backend route mismatch.
+  bool _shouldUseFallbackEndpoint(http.Response response) {
+    if (response.statusCode == 404 || response.statusCode >= 500) {
+      return true;
+    }
+    if (response.body.isEmpty) return false;
+
+    try {
+      final data = jsonDecode(response.body);
+      if (data is! Map) return false;
+      if (data['success'] != false && data['ok'] != false) return false;
+      final detail = [data['error'], data['reason'], data['message']]
+          .whereType<Object>()
+          .join(' ')
+          .toLowerCase();
+      return detail.contains('not_found') ||
+          detail.contains('not found') ||
+          detail.contains('server_error') ||
+          detail.contains('internal server error');
+    } catch (_) {
+      return false;
     }
   }
 
@@ -852,7 +1001,8 @@ class HomeownerService {
   }
 
   // H1: Fetch Work Orders
-  Future<Map<String, dynamic>> fetchWorkOrders() async {
+  Future<Map<String, dynamic>> fetchWorkOrders(
+      {bool forceRefresh = false}) async {
     if (_isDemo) {
       _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 300));
@@ -866,33 +1016,36 @@ class HomeownerService {
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
+    final inFlight = _workOrdersInFlight;
+    if (inFlight != null) return inFlight;
+
     final cached = _cachedWorkOrdersResponse;
     final cachedAt = _cachedWorkOrdersAt;
-    if (cached != null &&
+    if (!forceRefresh &&
+        cached != null &&
         cachedAt != null &&
         DateTime.now().difference(cachedAt) < _workOrdersCacheTtl) {
       return cached;
     }
-    final inFlight = _workOrdersInFlight;
-    if (inFlight != null) return inFlight;
 
-    final persistent = await _readPersistentCache(
-      'work-orders',
-      _workOrdersCacheTtl,
-    );
-    if (persistent != null) {
-      final normalized = _withNormalizedTabs(persistent);
-      _cachedWorkOrdersResponse = normalized;
-      _cachedWorkOrdersAt = DateTime.now();
-      return normalized;
+    if (!forceRefresh) {
+      final persistent = await _readPersistentCache(
+        'work-orders',
+        _offlineFallbackCacheTtl,
+      );
+      if (persistent != null) {
+        final normalized = _withNormalizedTabs(persistent);
+        _cachedWorkOrdersResponse = normalized;
+        _cachedWorkOrdersAt = DateTime.now();
+        return normalized;
+      }
     }
 
     final future = _post(
-          _workOrdersListPath,
-          {'userId': uid},
-          fallbackEndpoint: _legacyWorkOrdersListPath,
-        )
-            .then(_withNormalizedTabs);
+      _workOrdersListPath,
+      {'userId': uid},
+      fallbackEndpoint: _legacyWorkOrdersListPath,
+    ).then(_withNormalizedTabs);
     _workOrdersInFlight = future;
     try {
       final resp = await future;
@@ -928,6 +1081,7 @@ class HomeownerService {
           }
         }
       }
+      notifyLocalDataChanged();
       return {'success': true, 'ok': true};
     }
 
@@ -955,13 +1109,13 @@ class HomeownerService {
       'requester_user_id': uid,
       ...?extra,
     };
-    final result =
-        await _post(
-          _workOrdersActionPath,
-          body,
-          fallbackEndpoint: _legacyWorkOrdersActionPath,
-        );
+    final result = await _post(
+      _workOrdersActionPath,
+      body,
+      fallbackEndpoint: _legacyWorkOrdersActionPath,
+    );
     await _invalidateWorkOrderCache();
+    unawaited(syncInBackground());
     return result;
   }
 
@@ -988,6 +1142,7 @@ class HomeownerService {
           }
         }
       }
+      notifyLocalDataChanged();
       return {'success': true, 'ok': true};
     }
 
@@ -1019,6 +1174,7 @@ class HomeownerService {
       fallbackEndpoint: _legacyBookingCommitPath,
     );
     await _invalidateWorkOrderCache();
+    unawaited(syncInBackground());
     return result;
   }
 
@@ -1035,6 +1191,7 @@ class HomeownerService {
         'reviewText': text,
         'displayName': displayName ?? 'Demo Homeowner',
       };
+      notifyLocalDataChanged();
       return {'success': true, 'ok': true};
     }
 
@@ -1056,7 +1213,10 @@ class HomeownerService {
     await _invalidateWorkOrderCache();
     _invalidateReviewEligibilityCache(workOrderId);
     await _invalidateContractorProfileCache();
+    await _invalidateContractorSearchCache();
     await _invalidateRewardsCache();
+    _notifyContractorCatalogChanged();
+    unawaited(syncInBackground());
     return result;
   }
 
@@ -1139,7 +1299,10 @@ class HomeownerService {
         if (data is! Map<String, dynamic>) throw Exception('Invalid response');
         if (data['success'] == false || data['ok'] == false) {
           throw Exception(
-            data['error'] ?? data['reason'] ?? data['message'] ?? 'Failed to load profile.',
+            data['error'] ??
+                data['reason'] ??
+                data['message'] ??
+                'Failed to load profile.',
           );
         }
         return data;
@@ -1151,9 +1314,6 @@ class HomeownerService {
       await _writePersistentCache(resource, data);
       return data;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error fetching contractor profile: $e');
-      }
       throw Exception('Failed to load profile.');
     } finally {
       _contractorProfileInFlight.remove(slug);
@@ -1198,7 +1358,8 @@ class HomeownerService {
         DateTime.now().difference(cachedAt) < _availabilityCacheTtl) {
       return cached;
     }
-    final persistent = await _readPersistentCache(resource, _availabilityCacheTtl);
+    final persistent =
+        await _readPersistentCache(resource, _availabilityCacheTtl);
     if (persistent != null) {
       _availabilityCache[identity] = persistent;
       _availabilityCacheAt[identity] = DateTime.now();
@@ -1223,8 +1384,19 @@ class HomeownerService {
         if (workOrderType != null && workOrderType.isNotEmpty)
           'workOrderType': workOrderType,
       };
-      var response = await _postRaw(_availabilityPath, payload);
-      if (response.statusCode == 404) {
+      late http.Response response;
+      try {
+        response = await _postRaw(_availabilityPath, payload);
+      } catch (error) {
+        // Availability is public and has a maintained legacy route. A
+        // temporary failure on the newer route must not block booking.
+        if (!AppErrorUtils.isNetworkError(error)) rethrow;
+        response = await _postRaw(_legacyAvailabilityPath, payload);
+      }
+      // The hosted API has two route generations. The newer route can return
+      // a transient server/auth failure even though the public legacy function
+      // is healthy, so use it as a genuine fallback for public availability.
+      if (_shouldUseLegacyAvailability(response)) {
         response = await _postRaw(_legacyAvailabilityPath, payload);
       }
       if (response.body.isEmpty) throw Exception('Empty response');
@@ -1232,7 +1404,10 @@ class HomeownerService {
       if (data is! Map<String, dynamic>) throw Exception('Invalid response');
       if (data['success'] == false || data['ok'] == false) {
         throw Exception(
-          data['error'] ?? data['reason'] ?? data['message'] ?? "Couldn't load availability.",
+          data['error'] ??
+              data['reason'] ??
+              data['message'] ??
+              "Couldn't load availability.",
         );
       }
       final result = {
@@ -1243,16 +1418,42 @@ class HomeownerService {
       _availabilityCacheAt[identity] = DateTime.now();
       await _writePersistentCache(resource, result);
       return result;
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error fetching contractor availability: $e');
-      }
-      rethrow;
+    } catch (error) {
+      throw Exception(
+        AppErrorUtils.friendlyMessage(
+          error,
+          fallback: 'Unable to load availability right now. Please try again.',
+        ),
+      );
+    }
+  }
+
+  bool _shouldUseLegacyAvailability(http.Response response) {
+    if (response.statusCode == 404 || response.statusCode >= 500) {
+      return true;
+    }
+    if (!AuthService.instance.isAuthenticated && response.statusCode == 401) {
+      return true;
+    }
+    if (response.body.isEmpty) return false;
+    try {
+      final data = jsonDecode(response.body);
+      if (data is! Map) return false;
+      if (data['success'] != false && data['ok'] != false) return false;
+      final detail = [data['error'], data['reason'], data['message']]
+          .whereType<Object>()
+          .join(' ')
+          .toLowerCase();
+      return detail.contains('server_error') ||
+          detail.contains('unauthenticated') ||
+          detail.contains('unauthorized');
+    } catch (_) {
+      return false;
     }
   }
 
   // H5: Fetch Rewards
-  Future<Map<String, dynamic>> fetchRewards() async {
+  Future<Map<String, dynamic>> fetchRewards({bool forceRefresh = false}) async {
     if (_isDemo) {
       _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 100));
@@ -1265,20 +1466,24 @@ class HomeownerService {
 
     if (_userId == null) throw Exception('User is not authenticated');
 
+    final inFlight = _rewardsInFlight;
+    if (inFlight != null) return inFlight;
     final cached = _cachedRewards;
     final cachedAt = _cachedRewardsAt;
-    if (cached != null &&
+    if (!forceRefresh &&
+        cached != null &&
         cachedAt != null &&
         DateTime.now().difference(cachedAt) < _rewardsCacheTtl) {
       return cached;
     }
-    final inFlight = _rewardsInFlight;
-    if (inFlight != null) return inFlight;
-    final persistent = await _readPersistentCache('rewards', _rewardsCacheTtl);
-    if (persistent != null) {
-      _cachedRewards = persistent;
-      _cachedRewardsAt = DateTime.now();
-      return persistent;
+    if (!forceRefresh) {
+      final persistent =
+          await _readPersistentCache('rewards', _offlineFallbackCacheTtl);
+      if (persistent != null) {
+        _cachedRewards = persistent;
+        _cachedRewardsAt = DateTime.now();
+        return persistent;
+      }
     }
 
     final future = _post(
@@ -1298,7 +1503,7 @@ class HomeownerService {
     }
   }
 
-  Future<Map<String, dynamic>> fetchProfile() async {
+  Future<Map<String, dynamic>> fetchProfile({bool forceRefresh = false}) async {
     if (_isDemo) {
       _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 100));
@@ -1306,8 +1511,7 @@ class HomeownerService {
         'success': true,
         'profile': {
           'userId': _userId ?? '999',
-          'email':
-              AuthService.instance.userEmail ?? 'demo.homeowner@gmail.com',
+          'email': AuthService.instance.userEmail ?? 'demo.homeowner@gmail.com',
           'name': AuthService.instance.userName ?? 'Demo Homeowner',
           'givenName': AuthService.instance.givenName ?? 'Demo',
           'familyName': AuthService.instance.familyName ?? 'Homeowner',
@@ -1323,23 +1527,28 @@ class HomeownerService {
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
+    final inFlight = _profileInFlight;
+    if (inFlight != null) return inFlight;
     final cached = _cachedProfile;
     final cachedAt = _cachedProfileAt;
-    if (cached != null &&
+    if (!forceRefresh &&
+        cached != null &&
         cachedAt != null &&
         DateTime.now().difference(cachedAt) < _profileCacheTtl) {
       return cached;
     }
-    final inFlight = _profileInFlight;
-    if (inFlight != null) return inFlight;
 
-    final persistent = await _readPersistentCache('profile', _profileCacheTtl);
-    if (persistent != null) {
-      _cachedProfile = persistent;
-      _cachedProfileAt = DateTime.now();
-      _mockAddresses =
-          persistent['addresses'] ?? persistent['profile']?['addresses'] ?? [];
-      return persistent;
+    if (!forceRefresh) {
+      final persistent =
+          await _readPersistentCache('profile', _offlineFallbackCacheTtl);
+      if (persistent != null) {
+        _cachedProfile = persistent;
+        _cachedProfileAt = DateTime.now();
+        _mockAddresses = persistent['addresses'] ??
+            persistent['profile']?['addresses'] ??
+            [];
+        return persistent;
+      }
     }
 
     final future = _post(
@@ -1375,6 +1584,7 @@ class HomeownerService {
     if (_isDemo) {
       _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 200));
+      notifyLocalDataChanged();
       return {
         'success': true,
         'profile': {
@@ -1411,7 +1621,55 @@ class HomeownerService {
       fallbackEndpoint: _legacyProfilePath,
     );
     await _invalidateProfileCache();
+    unawaited(syncInBackground());
     return result;
+  }
+
+  /// Persists the categories a homeowner has explicitly opted into. The
+  /// notification worker uses these flags before sending an FCM payload.
+  Future<void> updateNotificationSettings(
+    Map<String, bool> notificationSettings,
+  ) async {
+    final uid = _userId;
+    if (uid == null) throw Exception('User is not authenticated');
+
+    await _post(
+      _profilePath,
+      {
+        'action': 'update_notification_settings',
+        'userId': uid,
+        'notificationSettings': notificationSettings,
+        'notification_settings': notificationSettings,
+      },
+      fallbackEndpoint: _legacyProfilePath,
+    );
+    await _invalidateProfileCache();
+    unawaited(syncInBackground());
+  }
+
+  /// Registers the active FCM/Web Push token for the signed-in homeowner.
+  /// The API must scope this record to the authenticated user, expire stale
+  /// tokens, and never accept a token for a different account.
+  Future<void> registerPushDevice({
+    required String userId,
+    required String token,
+    required String platform,
+    required Map<String, bool> preferences,
+  }) async {
+    if (token.trim().isEmpty || _userId == null) return;
+    await _post(
+      _profilePath,
+      {
+        'action': 'register_push_device',
+        'userId': userId,
+        'deviceToken': token,
+        'device_token': token,
+        'platform': platform,
+        'notificationSettings': preferences,
+        'notification_settings': preferences,
+      },
+      fallbackEndpoint: _legacyProfilePath,
+    );
   }
 
   Future<Map<String, dynamic>> addAddress(Map<String, String> address) async {
@@ -1427,8 +1685,7 @@ class HomeownerService {
         'city': address['city'] ?? '',
         'state': address['state'] ?? '',
         'zip': address['zip'] ?? '',
-        'isDefault':
-            address['isDefault'] == 'true' || address['isDefault'] == true,
+        'isDefault': address['isDefault'] == 'true',
       };
       if (newAddr['isDefault'] == true) {
         for (var a in _mockAddresses!) {
@@ -1436,6 +1693,7 @@ class HomeownerService {
         }
       }
       _mockAddresses!.add(newAddr);
+      notifyLocalDataChanged();
       return {'success': true, 'addresses': _mockAddresses};
     }
 
@@ -1450,8 +1708,7 @@ class HomeownerService {
       'state': address['state'] ?? '',
       'zip': address['zip'] ?? '',
       'label': address['label'] ?? 'Address',
-      'isDefault':
-          address['isDefault'] == 'true' || address['isDefault'] == true,
+      'isDefault': address['isDefault'] == 'true',
       if (address['unit'] != null) 'unit': address['unit'],
     };
 
@@ -1461,6 +1718,7 @@ class HomeownerService {
       _mockAddresses = result['addresses'];
     }
     await _invalidateProfileCache();
+    unawaited(syncInBackground());
     return result;
   }
 
@@ -1479,10 +1737,10 @@ class HomeownerService {
           a['city'] = address['city'] ?? a['city'];
           a['state'] = address['state'] ?? a['state'];
           a['zip'] = address['zip'] ?? a['zip'];
-          a['isDefault'] =
-              address['isDefault'] == 'true' || address['isDefault'] == true;
+          a['isDefault'] = address['isDefault'] == 'true';
         }
       }
+      notifyLocalDataChanged();
       return {'success': true, 'addresses': _mockAddresses};
     }
 
@@ -1498,8 +1756,7 @@ class HomeownerService {
       'state': address['state'] ?? '',
       'zip': address['zip'] ?? '',
       'label': address['label'] ?? 'Address',
-      'isDefault':
-          address['isDefault'] == 'true' || address['isDefault'] == true,
+      'isDefault': address['isDefault'] == 'true',
       if (address['unit'] != null) 'unit': address['unit'],
     };
 
@@ -1509,6 +1766,7 @@ class HomeownerService {
       _mockAddresses = result['addresses'];
     }
     await _invalidateProfileCache();
+    unawaited(syncInBackground());
     return result;
   }
 
@@ -1521,6 +1779,7 @@ class HomeownerService {
       for (var a in _mockAddresses!) {
         a['isDefault'] = (a['id'] == parsedId);
       }
+      notifyLocalDataChanged();
       return {'success': true, 'addresses': _mockAddresses};
     }
 
@@ -1540,6 +1799,7 @@ class HomeownerService {
       _mockAddresses = result['addresses'];
     }
     await _invalidateProfileCache();
+    unawaited(syncInBackground());
     return result;
   }
 
@@ -1548,6 +1808,7 @@ class HomeownerService {
       _ensureDemoState();
       await Future.delayed(const Duration(milliseconds: 200));
       _mockAddresses!.removeWhere((a) => a['id'] == addressId);
+      notifyLocalDataChanged();
       return {'success': true, 'addresses': _mockAddresses};
     }
 
@@ -1567,6 +1828,7 @@ class HomeownerService {
       _mockAddresses = result['addresses'];
     }
     await _invalidateProfileCache();
+    unawaited(syncInBackground());
     return result;
   }
 
@@ -1610,6 +1872,7 @@ class HomeownerService {
             booking['service_description'] ?? 'Diagnostic and repair request.',
       };
       _mockWorkOrders.add(newWO);
+      notifyLocalDataChanged();
       return {
         'success': true,
         'ok': true,
@@ -1644,18 +1907,18 @@ class HomeownerService {
       if (data is! Map<String, dynamic>)
         throw Exception('Invalid response format');
 
-      if (response.statusCode >= 400 || data['ok'] == false || data['success'] == false) {
+      if (response.statusCode >= 400 ||
+          data['ok'] == false ||
+          data['success'] == false) {
         throw Exception(
             data['reason'] ?? data['error'] ?? 'Booking commit failed');
       }
       await _invalidateWorkOrderCache();
       await _invalidateAvailabilityCache();
       await _invalidateRewardsCache();
+      unawaited(syncInBackground());
       return data;
     } catch (e) {
-      if (kDebugMode) {
-        print('Booking commit error: $e');
-      }
       rethrow;
     }
   }
@@ -1666,7 +1929,8 @@ class HomeownerService {
     required String categorySlug,
     String urgency = 'standard',
   }) async {
-    final identity = '${zip.trim().toLowerCase()}|${categorySlug.trim().toLowerCase()}|${urgency.trim().toLowerCase()}';
+    final identity =
+        '${zip.trim().toLowerCase()}|${categorySlug.trim().toLowerCase()}|${urgency.trim().toLowerCase()}';
     final resource = 'search:$identity';
     try {
       final cached = _searchProsCache[identity];
@@ -1691,7 +1955,7 @@ class HomeownerService {
       _throwIfRecentFailure(_contractorSearchPath);
       _throwIfRecentFailure(_legacyContractorSearchPath);
       var response = await _postRaw(_contractorSearchPath, payload);
-      if (response.statusCode == 404) {
+      if (_shouldUseFallbackEndpoint(response)) {
         response = await _postRaw(_legacyContractorSearchPath, payload);
       }
       if (response.body.isEmpty) {
@@ -1701,7 +1965,10 @@ class HomeownerService {
       if (data is! Map<String, dynamic>) throw Exception('Invalid response');
       if (data['success'] == false && data['covered'] != false) {
         throw Exception(
-          data['error'] ?? data['reason'] ?? data['message'] ?? 'Search failed.',
+          data['error'] ??
+              data['reason'] ??
+              data['message'] ??
+              'Search failed.',
         );
       }
       _clearRecentFailure(_contractorSearchPath);
@@ -1715,9 +1982,6 @@ class HomeownerService {
           fallbackMessage: 'Unable to load available pros right now.');
       _cacheRecentFailure(_legacyContractorSearchPath, e,
           fallbackMessage: 'Unable to load available pros right now.');
-      if (kDebugMode) {
-        print('Error searching contractors: $e');
-      }
       throw Exception(
         AppErrorUtils.friendlyMessage(
           e,
@@ -1740,7 +2004,8 @@ class HomeownerService {
           DateTime.now().difference(cachedAt) < _coverageCacheTtl) {
         return cached;
       }
-      final persistent = await _readPersistentCache(resource, _coverageCacheTtl);
+      final persistent =
+          await _readPersistentCache(resource, _coverageCacheTtl);
       if (persistent != null) {
         _zipCoverageCache[normalizedZip] = persistent;
         _zipCoverageCacheAt[normalizedZip] = DateTime.now();
@@ -1758,7 +2023,10 @@ class HomeownerService {
       }
       if (response.statusCode >= 400 || data['success'] == false) {
         throw Exception(
-          data['error'] ?? data['reason'] ?? data['message'] ?? 'ZIP coverage lookup failed.',
+          data['error'] ??
+              data['reason'] ??
+              data['message'] ??
+              'ZIP coverage lookup failed.',
         );
       }
       _clearRecentFailure(_zipCoveragePath);
@@ -1772,9 +2040,6 @@ class HomeownerService {
         e,
         fallbackMessage: 'Unable to verify ZIP coverage right now.',
       );
-      if (kDebugMode) {
-        print('Error loading ZIP coverage: $e');
-      }
       throw Exception(
         AppErrorUtils.friendlyMessage(
           e,
@@ -1832,47 +2097,65 @@ class HomeownerService {
       ...(tabs['history'] as List? ?? const []),
     ];
 
-    final match = allJobs.cast<Map<String, dynamic>?>().firstWhere(
-          (job) =>
-              job != null &&
-              (job['workOrderId']?.toString() == workOrderId.toString() ||
-                  job['id']?.toString() == workOrderId.toString()),
-          orElse: () => null,
-        );
+    Map<String, dynamic>? match;
+    for (final rawJob in allJobs) {
+      if (rawJob is! Map) continue;
+      final job = Map<String, dynamic>.from(rawJob);
+      if (job['workOrderId']?.toString() == workOrderId.toString() ||
+          job['id']?.toString() == workOrderId.toString()) {
+        match = job;
+        break;
+      }
+    }
 
     if (match == null) {
       return null;
     }
 
+    Map? nestedReview(dynamic value) {
+      if (value is Map) return value;
+      if (value is List) {
+        for (final entry in value) {
+          if (entry is Map) return entry;
+        }
+      }
+      return null;
+    }
+
+    final review = nestedReview(match['review']) ??
+        nestedReview(match['homeownerReview']) ??
+        nestedReview(match['homeowner_review']) ??
+        nestedReview(match['reviews']);
     final reviewText = match['reviewText'] ??
-        match['review']?['text'] ??
-        match['review']?['reviewText'] ??
-        match['homeownerReview']?['text'] ??
-        match['homeowner_review']?['text'] ??
-        match['reviews']?['text'];
-    final rating = match['rating'] ??
-        match['review']?['rating'] ??
-        match['homeownerReview']?['rating'] ??
-        match['homeowner_review']?['rating'] ??
-        match['reviews']?['rating'];
+        match['comment'] ??
+        review?['text'] ??
+        review?['reviewText'] ??
+        review?['comment'] ??
+        review?['content'] ??
+        review?['message'];
+    final rating = match['rating'] ?? review?['rating'] ?? review?['score'];
     final displayName = match['displayName'] ??
-        match['review']?['displayName'] ??
-        match['homeownerReview']?['displayName'] ??
-        match['homeowner_review']?['displayName'];
+        review?['displayName'] ??
+        review?['display_name'] ??
+        review?['authorName'];
 
     if (reviewText == null && rating == null) {
       return null;
     }
 
+    final normalizedRating = rating is num
+        ? rating.toDouble()
+        : double.tryParse(rating?.toString() ?? '') ?? 0;
     return {
-      'rating': (rating as num?)?.toDouble() ?? 0,
+      'rating': normalizedRating,
       'reviewText': reviewText?.toString() ?? '',
       'displayName': displayName?.toString(),
     };
   }
 
   String bookingErrorMessage(Object error) {
-    final raw = error.toString().replaceAll('Exception: ', '').trim().toLowerCase();
+    final raw =
+        error.toString().replaceAll('Exception: ', '').trim().toLowerCase();
     if (raw.contains('booking_cap')) {
       return 'You have reached the maximum number of open bookings. Please complete or cancel an existing booking before creating a new one.';
     }

@@ -5,32 +5,44 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/browse_search_history.dart';
 import '../services/homeowner_service.dart';
+import '../services/service_catalog.dart';
+import '../services/service_location.dart';
 import '../theme.dart';
 import '../utils/app_error_utils.dart';
 import '../widgets/ai_intake_sheet.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/offline_state.dart';
 import '../widgets/service_search_bar.dart';
+import '../widgets/service_zip_entry_dialog.dart';
 
 class HomeTab extends StatefulWidget {
   final VoidCallback onBookTap;
   final Function(Map<String, dynamic>) onJobTap;
   final VoidCallback onInboxTap;
+  final VoidCallback onHelpTap;
   final Function(String) onSearchQuery;
   final Function(String) onCategorySelected;
   final VoidCallback onGuidesTap;
   final VoidCallback onManageHomeTap;
+  final bool isGuest;
+  final VoidCallback? onCreateAccount;
+  final VoidCallback? onSignIn;
 
   const HomeTab({
     super.key,
     required this.onBookTap,
     required this.onJobTap,
     required this.onInboxTap,
+    required this.onHelpTap,
     required this.onSearchQuery,
     required this.onCategorySelected,
     required this.onGuidesTap,
     required this.onManageHomeTap,
+    this.isGuest = false,
+    this.onCreateAccount,
+    this.onSignIn,
   });
 
   @override
@@ -38,32 +50,7 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
-  static const String _sharedZipKey = 'selected_service_zip';
-  static const String _sharedLocationNameKey = 'selected_service_location_name';
-  static const List<String> _serviceNames = [
-    'AC repair',
-    'Drain cleaning',
-    'Water heater replacement',
-    'Ceiling fan install',
-    'Fence repair',
-    'Interior painting',
-    'Lawn maintenance',
-    'Smart thermostat install',
-    'Plumbing',
-    'Electrical',
-    'Cleaning',
-    'Roofing',
-    'Handyman',
-    'Appliance repair',
-    'Pool & spa',
-    'Tree service',
-    'Pest control',
-    'Flooring',
-    'Drywall & plaster',
-    'Windows & doors',
-    'Garage doors',
-    'Water treatment',
-  ];
+  static final List<String> _serviceNames = ServiceCatalog.names;
 
   static const List<String> _homeCategories = [
     'HVAC',
@@ -73,7 +60,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     'Roofing',
     'Lawn',
     'Handyman',
-    'All 31',
   ];
 
   static const Map<String, Color> _categoryBackgrounds = {
@@ -84,7 +70,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     'Roofing': Color(0xFFFFEBEE),
     'Lawn': Color(0xFFF1F8E9),
     'Handyman': Color(0xFFF3E5F5),
-    'All 31': AppTheme.orange500,
   };
 
   static const Color _pageBackground = Color(0xFFF5F7FA);
@@ -111,42 +96,58 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   List<dynamic> _activeJobs = const [];
   List<dynamic> _upcomingJobs = const [];
   List<dynamic> _quoteSourceJobs = const [];
-  
 
   @override
-void initState() {
-  super.initState();
-  WidgetsBinding.instance.addObserver(this);
-  _searchController.addListener(_refreshInputs);
-  _searchFocusNode.addListener(_refreshInputs);
-  
-  // Initialize PageController starting from a high initial page for infinite smooth scrolling
-  _tickerPageController = PageController(initialPage: 1000 * _serviceNames.length);
-  _startServiceTicker();
-  _loadSharedLocationOverride();
-  _fetchHomeData();
-}
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _searchController.addListener(_refreshInputs);
+    _searchFocusNode.addListener(_refreshInputs);
+    ServiceLocation.selected.addListener(_handleSharedLocationChanged);
+
+    // Initialize PageController starting from a high initial page for infinite smooth scrolling
+    _tickerPageController =
+        PageController(initialPage: 1000 * _serviceNames.length);
+    _startServiceTicker();
+    _loadSharedLocationOverride();
+    if (widget.isGuest) {
+      _isLoading = false;
+      return;
+    }
+    HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
+    _restoreCachedHomeThenRefresh();
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _fetchHomeData(showLoading: false);
+    if (!widget.isGuest && state == AppLifecycleState.resumed) {
+      _fetchHomeData(showLoading: false, forceRefresh: true);
     }
   }
 
   @override
-void dispose() {
-  _tickerPageController.dispose();
-  _serviceTicker?.cancel();
-  WidgetsBinding.instance.removeObserver(this);
-  _searchController
-    ..removeListener(_refreshInputs)
-    ..dispose();
-  _searchFocusNode
-    ..removeListener(_refreshInputs)
-    ..dispose();
-  super.dispose();
-}
+  void dispose() {
+    ServiceLocation.selected.removeListener(_handleSharedLocationChanged);
+    if (!widget.isGuest) {
+      HomeownerService.instance.syncVersion
+          .removeListener(_refreshFromSharedSync);
+    }
+    _tickerPageController.dispose();
+    _serviceTicker?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _searchController
+      ..removeListener(_refreshInputs)
+      ..dispose();
+    _searchFocusNode
+      ..removeListener(_refreshInputs)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _refreshFromSharedSync() {
+    if (widget.isGuest) return;
+    _fetchHomeData(showLoading: false);
+  }
 
   void _refreshInputs() {
     if (mounted) {
@@ -155,27 +156,81 @@ void dispose() {
   }
 
   void _startServiceTicker() {
-  _serviceTicker?.cancel();
-  _serviceTicker = Timer.periodic(const Duration(seconds: 3), (_) {
-    if (!mounted ||
-        !_tickerPageController.hasClients ||
-        _searchController.text.trim().isNotEmpty ||
-        _searchFocusNode.hasFocus) {
+    _serviceTicker?.cancel();
+    _serviceTicker = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted ||
+          !_tickerPageController.hasClients ||
+          _searchController.text.trim().isNotEmpty ||
+          _searchFocusNode.hasFocus) {
+        return;
+      }
+
+      _tickerPageController.nextPage(
+        duration: const Duration(milliseconds: 750),
+        curve: Curves.fastOutSlowIn, // Smoother physics-based curve
+      );
+    });
+  }
+
+  bool get _hasHomeContent =>
+      _profile.isNotEmpty || _activeJobs.isNotEmpty || _upcomingJobs.isNotEmpty;
+
+  Future<void> _restoreCachedHomeThenRefresh() async {
+    if (widget.isGuest) return;
+    final results = await Future.wait([
+      HomeownerService.instance.loadCachedWorkOrders(),
+      HomeownerService.instance.loadCachedProfile(),
+      _loadLocalHomeDetails(),
+    ]);
+    if (!mounted) return;
+
+    final woData = results[0] as Map<String, dynamic>?;
+    final profileData = results[1] as Map<String, dynamic>?;
+    final localHomeDetails = results[2] as Map<String, dynamic>;
+    if (woData != null || profileData != null) {
+      final tabs = woData?['tabs'];
+      final profile = profileData?['profile'];
+      final addresses = (profileData?['addresses'] as List?) ??
+          (profile is Map ? profile['addresses'] as List? : null) ??
+          const [];
+      setState(() {
+        _profile = profile is Map<String, dynamic>
+            ? Map<String, dynamic>.from(profile)
+            : profile is Map
+                ? Map<String, dynamic>.from(profile)
+                : const {};
+        _localHomeDetails = localHomeDetails;
+        _addresses = List<dynamic>.from(addresses);
+        if (tabs is Map) {
+          _activeJobs = List<dynamic>.from(tabs['active'] ?? const []);
+          _upcomingJobs = List<dynamic>.from(tabs['scheduled'] ?? const []);
+        }
+        _quoteSourceJobs =
+            woData == null ? const [] : _workOrderCandidatesFrom(woData);
+        _isLoading = false;
+        _errorMessage = null;
+      });
+    }
+    await _fetchHomeData(showLoading: false, forceRefresh: true);
+  }
+
+  Future<void> _fetchHomeData({
+    bool showLoading = true,
+    bool forceRefresh = false,
+  }) async {
+    if (widget.isGuest) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      }
       return;
     }
-    
-    _tickerPageController.nextPage(
-      duration: const Duration(milliseconds: 750),
-      curve: Curves.fastOutSlowIn, // Smoother physics-based curve
-    );
-  });
-}
-
-  Future<void> _fetchHomeData({bool showLoading = true}) async {
     if (!mounted || _isRefreshing) return;
     _isRefreshing = true;
 
-    if (showLoading || (_activeJobs.isEmpty && _upcomingJobs.isEmpty)) {
+    if (showLoading && !_hasHomeContent) {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
@@ -184,8 +239,8 @@ void dispose() {
 
     try {
       final results = await Future.wait([
-        HomeownerService.instance.fetchWorkOrders(),
-        HomeownerService.instance.fetchProfile(),
+        HomeownerService.instance.fetchWorkOrders(forceRefresh: forceRefresh),
+        HomeownerService.instance.fetchProfile(forceRefresh: forceRefresh),
         _loadLocalHomeDetails(),
       ]);
 
@@ -222,7 +277,10 @@ void dispose() {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = AppErrorUtils.friendlyMessage(e);
+        // Retain the last known screen instead of replacing it with an error
+        // during a transient offline or timeout event.
+        _errorMessage =
+            _hasHomeContent ? null : AppErrorUtils.friendlyMessage(e);
         _isLoading = false;
       });
     } finally {
@@ -231,22 +289,38 @@ void dispose() {
   }
 
   Future<void> _loadSharedLocationOverride() async {
-    final prefs = await SharedPreferences.getInstance();
-    final zip = prefs.getString(_sharedZipKey)?.trim() ?? '';
-    final locationName = prefs.getString(_sharedLocationNameKey)?.trim() ?? '';
-    if (zip.length != 5 || !mounted) {
+    final location = await ServiceLocation.load();
+    if (location == null || !mounted) {
+      return;
+    }
+    final zip = location.zip;
+    final locationName = location.locationName;
+    final needsLocationLookup =
+        locationName.isEmpty || locationName.toLowerCase() == 'serving area';
+    setState(() {
+      _manualZipOverride = zip;
+      _manualLocationName = needsLocationLookup ? zip : locationName;
+    });
+    if (needsLocationLookup) {
+      unawaited(_resolveAndSaveLocationName(zip));
+    }
+  }
+
+  Future<void> _saveSharedLocationOverride(
+      String zip, String locationName) async {
+    await ServiceLocation.save(zip: zip, locationName: locationName);
+  }
+
+  void _handleSharedLocationChanged() {
+    final location = ServiceLocation.selected.value;
+    if (location == null || !mounted || _manualZipOverride == location.zip) {
       return;
     }
     setState(() {
-      _manualZipOverride = zip;
-      _manualLocationName = locationName.isEmpty ? _locationNameForZip(zip) : locationName;
+      _manualZipOverride = location.zip;
+      _manualLocationName =
+          location.locationName.isEmpty ? location.zip : location.locationName;
     });
-  }
-
-  Future<void> _saveSharedLocationOverride(String zip, String locationName) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_sharedZipKey, zip);
-    await prefs.setString(_sharedLocationNameKey, locationName);
   }
 
   Map<String, dynamic>? get _defaultAddress {
@@ -276,9 +350,8 @@ void dispose() {
     final city = _text(address?['city']);
     final state = _text(address?['state']);
     final zip = _text(address?['zip']);
-    final locationName = [city, state]
-        .where((part) => part.isNotEmpty)
-        .join(', ');
+    final locationName =
+        [city, state].where((part) => part.isNotEmpty).join(', ');
     if (zip.isEmpty) {
       return locationName.isEmpty ? 'Enter ZIP code' : locationName;
     }
@@ -442,7 +515,8 @@ void dispose() {
 
     final nested = data['data'];
     if (nested is Map) {
-      candidates.addAll(_workOrderCandidatesFrom(Map<String, dynamic>.from(nested)));
+      candidates
+          .addAll(_workOrderCandidatesFrom(Map<String, dynamic>.from(nested)));
     } else {
       addList(nested);
     }
@@ -569,98 +643,61 @@ void dispose() {
     return typed.isNotEmpty ? typed : _serviceNames[_serviceTickerIndex];
   }
 
+  int get _serviceCount => _serviceNames.length;
+
+  String get _allServicesLabel => 'All $_serviceCount';
+
   void _openSearch([String? value]) {
     final query = (value ?? _displayedService).trim();
     if (query.isEmpty) return;
+    // Home lives in the shell's IndexedStack. Reset the field before pushing
+    // Browse so returning home never restores a focused, stale search state.
+    _searchFocusNode.unfocus();
+    _searchController.clear();
+    // Recent searches are device-level discovery history, not account data.
+    // Queue this before navigation so Browse restores the same cache for both
+    // visitors and authenticated homeowners.
+    unawaited(BrowseSearchHistory().save(query));
     widget.onSearchQuery(query);
   }
 
-  String _locationNameForZip(String zip) {
-    const knownLocations = <String, String>{
-      '33578': 'Riverview, FL',
-      '33579': 'Riverview, FL',
-      '33569': 'Riverview, FL',
-      '33602': 'Tampa, FL',
-      '33606': 'Tampa, FL',
-      '33609': 'Tampa, FL',
-      '33647': 'Tampa, FL',
-      '33701': 'St. Petersburg, FL',
-      '33705': 'St. Petersburg, FL',
-      '32801': 'Orlando, FL',
-      '33101': 'Miami, FL',
-    };
-    return knownLocations[zip] ?? 'Serving area';
+  Future<String> _locationNameForZip(String zip) async {
+    try {
+      final coverage = await HomeownerService.instance.getZipCoverage(zip: zip);
+      final city = _text(
+        coverage['city'],
+        _text(coverage['areaName'], _text(coverage['area_name'])),
+      );
+      final state = _text(coverage['state']);
+      final location =
+          [city, state].where((part) => part.isNotEmpty).join(', ');
+      return location.isEmpty ? zip : location;
+    } catch (_) {
+      // Keep the entered ZIP visible if the address lookup is temporarily down.
+      return zip;
+    }
+  }
+
+  Future<void> _resolveAndSaveLocationName(String zip) async {
+    final locationName = await _locationNameForZip(zip);
+    if (!mounted || _manualZipOverride != zip) return;
+    await _saveSharedLocationOverride(zip, locationName);
+    if (!mounted || _manualZipOverride != zip) return;
+    setState(() => _manualLocationName = locationName);
   }
 
   Future<void> _openZipEntry() async {
-    final controller = TextEditingController(text: _currentZip ?? '');
-    String? errorText;
-
-    final nextZip = await showDialog<String>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Enter ZIP code'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: controller,
-                keyboardType: TextInputType.number,
-                autofocus: true,
-                maxLength: 5,
-                decoration: InputDecoration(
-                  hintText: '33578',
-                  errorText: errorText,
-                  counterText: '',
-                ),
-                onChanged: (_) {
-                  if (errorText != null) {
-                    setDialogState(() => errorText = null);
-                  }
-                },
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'This only changes the ZIP used in your local browser test session.',
-                style: TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 12,
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final digits =
-                    controller.text.replaceAll(RegExp(r'[^0-9]'), '');
-                if (digits.length != 5) {
-                  setDialogState(() {
-                    errorText = 'Enter a valid 5-digit ZIP code';
-                  });
-                  return;
-                }
-                Navigator.of(context).pop(digits);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
+    final nextZip = await showServiceZipEntryDialog(
+      context,
+      initialZip: _currentZip ?? '',
     );
 
     if (nextZip == null || !mounted) {
       return;
     }
 
-    final locationName = _locationNameForZip(nextZip);
+    final locationName = await _locationNameForZip(nextZip);
+    if (!mounted) return;
     await _saveSharedLocationOverride(nextZip, locationName);
     setState(() {
       _manualZipOverride = nextZip;
@@ -704,35 +741,91 @@ void dispose() {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: _openZipEntry,
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.location_on_outlined,
-                  color: Colors.white,
-                  size: 14,
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    _locationLabel,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  label: 'Change service location: $_locationLabel',
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _openZipEntry,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.location_on,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            fit: FlexFit.loose,
+                            child: Text(
+                              _locationLabel,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.keyboard_arrow_down_rounded,
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'Help and FAQs',
+                onPressed: widget.onHelpTap,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(
+                  Icons.help,
                   color: Colors.white,
-                  size: 14,
+                  size: 21,
                 ),
-              ],
-            ),
+              ),
+              if (!widget.isGuest)
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      tooltip: 'Inbox',
+                      onPressed: widget.onInboxTap,
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(
+                        Icons.mail,
+                        color: Colors.white,
+                        size: 21,
+                      ),
+                    ),
+                    Positioned(
+                      right: 9,
+                      top: 9,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: AppTheme.orange500,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppTheme.navy700, width: 1),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
           ),
           const SizedBox(height: 16),
           const Text(
@@ -832,9 +925,9 @@ void dispose() {
             ),
             GestureDetector(
               onTap: () => widget.onCategorySelected('All'),
-              child: const Text(
-                'See all 31 ›',
-                style: TextStyle(
+              child: Text(
+                'See all $_serviceCount ›',
+                style: const TextStyle(
                   color: AppTheme.teal500,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -845,7 +938,7 @@ void dispose() {
         ),
         const SizedBox(height: 12),
         GridView.builder(
-          itemCount: _homeCategories.length,
+          itemCount: _homeCategories.length + 1,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -855,29 +948,31 @@ void dispose() {
             childAspectRatio: 1.15,
           ),
           itemBuilder: (context, index) {
-            final label = _homeCategories[index];
-            final token = label == 'All 31'
+            final isAll = index == _homeCategories.length;
+            final label = isAll ? _allServicesLabel : _homeCategories[index];
+            final token = isAll
                 ? TradeWorksCategoryTokens.fallback
                 : TradeWorksCategoryTokens.forName(label);
-            final isAll = label == 'All 31';
             return InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: () => widget.onCategorySelected(isAll ? 'All' : label),
               child: Container(
                 decoration: BoxDecoration(
-                  color: _categoryBackgrounds[label] ?? AppTheme.navyTint,
+                  color: isAll
+                      ? AppTheme.orange500
+                      : _categoryBackgrounds[label] ?? AppTheme.navyTint,
                   borderRadius: BorderRadius.circular(12),
-                  border: isAll
-                      ? null
-                      : Border.all(color: _lineSoft),
+                  border: isAll ? null : Border.all(color: _lineSoft),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      isAll ? Icons.grid_view_rounded : token.icon,
-                      color: isAll ? Colors.white : _inkStrong,
-                      size: 20,
+                    ServiceCategoryIcon(
+                      category: isAll ? 'All' : label,
+                      size: 32,
+                      fallbackIcon:
+                          isAll ? Icons.grid_view_rounded : token.icon,
+                      fallbackColor: isAll ? Colors.white : _inkStrong,
                     ),
                     const SizedBox(height: 6),
                     Text(
@@ -978,78 +1073,148 @@ void dispose() {
     );
   }
 
-Widget _buildTailoredSuggestionsCard() {
-  const cardFill = Color(0xFFF0F5FA);
-  const cardBorder = Color(0xFF37537F);
-  const eyebrowColor = Color(0xFF1B3C6E);
-  const bodyColor = Color(0xFF506A91);
-
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-    decoration: BoxDecoration(
-      color: cardFill,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: cardBorder, width: 1),
-    ),
-    child: Column(
+  Widget _buildGuestSignupSection() {
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'GET TAILORED SUGGESTIONS',
-          style: TextStyle(
-            color: eyebrowColor,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.6,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Tell us about your home',
+          'Sign up',
           style: TextStyle(
             color: _inkStrong,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            height: 1.15,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 10),
-        const Text(
-          "Add your systems and their install dates, and we'll flag maintenance before it becomes a breakdown.",
-          style: TextStyle(
-            color: bodyColor,
-            fontSize: 13.5,
-            height: 1.45,
-          ),
-        ),
-        const SizedBox(height: 18),
-        SizedBox(
+        const SizedBox(height: 12),
+        Container(
           width: double.infinity,
-          child: OutlinedButton(
-            onPressed: widget.onManageHomeTap,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: eyebrowColor,
-              backgroundColor: cardFill,
-              side: const BorderSide(color: eyebrowColor, width: 1.25),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.orange500),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'CREATE YOUR ACCOUNT',
+                style: TextStyle(
+                  color: AppTheme.orange500,
+                  fontSize: 11,
+                  letterSpacing: .5,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            ),
-            child: const Text(
-              'Add your home details',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
+              const SizedBox(height: 10),
+              const Text(
+                'Create an account to book services, save your home details, earn rewards, and get personalized recommendations.',
+                style: TextStyle(
+                  color: _inkStrong,
+                  fontSize: 13.5,
+                  height: 1.35,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
+              const SizedBox(height: 8),
+              const Text(
+                'It only takes a minute to get started',
+                style: TextStyle(color: _mutedText, fontSize: 11),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: widget.onCreateAccount,
+                  child: const Text('Create account'),
+                ),
+              ),
+              Center(
+                child: TextButton(
+                  onPressed: widget.onSignIn,
+                  child: const Text('Already have an account? Sign in'),
+                ),
+              ),
+            ],
           ),
         ),
       ],
-    ),
-  );
-}
+    );
+  }
+
+  Widget _buildTailoredSuggestionsCard() {
+    const cardFill = Color(0xFFF0F5FA);
+    const cardBorder = Color(0xFF37537F);
+    const eyebrowColor = Color(0xFF1B3C6E);
+    const bodyColor = Color(0xFF506A91);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      decoration: BoxDecoration(
+        color: cardFill,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cardBorder, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'GET TAILORED SUGGESTIONS',
+            style: TextStyle(
+              color: eyebrowColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Tell us about your home',
+            style: TextStyle(
+              color: _inkStrong,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            "Add your systems and their install dates, and we'll flag maintenance before it becomes a breakdown.",
+            style: TextStyle(
+              color: bodyColor,
+              fontSize: 13.5,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: widget.onManageHomeTap,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: eyebrowColor,
+                backgroundColor: cardFill,
+                side: const BorderSide(color: eyebrowColor, width: 1.25),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              ),
+              child: const Text(
+                'Add your home details',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildQuoteReadyStrip(Map<String, dynamic> job, int totalCount) {
     final service = _text(
@@ -1248,9 +1413,8 @@ Widget _buildTailoredSuggestionsCard() {
 
   Widget _buildCommunityActivityCard(Map<String, dynamic> card) {
     final type = card['type'] as String? ?? 'neighbor';
-    final iconBackground = type == 'trend'
-        ? const Color(0xFFEFF6FF)
-        : const Color(0xFFE2E8F0);
+    final iconBackground =
+        type == 'trend' ? const Color(0xFFEFF6FF) : const Color(0xFFE2E8F0);
     final iconColor = AppTheme.navy700;
 
     return Container(
@@ -1323,7 +1487,9 @@ Widget _buildTailoredSuggestionsCard() {
           text: _text(card['primary'], 'Gulf Coast Air'),
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
-        TextSpan(text: ' ${_text(card['secondary'], 'completed 4 jobs in your area this week.')}'),
+        TextSpan(
+            text:
+                ' ${_text(card['secondary'], 'completed 4 jobs in your area this week.')}'),
       ];
     }
 
@@ -1397,13 +1563,13 @@ Widget _buildTailoredSuggestionsCard() {
     if (_errorMessage != null) return _buildError();
 
     final quoteReadyJobs = _quoteReadyJobs;
-    final quoteReadyJob =
-        quoteReadyJobs.isEmpty ? null : quoteReadyJobs.first;
+    final quoteReadyJob = quoteReadyJobs.isEmpty ? null : quoteReadyJobs.first;
 
     return ColoredBox(
       color: _pageBackground,
       child: RefreshIndicator(
-        onRefresh: _fetchHomeData,
+        onRefresh:
+            widget.isGuest ? _loadSharedLocationOverride : _fetchHomeData,
         color: AppTheme.orange500,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -1411,7 +1577,7 @@ Widget _buildTailoredSuggestionsCard() {
           padding: const EdgeInsets.only(bottom: 120),
           children: [
             _buildHomeHero(),
-            if (quoteReadyJob != null) ...[
+            if (!widget.isGuest && quoteReadyJob != null) ...[
               const SizedBox(height: 14),
               _buildQuoteReadyStrip(quoteReadyJob, quoteReadyJobs.length),
             ],
@@ -1421,17 +1587,21 @@ Widget _buildTailoredSuggestionsCard() {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildBrowseByCategorySection(),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'For your home',
-                    style: TextStyle(
-                      color: _inkStrong,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                  const SizedBox(height: 16),
+                  if (widget.isGuest)
+                    _buildGuestSignupSection()
+                  else ...[
+                    const Text(
+                      'For your home',
+                      style: TextStyle(
+                        color: _inkStrong,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildForYourHomeCard(),
+                    const SizedBox(height: 12),
+                    _buildForYourHomeCard(),
+                  ],
                 ],
               ),
             ),

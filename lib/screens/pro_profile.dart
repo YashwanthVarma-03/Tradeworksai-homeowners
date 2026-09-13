@@ -1,11 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
+import '../widgets/app_notification.dart';
 import 'book_flow.dart';
 import 'chat_screen.dart';
 
@@ -74,14 +77,15 @@ extension on _ReviewSort {
 }
 
 class _FigmaProfileSurface extends StatelessWidget {
-  static const Color _ink = Color(0xFF243047);
-  static const Color _muted = Color(0xFF63758E);
-  static const Color _panelColor = Color(0xFFF4F7FB);
-  static const Color _line = Color(0xFFDFE5EE);
-  static const Color _blue = Color(0xFF203F73);
-  static const Color _teal = Color(0xFF1C87BB);
-  static const Color _orange = Color(0xFFF47712);
-  static const Color _green = Color(0xFF00A86B);
+  // Values taken from the supplied ProProfile_Top Figma frame.
+  static const Color _ink = Color(0xFF1E293B);
+  static const Color _muted = Color(0xFF64748B);
+  static const Color _panelColor = Color(0xFFF5F7FA);
+  static const Color _line = Color(0xFFE6E8EC);
+  static const Color _blue = Color(0xFF1B3C6E);
+  static const Color _teal = Color(0xFF2E86AB);
+  static const Color _orange = Color(0xFFE8751A);
+  static const Color _green = Color(0xFF10B981);
 
   final String businessName;
   final String category;
@@ -96,7 +100,6 @@ class _FigmaProfileSurface extends StatelessWidget {
   final String? profileImageUrl;
   final String tagline;
   final String about;
-  final List<String> paymentMethods;
   final List<String> mediaUrls;
   final int mediaCount;
   final int videoCount;
@@ -109,8 +112,6 @@ class _FigmaProfileSurface extends StatelessWidget {
   final List<_ProfileCredential> credentials;
   final List<String> serviceCities;
   final String serviceAreaNote;
-  final String emergencyDetails;
-  final String emergencyResponse;
   final Map<int, double> ratingBreakdown;
   final List<Map<String, dynamic>> reviews;
   final String reviewQuery;
@@ -118,13 +119,16 @@ class _FigmaProfileSurface extends StatelessWidget {
   final String responseSummary;
   final bool loading;
   final VoidCallback onBack;
+  final VoidCallback onShare;
   final VoidCallback onBook;
   final VoidCallback onMessage;
   final VoidCallback onSeeAllReviews;
   final ValueChanged<String> onReviewQueryChanged;
   final ValueChanged<_ReviewSort> onReviewSortChanged;
+  final ScrollController scrollController;
+  final GlobalKey _pricingKey = GlobalKey();
 
-  const _FigmaProfileSurface({
+  _FigmaProfileSurface({
     required this.businessName,
     required this.category,
     required this.service,
@@ -138,7 +142,6 @@ class _FigmaProfileSurface extends StatelessWidget {
     required this.profileImageUrl,
     required this.tagline,
     required this.about,
-    required this.paymentMethods,
     required this.mediaUrls,
     required this.mediaCount,
     required this.videoCount,
@@ -151,8 +154,6 @@ class _FigmaProfileSurface extends StatelessWidget {
     required this.credentials,
     required this.serviceCities,
     required this.serviceAreaNote,
-    required this.emergencyDetails,
-    required this.emergencyResponse,
     required this.ratingBreakdown,
     required this.reviews,
     required this.reviewQuery,
@@ -160,11 +161,13 @@ class _FigmaProfileSurface extends StatelessWidget {
     required this.responseSummary,
     required this.loading,
     required this.onBack,
+    required this.onShare,
     required this.onBook,
     required this.onMessage,
     required this.onSeeAllReviews,
     required this.onReviewQueryChanged,
     required this.onReviewSortChanged,
+    required this.scrollController,
   });
 
   bool get _hasRating =>
@@ -182,6 +185,7 @@ class _FigmaProfileSurface extends StatelessWidget {
               const LinearProgressIndicator(minHeight: 2, color: _orange),
             Expanded(
               child: ListView(
+                controller: scrollController,
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
                 children: [
                   _identity(),
@@ -191,15 +195,35 @@ class _FigmaProfileSurface extends StatelessWidget {
                   _requestCard(),
                   if (_hasAboutContent) ...[
                     const SizedBox(height: 18),
-                    _section('About', _about()),
-                  ],
-                  if (services.isNotEmpty) ...[
-                    const SizedBox(height: 18),
-                    _section('Services & rates', _servicesSection()),
+                    _section('About this pro', _about()),
                   ],
                   if (mediaUrls.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _mediaSection(),
+                  ],
+                  if (overview.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _section('Overview', _factsPanel()),
+                  ],
+                  if (hours.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _section('Business Hours', _hoursPanel()),
+                  ],
+                  if (responseTimes.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _section('Response Times', _responsePanel(),
+                        trailing: 'Set by $businessName'),
+                  ],
+                  if (pricing.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      key: _pricingKey,
+                      child: _section('Upfront Pricing', _pricingList()),
+                    ),
+                  ],
+                  if (services.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    _section('Services & rates', _servicesSection()),
                   ],
                   if (_hasRating) ...[
                     const SizedBox(height: 16),
@@ -225,21 +249,28 @@ class _FigmaProfileSurface extends StatelessWidget {
 
   Widget _topBar() {
     return SizedBox(
-      height: 42,
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Back',
-            onPressed: onBack,
-            icon: const Icon(Icons.arrow_back_rounded, color: _ink, size: 22),
-          ),
-          const Spacer(),
-          IconButton(
-            tooltip: 'Share contractor',
-            onPressed: () {},
-            icon: const Icon(Icons.share_outlined, color: _ink, size: 21),
-          ),
-        ],
+      height: 44,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: 'Back',
+              onPressed: onBack,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.arrow_back_rounded, color: _ink, size: 20),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: 'Share contractor',
+              onPressed: onShare,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.share, color: _ink, size: 20),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -320,8 +351,8 @@ class _FigmaProfileSurface extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        width: 54,
-        height: 54,
+        width: 64,
+        height: 64,
         child: profileImageUrl == null
             ? Container(
                 color: _blue,
@@ -329,8 +360,8 @@ class _FigmaProfileSurface extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.home_repair_service_outlined,
-                        color: Colors.white, size: 26),
+                    const Icon(Icons.home_repair_service,
+                        color: Colors.white, size: 28),
                     const SizedBox(height: 1),
                     Text(category.toUpperCase(),
                         maxLines: 1,
@@ -351,7 +382,7 @@ class _FigmaProfileSurface extends StatelessWidget {
 
   Widget _priceCard() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      padding: const EdgeInsets.all(16),
       decoration: _panelDecoration(radius: 12, border: true),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -363,22 +394,38 @@ class _FigmaProfileSurface extends StatelessWidget {
                 Text(price,
                     style: const TextStyle(
                         color: _blue,
-                        fontSize: 30,
+                        fontSize: 28,
                         height: 1,
                         fontWeight: FontWeight.w900)),
-                const SizedBox(height: 11),
+                const SizedBox(height: 8),
                 Text(priceDetail,
                     style: const TextStyle(
                         color: _muted,
                         fontSize: 13,
                         height: 1.35,
                         fontWeight: FontWeight.w500)),
-                const SizedBox(height: 6),
-                const Text('View price details',
-                    style: TextStyle(
-                        color: _teal,
+                const SizedBox(height: 2),
+                Semantics(
+                  button: true,
+                  label: 'View price details',
+                  child: TextButton(
+                    onPressed: _scrollToPricing,
+                    style: TextButton.styleFrom(
+                      foregroundColor: _teal,
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      alignment: Alignment.centerLeft,
+                    ),
+                    child: const Text(
+                      'View price details',
+                      style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w800)),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -466,6 +513,25 @@ class _FigmaProfileSurface extends StatelessWidget {
     );
   }
 
+  Future<void> _scrollToPricing() async {
+    final priceContext = _pricingKey.currentContext;
+    final priceRenderObject = priceContext?.findRenderObject();
+    if (priceRenderObject == null || !scrollController.hasClients) return;
+
+    final viewport = RenderAbstractViewport.of(priceRenderObject);
+    final targetOffset = viewport
+        .getOffsetToReveal(priceRenderObject, 0.08)
+        .offset
+        .clamp(0.0, scrollController.position.maxScrollExtent)
+        .toDouble();
+
+    await scrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   Widget _section(String title, Widget child, {String? trailing}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -496,12 +562,7 @@ class _FigmaProfileSurface extends StatelessWidget {
     );
   }
 
-  bool get _hasAboutContent =>
-      tagline.isNotEmpty ||
-      about.isNotEmpty ||
-      paymentMethods.isNotEmpty ||
-      hours.isNotEmpty ||
-      emergencyDetails.isNotEmpty;
+  bool get _hasAboutContent => tagline.isNotEmpty || about.isNotEmpty;
 
   Widget _about() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -527,45 +588,6 @@ class _FigmaProfileSurface extends StatelessWidget {
                 fontWeight: FontWeight.w500,
               ),
             ),
-          if (paymentMethods.isNotEmpty) ...[
-            const SizedBox(height: 18),
-            const Text('PAYMENT METHODS',
-                style: TextStyle(
-                    color: _ink, fontSize: 12, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 9),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: paymentMethods
-                  .map((method) => _outlineChip(method))
-                  .toList(),
-            ),
-          ],
-          if (hours.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            const Text('BUSINESS HOURS',
-                style: TextStyle(
-                    color: _ink, fontSize: 12, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 10),
-            ...hours.map(_keyValue),
-          ],
-          if (emergencyDetails.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Icon(Icons.bolt_outlined, color: _ink, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '$emergencyDetails${emergencyResponse.isEmpty ? '' : ' — Avg. response: $emergencyResponse.'}',
-                  style: const TextStyle(
-                      color: _ink,
-                      fontSize: 13,
-                      height: 1.4,
-                      fontWeight: FontWeight.w500),
-                ),
-              ),
-            ]),
-          ],
         ],
       );
 
@@ -578,35 +600,40 @@ class _FigmaProfileSurface extends StatelessWidget {
       'Project photos & videos',
       SizedBox(
         height: 120,
-        child: Row(
-          children: List.generate(
-              mediaUrls.take(3).length,
-              (index) => Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                          right:
-                              index == mediaUrls.take(3).length - 1 ? 0 : 10),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(7),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image.network(mediaUrls[index],
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    Container(color: _panelColor)),
-                            if (videoCount > 0 && index == 1)
-                              const Center(
-                                  child: CircleAvatar(
-                                      radius: 15,
-                                      backgroundColor: Color(0x99000000),
-                                      child: Icon(Icons.play_arrow_rounded,
-                                          color: Colors.white, size: 20))),
-                          ],
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.hardEdge,
+          itemCount: mediaUrls.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 12),
+          itemBuilder: (context, index) => SizedBox(
+            width: 120,
+            height: 120,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    mediaUrls[index],
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(color: _panelColor),
+                  ),
+                  if (videoCount > 0 && index == 1)
+                    const Center(
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: Color(0x66000000),
+                        child: Icon(
+                          Icons.play_arrow,
+                          color: Colors.white,
+                          size: 20,
                         ),
                       ),
                     ),
-                  )),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
       trailing: suffix.isEmpty ? null : suffix,
@@ -688,22 +715,6 @@ class _FigmaProfileSurface extends StatelessWidget {
           ]),
         );
       }));
-
-  Widget _outlineChip(String label) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _line),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: _ink,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
 
   Widget _servicesSection() {
     final groups = <String, List<_ProfileService>>{};
@@ -1062,30 +1073,33 @@ class _FigmaProfileSurface extends StatelessWidget {
     );
   }
 
-  Widget _bottomBar() => Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xFFE6EAF0)))),
-        child: Row(children: [
-          Expanded(
-              child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text(price,
-                    style: const TextStyle(
-                        color: _blue,
-                        fontSize: 20,
-                        height: 1,
-                        fontWeight: FontWeight.w900)),
-                const SizedBox(height: 3),
-                const Text('Upfront price estimate',
-                    style: TextStyle(color: _muted, fontSize: 11))
-              ])),
-          const SizedBox(width: 12),
-          SizedBox(width: 145, height: 50, child: _bookButton()),
-        ]),
+  Widget _bottomBar() => SizedBox(
+        height: 66,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFE6EAF0)))),
+          child: Row(children: [
+            Expanded(
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(price,
+                      style: const TextStyle(
+                          color: _blue,
+                          fontSize: 18,
+                          height: 1,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 3),
+                  const Text('Upfront price estimate',
+                      style: TextStyle(color: _muted, fontSize: 11))
+                ])),
+            const SizedBox(width: 12),
+            SizedBox(width: 145, height: 42, child: _bookButton()),
+          ]),
+        ),
       );
 
   Widget _bookButton() => ElevatedButton(
@@ -1095,7 +1109,7 @@ class _FigmaProfileSurface extends StatelessWidget {
             foregroundColor: Colors.white,
             elevation: 0,
             shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(9))),
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
         child: const Text('Book this pro',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
       );
@@ -1320,11 +1334,18 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   Map<String, dynamic>? _profile;
   String _reviewQuery = '';
   _ReviewSort _reviewSort = _ReviewSort.mostRelevant;
+  final ScrollController _profileScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _fetchProfile();
+  }
+
+  @override
+  void dispose() {
+    _profileScrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchProfile() async {
@@ -1954,7 +1975,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         _displayPro['business_hours'] ?? _displayPro['businessHours'];
     final hourRows = _asList(source);
     if (hourRows.isNotEmpty) {
-      final rows = hourRows.map((row) {
+      final rows = hourRows
+          .map((row) {
             final map = _asMap(row);
             final label = _text(
               map['day'],
@@ -1968,7 +1990,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
               _text(map['time'], _text(map['value'])),
             );
             if (value.isNotEmpty) {
-              return MapEntry(_dayLabel(label), _formatBusinessHourRange(value));
+              return MapEntry(
+                  _dayLabel(label), _formatBusinessHourRange(value));
             }
             final open = _text(map['open'], _text(map['start']));
             final close = _text(map['close'], _text(map['end']));
@@ -1977,9 +2000,11 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
               _dayLabel(label),
               '${_formatBusinessHourTime(open)} – ${_formatBusinessHourTime(close)}',
             );
-          }).where((entry) => entry.key.isNotEmpty && entry.value.isNotEmpty).toList();
-      rows.sort((left, right) => _businessDayIndex(left.key)
-          .compareTo(_businessDayIndex(right.key)));
+          })
+          .where((entry) => entry.key.isNotEmpty && entry.value.isNotEmpty)
+          .toList();
+      rows.sort((left, right) =>
+          _businessDayIndex(left.key).compareTo(_businessDayIndex(right.key)));
       return rows;
     }
 
@@ -2030,7 +2055,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
 
   String _formatBusinessHourTime(String value) {
     final source = value.trim();
-    if (source.toLowerCase().contains('am') || source.toLowerCase().contains('pm')) {
+    if (source.toLowerCase().contains('am') ||
+        source.toLowerCase().contains('pm')) {
       return source.toUpperCase();
     }
     final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(source);
@@ -2207,33 +2233,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
 
   String get _tagline => _text(_displayPro['tagline']);
 
-  List<String> get _paymentMethods {
-    const labels = {
-      'cash': 'Cash',
-      'check': 'Check',
-      'credit_card': 'Credit card',
-      'debit_card': 'Debit card',
-      'zelle': 'Zelle',
-      'venmo': 'Venmo',
-      'paypal': 'PayPal',
-      'apple_pay': 'Apple Pay',
-      'google_pay': 'Google Pay',
-      'ach': 'ACH',
-      'financing': 'Financing',
-    };
-    return _asList(
-      _displayPro['payment_methods'] ?? _displayPro['paymentMethods'],
-    ).map((method) {
-      final raw = _text(method).toLowerCase();
-      return labels[raw] ??
-          raw
-              .split('_')
-              .where((part) => part.isNotEmpty)
-              .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
-              .join(' ');
-    }).where((method) => method.isNotEmpty).toSet().toList();
-  }
-
   List<_ProfileService> get _services {
     final seen = <String>{};
     final services = <_ProfileService>[];
@@ -2250,8 +2249,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       final key = '$category|$name|$price'.toLowerCase();
       if (name.isEmpty || !seen.add(key)) continue;
       final minCharge = _formatWebsiteMoney(service['min_charge']);
-      final durationMinutes = _number(service['duration_minutes'] ??
-          service['durationMinutes']);
+      final durationMinutes =
+          _number(service['duration_minutes'] ?? service['durationMinutes']);
       services.add(_ProfileService(
         category: category.isEmpty ? 'Services' : category,
         name: name,
@@ -2309,7 +2308,9 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       result.add(_ProfileCredential(
         icon: Icons.shield_outlined,
         title: 'Insured',
-        detail: carrier.isEmpty ? 'Verified at onboarding' : '$carrier · verified at onboarding',
+        detail: carrier.isEmpty
+            ? 'Verified at onboarding'
+            : '$carrier · verified at onboarding',
       ));
     }
     if (_boolValue(credential['background_checked']) == true) {
@@ -2334,17 +2335,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     final origin = _text(_displayPro['city'], _serviceCities.first);
     return 'Typically travels up to ${radius.toStringAsFixed(radius == radius.roundToDouble() ? 0 : 1)} miles from $origin.';
   }
-
-  Map<String, dynamic> get _emergency => _asMap(_displayPro['emergency']);
-
-  String get _emergencyDetails => _boolValue(_emergency['available']) == true
-      ? _text(_emergency['details'])
-      : '';
-
-  String get _emergencyResponse => _text(
-        _emergency['avg_urgent_response'],
-        _text(_emergency['avgUrgentResponse']),
-      );
 
   String _formatPrice(String raw) {
     final price = raw.trim();
@@ -2455,9 +2445,11 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       for (final item in candidate) {
         final bucket = _asMap(item);
         final stars = _number(
-          bucket['rating'] ?? bucket['stars'] ?? bucket['star'] ?? bucket['key'],
-        )
-            ?.round();
+          bucket['rating'] ??
+              bucket['stars'] ??
+              bucket['star'] ??
+              bucket['key'],
+        )?.round();
         final value = _ratingDistributionValue(bucket);
         if (stars != null && stars >= 1 && stars <= 5 && value != null) {
           output[stars] = value;
@@ -2630,14 +2622,14 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         return reviews;
       case _ReviewSort.highestRating:
         reviews.sort(
-          (a, b) => (_number(b['rating']) ?? 0)
-              .compareTo(_number(a['rating']) ?? 0),
+          (a, b) =>
+              (_number(b['rating']) ?? 0).compareTo(_number(a['rating']) ?? 0),
         );
         return reviews;
       case _ReviewSort.lowestRating:
         reviews.sort(
-          (a, b) => (_number(a['rating']) ?? 0)
-              .compareTo(_number(b['rating']) ?? 0),
+          (a, b) =>
+              (_number(a['rating']) ?? 0).compareTo(_number(b['rating']) ?? 0),
         );
         return reviews;
     }
@@ -2668,22 +2660,42 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     }
   }
 
+  Future<void> _shareContractor() async {
+    final slug = _profileSlug(_displayPro);
+    final service = _serviceLabel.isEmpty ? _category : _serviceLabel;
+    final profileUrl = slug.isEmpty
+        ? 'https://tradeworksai.com/contractors'
+        : 'https://tradeworksai.com/contractors/${Uri.encodeComponent(slug)}';
+    final ratingLine = _rating.isEmpty || _reviewCount.isEmpty
+        ? ''
+        : ' Rated $_rating from $_reviewCount reviews.';
+
+    try {
+      await Share.share(
+        'Check out $_businessName on TradeWorksAI for $service.$ratingLine\n$profileUrl',
+        subject: '$_businessName on TradeWorksAI',
+      );
+    } catch (_) {
+      if (!mounted) return;
+      AppNotification.showInfo(
+        context,
+        'Your device could not open the share options. Please try again.',
+      );
+    }
+  }
+
   Future<void> _openMessage(String? messageUserId) async {
     if (!AuthService.instance.isAuthenticated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please sign in to message this contractor.'),
-          backgroundColor: AppTheme.error,
-        ),
+      AppNotification.showInfo(
+        context,
+        'Please sign in to message this contractor.',
       );
       return;
     }
     if (messageUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Chat is coming soon for this contractor.'),
-          backgroundColor: AppTheme.error,
-        ),
+      AppNotification.showInfo(
+        context,
+        'Chat is coming soon for this contractor.',
       );
       return;
     }
@@ -2757,7 +2769,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       profileImageUrl: _profileImageUrl,
       tagline: _tagline,
       about: _aboutText,
-      paymentMethods: _paymentMethods,
       mediaUrls: _mediaUrls,
       mediaCount: _mediaCount,
       videoCount: _videoCount,
@@ -2770,8 +2781,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       credentials: _credentials,
       serviceCities: _serviceCities,
       serviceAreaNote: _serviceAreaNote,
-      emergencyDetails: _emergencyDetails,
-      emergencyResponse: _emergencyResponse,
       ratingBreakdown: _ratingBreakdown(),
       reviews: _visibleReviews(),
       reviewQuery: _reviewQuery,
@@ -2779,6 +2788,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       responseSummary: _responseSummary,
       loading: _isLoading,
       onBack: () => Navigator.pop(context),
+      onShare: _shareContractor,
       onBook: _openBooking,
       onMessage: () => _openMessage(
         StreamService.instance.resolveMessagingUserId(displayPro),
@@ -2790,6 +2800,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       onReviewSortChanged: (sort) {
         setState(() => _reviewSort = sort);
       },
+      scrollController: _profileScrollController,
     );
   }
 

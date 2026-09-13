@@ -193,13 +193,19 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
     _fetchInboxData();
   }
 
   @override
   void dispose() {
+    HomeownerService.instance.syncVersion.removeListener(_refreshFromSharedSync);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _refreshFromSharedSync() {
+    _fetchInboxData(showLoading: false);
   }
 
   @override
@@ -238,6 +244,9 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
         if (rawJob is! Map) continue;
         final job = Map<String, dynamic>.from(rawJob);
         final proName = job['pro']?['businessName'] ?? 'Service Pro';
+        final proSlug = job['pro'] is Map
+            ? job['pro']['slug']?.toString().trim() ?? ''
+            : '';
         final serviceCategory = job['serviceCategory'] ?? 'Service';
         final status = job['status'] ?? 'pending';
         final woNumber =
@@ -369,6 +378,7 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
         threads.add({
           'id': job['workOrderId']?.toString() ?? '',
           'chatUserId': StreamService.instance.resolveMessagingUserId(job),
+          'proSlug': proSlug,
           'proName': proName,
           'trade': serviceCategory,
           'avatarChar': proName.isNotEmpty ? proName[0].toUpperCase() : 'S',
@@ -473,7 +483,9 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = AppErrorUtils.friendlyMessage(e);
+          _errorMessage = (_threads.isNotEmpty || _activityFeed.isNotEmpty)
+              ? null
+              : AppErrorUtils.friendlyMessage(e);
           _isLoading = false;
         });
       }
@@ -506,11 +518,12 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
     }).join(' ');
   }
 
-  void _openThread(Map<String, dynamic> thread) {
+  Future<void> _openThread(Map<String, dynamic> thread) async {
     setState(() {
       thread['unreadCount'] = 0;
     });
-    final chatUserId = thread['chatUserId']?.toString().trim() ?? '';
+    final chatUserId = await _resolveChatUserId(thread);
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -693,6 +706,21 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
         },
       ),
     );
+  }
+
+  Future<String> _resolveChatUserId(Map<String, dynamic> thread) async {
+    final direct = thread['chatUserId']?.toString().trim() ?? '';
+    if (direct.isNotEmpty) return direct;
+
+    final slug = thread['proSlug']?.toString().trim() ?? '';
+    if (slug.isEmpty) return '';
+
+    try {
+      final response = await HomeownerService.instance.getContractorProfile(slug);
+      return StreamService.instance.resolveMessagingUserId(response) ?? '';
+    } catch (_) {
+      return '';
+    }
   }
   Widget _buildActivityList() {
     if (_activityFeed.isEmpty) {

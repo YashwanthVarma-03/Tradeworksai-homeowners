@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import '../theme.dart';
+import '../widgets/app_notification.dart';
 
 class SupportPage extends StatefulWidget {
   const SupportPage({Key? key}) : super(key: key);
@@ -64,6 +64,19 @@ class _SupportPageState extends State<SupportPage> {
           'We use your home profile (square footage, year built, bedrooms, bathrooms, HVAC, water heater, roof ages) to suggest timely maintenance and pre-fill your bookings. It is kept secure and isn\'t shared beyond the specific pro you book.'
     },
   ];
+
+  Future<void> _openSupportLink(String uri, String label) async {
+    try {
+      final opened = await launchUrlString(uri);
+      if (opened || !mounted) return;
+    } catch (_) {
+      if (!mounted) return;
+    }
+    AppNotification.showInfo(
+      context,
+      'No app is available to $label from this device.',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -158,9 +171,8 @@ class _SupportPageState extends State<SupportPage> {
             children: [
               Expanded(
                 child: InkWell(
-                  onTap: () {
-                    launchUrlString('tel:8134777350');
-                  },
+                  onTap: () =>
+                      _openSupportLink('tel:8134777350', 'make a call'),
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -198,9 +210,10 @@ class _SupportPageState extends State<SupportPage> {
               const SizedBox(width: 12),
               Expanded(
                 child: InkWell(
-                  onTap: () {
-                    launchUrlString('mailto:support@tradeworksai.com');
-                  },
+                  onTap: () => _openSupportLink(
+                    'mailto:support@tradeworksai.com',
+                    'write an email',
+                  ),
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(

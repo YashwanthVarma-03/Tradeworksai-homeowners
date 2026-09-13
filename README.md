@@ -12,8 +12,7 @@ dart run tool/dev_api_proxy.dart
 Then run the app in another:
 
 ```bash
-flutter run -d chrome \
-  --dart-define=TRADEWORKS_GOOGLE_WEB_CLIENT_ID=your-google-web-client-id
+flutter run -d chrome
 ```
 
 Optional env vars for the proxy:
@@ -27,6 +26,17 @@ Optional app overrides:
 
 ```bash
 flutter run -d chrome \
-  --dart-define=TRADEWORKS_API_BASE_URL=http://localhost:8787/ \
-  --dart-define=TRADEWORKS_GOOGLE_WEB_CLIENT_ID=your-google-web-client-id
+  --dart-define=TRADEWORKS_API_BASE_URL=http://localhost:8787/
 ```
+
+## Google sign-in
+
+The app uses the same Supabase-hosted Google OAuth flow as the website. Before
+testing a new web origin or mobile build, add these redirect URLs in Supabase
+Authentication → URL Configuration:
+
+- `com.tradeworksai.homeowners://login-callback`
+- the exact web origin being tested, such as `http://localhost:port`
+
+Google must be enabled in the Supabase Google provider settings with the same
+web OAuth client and secret used by the TradeWorksAI website.

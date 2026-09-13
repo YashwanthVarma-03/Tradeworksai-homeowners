@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
+import '../../widgets/app_notification.dart';
 
 class NteApprovalScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -35,8 +36,10 @@ class _NteApprovalScreenState extends State<NteApprovalScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isProcessing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        AppNotification.showError(
+          context,
+          e,
+          fallback: 'We couldn\'t approve this estimate. Please try again.',
         );
       }
     }
@@ -402,8 +405,8 @@ class _NteApprovalScreenState extends State<NteApprovalScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                textStyle:
-                    const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
+                textStyle: const TextStyle(
+                    fontSize: 13.5, fontWeight: FontWeight.w900),
               ),
               child: _isProcessing
                   ? const SizedBox(

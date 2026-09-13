@@ -44,26 +44,72 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _fetchProfileData();
+    HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
+    _restoreCachedProfileThenRefresh();
   }
 
   @override
   void dispose() {
+    HomeownerService.instance.syncVersion
+        .removeListener(_refreshFromSharedSync);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _refreshFromSharedSync() {
+    _fetchProfileData(showLoading: false);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _fetchProfileData(showLoading: false);
+      _fetchProfileData(showLoading: false, forceRefresh: true);
     }
   }
 
-  Future<void> _fetchProfileData({bool showLoading = true}) async {
+  bool get _hasProfileContent =>
+      _profileData != null ||
+      _addresses.isNotEmpty ||
+      _paymentMethods.isNotEmpty;
+
+  Future<void> _restoreCachedProfileThenRefresh() async {
+    final results = await Future.wait([
+      HomeownerService.instance.loadCachedProfile(),
+      HomeownerService.instance.loadCachedRewards(),
+    ]);
+    if (!mounted) return;
+    final profileResp = results[0] as Map<String, dynamic>?;
+    final rewardsResp = results[1] as Map<String, dynamic>?;
+    if (profileResp != null || rewardsResp != null) {
+      final profile = profileResp?['profile'];
+      setState(() {
+        _profileData = profile == null ? null : _asMap(profile);
+        _addresses = profileResp?['addresses'] as List? ??
+            (profile is Map ? profile['addresses'] as List? : null) ??
+            const [];
+        _paymentMethods = profileResp?['paymentMethods'] as List? ??
+            (profile is Map ? profile['paymentMethods'] as List? : null) ??
+            const [];
+        _rewardsBalance = _amountFrom(
+          rewardsResp?['balance'] ??
+              rewardsResp?['rewardsBalance'] ??
+              rewardsResp?['availableCredits'] ??
+              rewardsResp?['availableServiceCredits'],
+        );
+        _isLoading = false;
+        _errorMessage = null;
+      });
+    }
+    await _fetchProfileData(showLoading: false, forceRefresh: true);
+  }
+
+  Future<void> _fetchProfileData({
+    bool showLoading = true,
+    bool forceRefresh = false,
+  }) async {
     if (!mounted || _isRefreshing) return;
     _isRefreshing = true;
-    if (showLoading || (_profileData == null && _addresses.isEmpty)) {
+    if (showLoading && !_hasProfileContent) {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
@@ -73,8 +119,10 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     }
 
     try {
-      final profileResp = await HomeownerService.instance.fetchProfile();
-      final rewardsResp = await HomeownerService.instance.fetchRewards();
+      final profileResp = await HomeownerService.instance
+          .fetchProfile(forceRefresh: forceRefresh);
+      final rewardsResp = await HomeownerService.instance
+          .fetchRewards(forceRefresh: forceRefresh);
       if (!mounted) return;
       setState(() {
         _profileData = _asMap(profileResp['profile']);
@@ -95,7 +143,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = AppErrorUtils.friendlyMessage(e);
+        _errorMessage =
+            _hasProfileContent ? null : AppErrorUtils.friendlyMessage(e);
         _isLoading = false;
       });
     } finally {
@@ -132,16 +181,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 110),
           children: [
-            const Text(
-              'Profile',
-              style: TextStyle(
-                color: AppTheme.navy700,
-                fontSize: 23,
-                height: 1,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 20),
             _accountHeader(),
             const SizedBox(height: 12),
             _creditsCard(),
@@ -279,11 +318,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                 ),
               ],
             ),
-          ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: _mutedText,
-            size: 24,
           ),
         ],
       ),
@@ -452,15 +486,32 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
   }
 
   Widget _signOutButton() {
-    return TextButton.icon(
-      onPressed: widget.onLogout,
-      icon: const Icon(Icons.logout_rounded, size: 18),
-      label: const Text('Sign out'),
-      style: TextButton.styleFrom(
-        foregroundColor: AppTheme.error,
-        textStyle: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w800,
+    // ListView supplies tight horizontal constraints to its children. Keep the
+    // button itself content-sized so its hover/focus ink and tap target do not
+    // extend across the full profile page.
+    return Center(
+      // The explicit box is intentional: it prevents Material's interactive
+      // surface from inheriting ListView's full-width constraint on web.
+      child: SizedBox(
+        width: 148,
+        height: 44,
+        child: TextButton.icon(
+          onPressed: widget.onLogout,
+          icon: const Icon(Icons.logout_rounded, size: 18),
+          label: const Text('Sign out'),
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.error,
+            backgroundColor: Colors.transparent,
+            overlayColor: AppTheme.error.withOpacity(0.12),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: const StadiumBorder(),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            textStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
       ),
     );
@@ -563,11 +614,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
         .split(RegExp(r'\s+'))
         .where((part) => part.trim().isNotEmpty)
         .toList();
-    final value = parts
-        .map((part) => part.trim()[0])
-        .take(2)
-        .join()
-        .toUpperCase();
+    final value =
+        parts.map((part) => part.trim()[0]).take(2).join().toUpperCase();
     return value.isEmpty ? 'H' : value;
   }
 

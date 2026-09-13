@@ -18,7 +18,12 @@ class RewardTab extends StatefulWidget {
 }
 
 class _RewardTabState extends State<RewardTab> {
+  static const Color _cardLine = Color(0xFFE6E8EC);
+  static const Color _mutedText = Color(0xFF64748B);
+  static const Color _progressTrack = Color(0xFFE2E8F0);
+
   bool _isLoading = true;
+  bool _isRefreshing = false;
   String? _errorMessage;
   double? _rewardsBalance;
   double? _rewardsEarnedThisYear;
@@ -30,15 +35,36 @@ class _RewardTabState extends State<RewardTab> {
   @override
   void initState() {
     super.initState();
+    HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
     _fetchRewardsData();
   }
 
-  Future<void> _fetchRewardsData() async {
-    if (!mounted) return;
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  @override
+  void dispose() {
+    HomeownerService.instance.syncVersion.removeListener(_refreshFromSharedSync);
+    super.dispose();
+  }
+
+  bool get _hasRewardsContent =>
+      _rewardsBalance != null ||
+      _rewardsEarnedThisYear != null ||
+      _ytdSpend != null ||
+      _ledger.isNotEmpty ||
+      _tiers.isNotEmpty;
+
+  void _refreshFromSharedSync() {
+    _fetchRewardsData(showLoading: false);
+  }
+
+  Future<void> _fetchRewardsData({bool showLoading = true}) async {
+    if (!mounted || _isRefreshing) return;
+    _isRefreshing = true;
+    if (showLoading && !_hasRewardsContent) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
       final data = await HomeownerService.instance.fetchRewards();
@@ -72,9 +98,11 @@ class _RewardTabState extends State<RewardTab> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = AppErrorUtils.friendlyMessage(e);
+        _errorMessage = _hasRewardsContent ? null : AppErrorUtils.friendlyMessage(e);
         _isLoading = false;
       });
+    } finally {
+      _isRefreshing = false;
     }
   }
 
@@ -105,50 +133,43 @@ class _RewardTabState extends State<RewardTab> {
         color: AppTheme.orange500,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 24, 18, 24),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
           children: [
-            const Text(
-              'Rewards',
-              style: TextStyle(
-                color: AppTheme.navy700,
-                fontSize: 25,
-                height: 1,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 7),
             const Text(
               'Available service credits',
               style: TextStyle(
-                color: AppTheme.gray,
+                color: _mutedText,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             _balanceCard(balance: balance, hasRewards: hasRewards),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             if (hasRewards) ...[
               if (_ytdSpend != null ||
                   _rewardsEarnedThisYear != null ||
                   _rewardsRate != null)
                 _progressCard(),
+              if (_ytdSpend != null ||
+                  _rewardsEarnedThisYear != null ||
+                  _rewardsRate != null)
+                const SizedBox(height: 20),
+              _howItWorksCard(),
               if (_ledger.isNotEmpty) ...[
-                const SizedBox(height: 18),
+                const SizedBox(height: 20),
                 _activityCard(),
-              ],
-              if (_ledger.isEmpty &&
-                  _ytdSpend == null &&
+              ] else if (_ytdSpend == null &&
                   _rewardsEarnedThisYear == null &&
-                  _rewardsRate == null)
+                  _rewardsRate == null) ...[
+                const SizedBox(height: 20),
                 _backendEmptyCard(),
+              ],
             ] else ...[
               _firstBookingCard(),
-              if (_tiers.isNotEmpty) ...[
-                const SizedBox(height: 18),
-                _tiersCard(),
-              ],
-              const SizedBox(height: 22),
+              const SizedBox(height: 20),
+              _tiersCard(),
+              const SizedBox(height: 20),
               _browseButton(),
             ],
           ],
@@ -217,9 +238,11 @@ class _RewardTabState extends State<RewardTab> {
   Widget _balanceCard({required double balance, required bool hasRewards}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppTheme.navy700,
+        gradient: const LinearGradient(
+          colors: [AppTheme.navy700, Color(0xFF2E4E80)],
+        ),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -236,7 +259,7 @@ class _RewardTabState extends State<RewardTab> {
                     _money(balance, cents: true),
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 39,
+                      fontSize: 36,
                       height: 1,
                       fontWeight: FontWeight.w900,
                     ),
@@ -245,23 +268,23 @@ class _RewardTabState extends State<RewardTab> {
               ),
               if (hasRewards)
                 Container(
-                  margin: const EdgeInsets.only(top: 4, left: 10),
+                  margin: const EdgeInsets.only(left: 8),
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: AppTheme.teal500,
-                    borderRadius: BorderRadius.circular(7),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.check_rounded, color: Colors.white, size: 14),
-                      SizedBox(width: 5),
+                      Icon(Icons.check_rounded, color: Colors.white, size: 12),
+                      SizedBox(width: 4),
                       Text(
                         'Auto-applied',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -270,7 +293,7 @@ class _RewardTabState extends State<RewardTab> {
                 ),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 16),
           Text(
             hasRewards
                 ? 'Applied automatically at checkout'
@@ -297,32 +320,208 @@ class _RewardTabState extends State<RewardTab> {
             Text(
               '${_money(_ytdSpend!)} spent this year',
               style: const TextStyle(
-                color: AppTheme.gray,
+                color: _mutedText,
                 fontSize: 13,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],
           const SizedBox(height: 12),
-          const Divider(height: 1, color: AppTheme.line),
+          const Divider(height: 1, color: _cardLine),
           if (_rewardsEarnedThisYear != null) ...[
             const SizedBox(height: 12),
-            _dataLine(
-              'Earned this year',
-              _money(_rewardsEarnedThisYear!, cents: true),
-              valueColor: AppTheme.success,
+            _progressRow(
+              label: 'CREDITS EARNED',
+              detail: 'This year',
+              value: '+${_money(_rewardsEarnedThisYear!, cents: true)}',
+              valueColor: AppTheme.teal500,
+              progress: _spendProgress,
+              leadingIcon: Icons.check_circle_rounded,
             ),
           ],
           if (_rewardsRate != null) ...[
             const SizedBox(height: 12),
-            _dataLine(
-              'Current rate',
-              '${(_rewardsRate! * 100).toStringAsFixed(_rewardsRate! * 100 % 1 == 0 ? 0 : 1)}% back',
-              valueColor: AppTheme.teal500,
+            _progressRow(
+              label: 'CURRENT RATE',
+              detail: 'On eligible services',
+              value:
+                  '${(_rewardsRate! * 100).toStringAsFixed(_rewardsRate! * 100 % 1 == 0 ? 0 : 1)}% back',
+              valueColor: AppTheme.orange500,
+              progress: _spendProgress,
             ),
           ],
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: _cardLine),
+          const SizedBox(height: 12),
+          const Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded,
+                  size: 14, color: AppTheme.teal500),
+              SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Credits are applied automatically when you book.',
+                  style: TextStyle(
+                    color: AppTheme.ink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
+    );
+  }
+
+  double get _spendProgress {
+    if (_ytdSpend == null || _ytdSpend! <= 0) return 0;
+    return (_ytdSpend! / 25000).clamp(0.0, 1.0).toDouble();
+  }
+
+  Widget _progressRow({
+    required String label,
+    required String detail,
+    required String value,
+    required Color valueColor,
+    required double progress,
+    IconData? leadingIcon,
+  }) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.navy700,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      detail,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _mutedText,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (leadingIcon != null) ...[
+              Icon(leadingIcon, size: 14, color: valueColor),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              value,
+              style: TextStyle(
+                color: valueColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 6,
+            color: valueColor,
+            backgroundColor: _progressTrack,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _howItWorksCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle('HOW IT WORKS'),
+          const SizedBox(height: 16),
+          _howItWorksRow(
+            icon: Icons.event_available_outlined,
+            title: '1. Book a service',
+            description: 'Earn credits on every completed work order',
+          ),
+          const SizedBox(height: 16),
+          _howItWorksRow(
+            icon: Icons.trending_up_rounded,
+            title: '2. Credits accumulate',
+            description: 'Higher tiers unlock as you spend more each year',
+          ),
+          const SizedBox(height: 16),
+          _howItWorksRow(
+            icon: Icons.shopping_cart_outlined,
+            title: '3. Use at checkout',
+            description: 'Credits apply automatically when you book.',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _howItWorksRow({
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: const BoxDecoration(
+            color: _progressTrack,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 14, color: AppTheme.navy700),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppTheme.ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                description,
+                style: const TextStyle(
+                  color: _mutedText,
+                  fontSize: 12,
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -332,7 +531,7 @@ class _RewardTabState extends State<RewardTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionTitle('RECENT ACTIVITY'),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           ...List.generate(_ledger.length.clamp(0, 4), (index) {
             final item = _ledger[index];
             return Column(
@@ -341,7 +540,7 @@ class _RewardTabState extends State<RewardTab> {
                 if (index < _ledger.length.clamp(0, 4) - 1)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Divider(height: 1, color: AppTheme.line),
+                    child: Divider(height: 1, color: _cardLine),
                   ),
               ],
             );
@@ -353,42 +552,42 @@ class _RewardTabState extends State<RewardTab> {
 
   Widget _firstBookingCard() {
     return _card(
-      padding: const EdgeInsets.fromLTRB(18, 22, 18, 24),
+      padding: const EdgeInsets.all(24),
       child: Column(
         children: [
           Container(
-            width: 58,
-            height: 58,
+            width: 64,
+            height: 64,
             decoration: const BoxDecoration(
               color: AppTheme.tealTint,
               shape: BoxShape.circle,
             ),
             child: const Icon(
-              Icons.card_giftcard_rounded,
+              Icons.card_giftcard_outlined,
               color: AppTheme.teal500,
-              size: 29,
+              size: 32,
             ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 16),
           const Text(
             'Earn credits on every booking',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppTheme.navy700,
-              fontSize: 17,
+              fontSize: 18,
               height: 1.15,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           const Text(
-            'Credits from completed work orders will appear here after the backend returns rewards activity.',
+            'Get 3–7% back as service credits on every completed work order. Credits are applied automatically the next time you book — no codes needed.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: AppTheme.gray,
+              color: _mutedText,
               fontSize: 13,
-              height: 1.35,
-              fontWeight: FontWeight.w500,
+              height: 1.4,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ],
@@ -403,9 +602,21 @@ class _RewardTabState extends State<RewardTab> {
         children: [
           _sectionTitle('EARNING TIERS'),
           const SizedBox(height: 12),
-          const Divider(height: 1, color: AppTheme.line),
+          const Divider(height: 1, color: _cardLine),
           const SizedBox(height: 12),
-          ...List.generate(_tiers.length, (index) {
+          ...List.generate(_tiers.isEmpty ? 3 : _tiers.length, (index) {
+            if (_tiers.isEmpty) {
+              const rates = ['3% BACK', '5% BACK', '7% BACK'];
+              const labels = [
+                'First \$5,000',
+                '\$5,000–\$15,000',
+                '\$15,000–\$25,000',
+              ];
+              return Padding(
+                padding: EdgeInsets.only(bottom: index == 2 ? 0 : 12),
+                child: _staticTierLine(rates[index], labels[index]),
+              );
+            }
             final tier = _tiers[index];
             return Padding(
               padding:
@@ -420,21 +631,34 @@ class _RewardTabState extends State<RewardTab> {
 
   Widget _backendEmptyCard() {
     return _card(
-      child: const Text(
-        'Rewards data is available, but this response did not include progress or activity details.',
-        style: TextStyle(
-          color: AppTheme.gray,
-          fontSize: 13,
-          height: 1.35,
-          fontWeight: FontWeight.w500,
-        ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Rewards details are on the way',
+            style: TextStyle(
+              color: AppTheme.navy700,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Your available credits are shown above. More earning details will appear here when available.',
+            style: TextStyle(
+              color: _mutedText,
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _card({
     required Widget child,
-    EdgeInsetsGeometry padding = const EdgeInsets.all(14),
+    EdgeInsetsGeometry padding = const EdgeInsets.all(16),
   }) {
     return Container(
       width: double.infinity,
@@ -442,7 +666,7 @@ class _RewardTabState extends State<RewardTab> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.line),
+        border: Border.all(color: _cardLine),
       ),
       child: child,
     );
@@ -455,33 +679,8 @@ class _RewardTabState extends State<RewardTab> {
         color: AppTheme.navy700,
         fontSize: 14,
         fontWeight: FontWeight.w900,
-        letterSpacing: 0.7,
+        letterSpacing: 0.5,
       ),
-    );
-  }
-
-  Widget _dataLine(String label, String value, {Color? valueColor}) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: AppTheme.gray,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            color: valueColor ?? AppTheme.ink,
-            fontSize: 13.5,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
     );
   }
 
@@ -516,9 +715,9 @@ class _RewardTabState extends State<RewardTab> {
                 Text(
                   date,
                   style: const TextStyle(
-                    color: AppTheme.gray,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                    color: _mutedText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
               ],
@@ -527,10 +726,10 @@ class _RewardTabState extends State<RewardTab> {
         ),
         const SizedBox(width: 10),
         Text(
-          '${isEarned ? '+' : '-'}${_money(amount.abs(), cents: true)}',
+          '${isEarned ? '+' : '−'}${_money(amount.abs(), cents: true)} ${isEarned ? 'earned' : 'applied'}',
           style: TextStyle(
-            color: isEarned ? AppTheme.success : AppTheme.error,
-            fontSize: 13.5,
+            color: isEarned ? AppTheme.success : AppTheme.navy700,
+            fontSize: 13,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -552,7 +751,7 @@ class _RewardTabState extends State<RewardTab> {
           Text(
             rate,
             style: const TextStyle(
-              color: AppTheme.gray,
+              color: _mutedText,
               fontSize: 13,
               fontWeight: FontWeight.w900,
             ),
@@ -563,8 +762,8 @@ class _RewardTabState extends State<RewardTab> {
           child: Text(
             label,
             style: const TextStyle(
-              color: AppTheme.gray,
-              fontSize: 12.5,
+              color: _mutedText,
+              fontSize: 11,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -573,11 +772,45 @@ class _RewardTabState extends State<RewardTab> {
           Text(
             earned,
             style: const TextStyle(
-              color: AppTheme.gray,
+              color: _mutedText,
               fontSize: 13,
               fontWeight: FontWeight.w900,
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _staticTierLine(String rate, String range) {
+    return Row(
+      children: [
+        Text(
+          rate,
+          style: const TextStyle(
+            color: _mutedText,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            range,
+            style: const TextStyle(
+              color: _mutedText,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const Text(
+          '\$0 earned',
+          style: TextStyle(
+            color: _mutedText,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
       ],
     );
   }

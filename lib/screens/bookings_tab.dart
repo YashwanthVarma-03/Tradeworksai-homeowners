@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
+import '../widgets/app_notification.dart';
 import 'work_orders/work_order_detail.dart';
 import 'work_orders/quote_review.dart';
 import 'work_orders/leave_review.dart';
+import 'work_orders/reschedule_work_order.dart';
 
 class BookingsTab extends StatefulWidget {
   final VoidCallback onBookNowTap;
@@ -36,19 +40,26 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     super.initState();
     _activeSegment = _normalizeSegment(widget.initialSegment);
     WidgetsBinding.instance.addObserver(this);
-    _fetchJobs(showLoading: true);
+    HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
+    _restoreCachedJobsThenRefresh();
   }
 
   @override
   void dispose() {
+    HomeownerService.instance.syncVersion
+        .removeListener(_refreshFromSharedSync);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _refreshFromSharedSync() {
+    _fetchJobs(showLoading: false);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _fetchJobs(showLoading: false);
+      _fetchJobs(showLoading: false, forceRefresh: true);
     }
   }
 
@@ -69,14 +80,90 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _fetchJobs({required bool showLoading}) async {
+  bool get _hasJobs =>
+      _activeJobs.isNotEmpty ||
+      _scheduledJobs.isNotEmpty ||
+      _historyJobs.isNotEmpty;
+
+  Future<void> _restoreCachedJobsThenRefresh() async {
+    final cached = await HomeownerService.instance.loadCachedWorkOrders();
+    if (!mounted) return;
+    if (cached != null) {
+      final tabs = cached['tabs'];
+      _applyJobs(tabs);
+    }
+    await _fetchJobs(showLoading: false, forceRefresh: true);
+  }
+
+  void _applyJobs(dynamic tabs) {
+    final rawActive = tabs is Map
+        ? List<dynamic>.from(tabs['active'] ?? const [])
+        : <dynamic>[];
+    final rawScheduled = tabs is Map
+        ? List<dynamic>.from(tabs['scheduled'] ?? const [])
+        : <dynamic>[];
+    final filteredActive = <dynamic>[];
+    final filteredScheduled = [...rawScheduled];
+    for (final job in rawActive) {
+      if (job is Map && job['status'] == 'reschedule_pending') {
+        filteredScheduled.add(job);
+      } else {
+        filteredActive.add(job);
+      }
+    }
+    filteredScheduled.sort((a, b) {
+      final aStart = a is Map ? (a['scheduledStart'] ?? '') : '';
+      final bStart = b is Map ? (b['scheduledStart'] ?? '') : '';
+      return aStart.compareTo(bStart);
+    });
+    setState(() {
+      _activeJobs = filteredActive;
+      _scheduledJobs = filteredScheduled;
+      _historyJobs =
+          tabs is Map ? List<dynamic>.from(tabs['history'] ?? []) : [];
+      _isLoading = false;
+      _errorMessage = null;
+    });
+    unawaited(_hydrateExistingReviews());
+  }
+
+  /// Work-order list responses can omit the nested review while eligibility
+  /// correctly reports that one already exists. Load those completed reviews
+  /// before rendering history so the homeowner sees what they submitted.
+  Future<void> _hydrateExistingReviews() async {
+    final jobs = <dynamic>[..._historyJobs, ..._activeJobs, ..._scheduledJobs];
+    final pending = jobs.whereType<Map>().map((raw) async {
+      final job = Map<String, dynamic>.from(raw);
+      final jobId = _resolveWorkOrderId(job);
+      if (jobId == 0 || _localReviews.containsKey(jobId) || !_isCompleted(job)) {
+        return;
+      }
+      try {
+        final review = await HomeownerService.instance.getReview(jobId);
+        if (review == null || !mounted) return;
+        setState(() => _localReviews[jobId] = review);
+      } catch (_) {
+        // The booking itself remains usable if a historical review is offline.
+      }
+    });
+    await Future.wait(pending);
+  }
+
+  bool _isCompleted(Map<String, dynamic> job) {
+    final status = _string(job['status'])?.toLowerCase() ?? '';
+    return status == 'completed' ||
+        status == 'complete' ||
+        (job['timeline'] is Map && job['timeline']['completedAt'] != null);
+  }
+
+  Future<void> _fetchJobs({
+    required bool showLoading,
+    bool forceRefresh = false,
+  }) async {
     if (!mounted) return;
     if (_isRefreshing) return;
     _isRefreshing = true;
-    if (showLoading ||
-        (_activeJobs.isEmpty &&
-            _scheduledJobs.isEmpty &&
-            _historyJobs.isEmpty)) {
+    if (showLoading && !_hasJobs) {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
@@ -85,41 +172,18 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       _errorMessage = null;
     }
     try {
-      final woData = await HomeownerService.instance.fetchWorkOrders();
+      final woData = await HomeownerService.instance.fetchWorkOrders(
+        forceRefresh: forceRefresh,
+      );
       final tabs = woData['tabs'];
       if (mounted) {
-        setState(() {
-          final rawActive = tabs != null ? List<dynamic>.from(tabs['active'] ?? []) : [];
-          final rawScheduled = tabs != null ? List<dynamic>.from(tabs['scheduled'] ?? []) : [];
-          
-          final List<dynamic> filteredActive = [];
-          final List<dynamic> filteredScheduled = [...rawScheduled];
-          
-          for (final job in rawActive) {
-            if (job is Map && job['status'] == 'reschedule_pending') {
-              filteredScheduled.add(job);
-            } else {
-              filteredActive.add(job);
-            }
-          }
-          
-          filteredScheduled.sort((a, b) {
-            final aStart = a is Map ? (a['scheduledStart'] ?? '') : '';
-            final bStart = b is Map ? (b['scheduledStart'] ?? '') : '';
-            return aStart.compareTo(bStart);
-          });
-          
-          _activeJobs = filteredActive;
-          _scheduledJobs = filteredScheduled;
-          _historyJobs = tabs != null ? (tabs['history'] ?? []) : [];
-          _isLoading = false;
-        });
-
+        _applyJobs(tabs);
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _errorMessage =
+              _hasJobs ? null : e.toString().replaceAll('Exception: ', '');
           _isLoading = false;
         });
       }
@@ -136,8 +200,12 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
 
   List<Map<String, dynamic>> get _upcomingJobs {
     return [
-      ..._activeJobs.whereType<Map>().map((job) => Map<String, dynamic>.from(job)),
-      ..._scheduledJobs.whereType<Map>().map((job) => Map<String, dynamic>.from(job)),
+      ..._activeJobs
+          .whereType<Map>()
+          .map((job) => Map<String, dynamic>.from(job)),
+      ..._scheduledJobs
+          .whereType<Map>()
+          .map((job) => Map<String, dynamic>.from(job)),
     ];
   }
 
@@ -197,11 +265,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         .split(RegExp(r'\s+'))
         .where((part) => part.trim().isNotEmpty)
         .toList();
-    final initials = parts
-        .map((part) => part.trim()[0])
-        .take(2)
-        .join()
-        .toUpperCase();
+    final initials =
+        parts.map((part) => part.trim()[0]).take(2).join().toUpperCase();
     return initials.isEmpty ? 'P' : initials;
   }
 
@@ -218,24 +283,35 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return int.tryParse(rawRating?.toString() ?? '')?.clamp(0, 5) ?? 0;
   }
 
+  String _jobReviewText(Map<String, dynamic> job) {
+    final jobId = _resolveWorkOrderId(job);
+    final localText = _localReviews[jobId]?['reviewText']?.toString().trim();
+    if (localText != null && localText != 'Already reviewed') {
+      return localText;
+    }
+
+    return (job['reviewText'] ??
+            job['review']?['text'] ??
+            job['review']?['reviewText'] ??
+            job['review']?['comment'] ??
+            job['homeownerReview']?['text'] ??
+            job['homeownerReview']?['reviewText'] ??
+            job['homeownerReview']?['comment'] ??
+            job['homeowner_review']?['text'] ??
+            job['homeowner_review']?['reviewText'] ??
+            job['homeowner_review']?['comment'] ??
+            job['reviews']?['text'] ??
+            job['reviews']?['reviewText'] ??
+            job['reviews']?['comment'] ??
+            '')
+        .toString()
+        .trim();
+  }
+
   bool _jobHasReview(Map<String, dynamic> job) {
     final jobId = _resolveWorkOrderId(job);
     final localReview = _localReviews[jobId];
-    final localText = localReview?['reviewText']?.toString().trim();
-    final reviewText = localText == 'Already reviewed'
-        ? ''
-        : localText ??
-            (job['reviewText'] ??
-                    job['review']?['text'] ??
-                    job['review']?['reviewText'] ??
-                    job['homeownerReview']?['text'] ??
-                    job['homeownerReview']?['reviewText'] ??
-                    job['homeowner_review']?['text'] ??
-                    job['homeowner_review']?['reviewText'] ??
-                    job['reviews']?['text'] ??
-                    '')
-                .toString()
-                .trim();
+    final reviewText = _jobReviewText(job);
     return job['reviewed'] == true ||
         localReview != null ||
         reviewText.isNotEmpty ||
@@ -314,6 +390,19 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _openReschedule(Map<String, dynamic> job) async {
+    final changed = await openRescheduleWorkOrder(context, job);
+    if (changed && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reschedule request sent successfully.'),
+          backgroundColor: AppTheme.success,
+        ),
+      );
+      _fetchJobs(showLoading: false, forceRefresh: true);
+    }
+  }
+
   void _rescheduleDialog(Map<String, dynamic> job) async {
     final woId = _resolveWorkOrderId(job);
     var contractorId = _resolveContractorId(job);
@@ -323,10 +412,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     }
     if (!mounted) return;
     if (contractorId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Contractor info not available for reschedule'),
-            backgroundColor: AppTheme.error),
+      AppNotification.showInfo(
+        context,
+        'Rescheduling is not available for this booking yet.',
       );
       return;
     }
@@ -358,12 +446,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
 
       if (slots.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'No slots available for this contractor in the next 7 days. Please check again later.'),
-              backgroundColor: AppTheme.error,
-            ),
+          AppNotification.showInfo(
+            context,
+            'No alternate times are available in the next 7 days. Please check again later.',
           );
         }
         return;
@@ -390,204 +475,282 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         context: context,
         isScrollControlled: true,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         builder: (sheetContext) {
           String selectedDate = sortedDates.first;
           Map<String, dynamic>? selectedSlot = slotsByDate[selectedDate]?.first;
-          final reasonController = TextEditingController(text: 'Homeowner requested reschedule');
+          final reasonController =
+              TextEditingController(text: 'Homeowner requested reschedule');
 
           return StatefulBuilder(
             builder: (BuildContext context, StateSetter setModalState) {
               final activeSlots = slotsByDate[selectedDate] ?? [];
 
               return SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, MediaQuery.of(context).viewInsets.bottom + 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: AppTheme.line,
-                            borderRadius: BorderRadius.circular(99),
+                child: Container(
+                  color: Colors.white,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16,
+                        MediaQuery.of(context).viewInsets.bottom + 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 42,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: AppTheme.line,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Propose Reschedule',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: AppTheme.navy700,
+                        const SizedBox(height: 16),
+                        Row(children: [
+                          const Expanded(
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Propose Reschedule',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 22,
+                                          color: AppTheme.navy700)),
+                                  SizedBox(height: 3),
+                                  Text('Choose a new time for this booking',
+                                      style: TextStyle(
+                                          fontSize: 12, color: AppTheme.gray)),
+                                ]),
+                          ),
+                          IconButton(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              icon: const Icon(Icons.close,
+                                  color: AppTheme.navy700)),
+                        ]),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Select Date:',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.navy700),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Select Date:',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.navy700),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 44,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: sortedDates.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 8),
-                          itemBuilder: (context, idx) {
-                            final dateKey = sortedDates[idx];
-                            final isSelected = dateKey == selectedDate;
-                            final parsedDate = DateTime.tryParse(dateKey) ?? DateTime.now();
-                            final weekDayStr = const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][parsedDate.weekday - 1];
-                            final monthStr = const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parsedDate.month - 1];
-                            final label = '$weekDayStr, $monthStr ${parsedDate.day}';
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 44,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: sortedDates.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 8),
+                            itemBuilder: (context, idx) {
+                              final dateKey = sortedDates[idx];
+                              final isSelected = dateKey == selectedDate;
+                              final parsedDate =
+                                  DateTime.tryParse(dateKey) ?? DateTime.now();
+                              final weekDayStr = const [
+                                'Mon',
+                                'Tue',
+                                'Wed',
+                                'Thu',
+                                'Fri',
+                                'Sat',
+                                'Sun'
+                              ][parsedDate.weekday - 1];
+                              final monthStr = const [
+                                'Jan',
+                                'Feb',
+                                'Mar',
+                                'Apr',
+                                'May',
+                                'Jun',
+                                'Jul',
+                                'Aug',
+                                'Sep',
+                                'Oct',
+                                'Nov',
+                                'Dec'
+                              ][parsedDate.month - 1];
+                              final label =
+                                  '$weekDayStr, $monthStr ${parsedDate.day}';
+
+                              return ChoiceChip(
+                                label: Text(label),
+                                selected: isSelected,
+                                selectedColor: AppTheme.orange500,
+                                backgroundColor: AppTheme.pageAlt,
+                                labelStyle: TextStyle(
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppTheme.navy700,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                onSelected: (val) {
+                                  if (val) {
+                                    setModalState(() {
+                                      selectedDate = dateKey;
+                                      selectedSlot =
+                                          slotsByDate[dateKey]?.first;
+                                    });
+                                  }
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Select Time:',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.navy700),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: activeSlots.map((slot) {
+                            final startStr = slot['start']?.toString() ?? '';
+                            final parsedTime =
+                                DateTime.tryParse(startStr) ?? DateTime.now();
+                            final hour = parsedTime.hour > 12
+                                ? parsedTime.hour - 12
+                                : (parsedTime.hour == 0 ? 12 : parsedTime.hour);
+                            final min =
+                                parsedTime.minute.toString().padLeft(2, '0');
+                            final period = parsedTime.hour >= 12 ? 'PM' : 'AM';
+                            final timeLabel = '$hour:$min $period';
+                            final isSelected = selectedSlot == slot;
 
                             return ChoiceChip(
-                              label: Text(label),
+                              label: Text(timeLabel),
                               selected: isSelected,
                               selectedColor: AppTheme.orange500,
                               backgroundColor: AppTheme.pageAlt,
                               labelStyle: TextStyle(
-                                color: isSelected ? Colors.white : AppTheme.navy700,
+                                color: isSelected
+                                    ? Colors.white
+                                    : AppTheme.navy700,
                                 fontWeight: FontWeight.bold,
                               ),
                               onSelected: (val) {
                                 if (val) {
                                   setModalState(() {
-                                    selectedDate = dateKey;
-                                    selectedSlot = slotsByDate[dateKey]?.first;
+                                    selectedSlot = slot;
                                   });
                                 }
                               },
                             );
-                          },
+                          }).toList(),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Select Time:',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.navy700),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: activeSlots.map((slot) {
-                          final startStr = slot['start']?.toString() ?? '';
-                          final parsedTime = DateTime.tryParse(startStr) ?? DateTime.now();
-                          final hour = parsedTime.hour > 12 ? parsedTime.hour - 12 : (parsedTime.hour == 0 ? 12 : parsedTime.hour);
-                          final min = parsedTime.minute.toString().padLeft(2, '0');
-                          final period = parsedTime.hour >= 12 ? 'PM' : 'AM';
-                          final timeLabel = '$hour:$min $period';
-                          final isSelected = selectedSlot == slot;
-
-                          return ChoiceChip(
-                            label: Text(timeLabel),
-                            selected: isSelected,
-                            selectedColor: AppTheme.orange500,
-                            backgroundColor: AppTheme.pageAlt,
-                            labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : AppTheme.navy700,
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Reason for Rescheduling:',
+                          style: TextStyle(
                               fontWeight: FontWeight.bold,
-                            ),
-                            onSelected: (val) {
-                              if (val) {
-                                setModalState(() {
-                                  selectedSlot = slot;
-                                });
-                              }
-                            },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Reason for Rescheduling:',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.navy700),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: reasonController,
-                        maxLines: 2,
-                        decoration: InputDecoration(
-                          hintText: 'Enter reason here...',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.all(12),
+                              color: AppTheme.navy700),
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(sheetContext),
-                              child: const Text('Cancel', style: TextStyle(color: AppTheme.navy700)),
-                            ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: reasonController,
+                          maxLines: 2,
+                          decoration: InputDecoration(
+                            hintText: 'Enter reason here...',
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                            contentPadding: const EdgeInsets.all(12),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.orange500),
-                              onPressed: selectedSlot == null ? null : () async {
-                                final start = selectedSlot!['start']?.toString() ?? '';
-                                final end = selectedSlot!['end']?.toString() ?? '';
-                                final reason = reasonController.text.trim().isNotEmpty
-                                    ? reasonController.text.trim()
-                                    : 'Homeowner requested reschedule';
-                                Navigator.pop(sheetContext);
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(sheetContext),
+                            style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, 48)),
+                            child: const Text('Cancel',
+                                style: TextStyle(
+                                    color: AppTheme.navy700,
+                                    fontWeight: FontWeight.w800)),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size(0, 48),
+                              backgroundColor: AppTheme.orange500,
+                            ),
+                            onPressed: selectedSlot == null
+                                ? null
+                                : () async {
+                                    final start =
+                                        selectedSlot!['start']?.toString() ??
+                                            '';
+                                    final end =
+                                        selectedSlot!['end']?.toString() ?? '';
+                                    final reason =
+                                        reasonController.text.trim().isNotEmpty
+                                            ? reasonController.text.trim()
+                                            : 'Homeowner requested reschedule';
+                                    Navigator.pop(sheetContext);
 
-                                try {
-                                  showDialog(
-                                    context: this.context,
-                                    barrierDismissible: false,
-                                    builder: (context) => const Center(
-                                      child: CircularProgressIndicator(color: AppTheme.orange500),
-                                    ),
-                                  );
-                                  await HomeownerService.instance.performWorkOrderAction(
-                                    workOrderId: woId,
-                                    action: 'propose_reschedule',
-                                    extra: {
-                                      'proposedStart': start,
-                                      'proposedEnd': end,
-                                      'reason': reason,
-                                      'contractorId': contractorId,
-                                      'requester_user_id': AuthService.instance.userId,
-                                    },
-                                  );
-                                  if (mounted) Navigator.pop(this.context);
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(this.context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Reschedule request sent successfully'),
-                                        backgroundColor: AppTheme.success,
-                                      ),
-                                    );
-                                    _fetchJobs(showLoading: false);
-                                  }
-                                } catch (e) {
-                                  if (mounted) Navigator.pop(this.context);
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(this.context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Reschedule failed: ${e.toString()}'),
-                                        backgroundColor: AppTheme.error,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                              child: const Text('Propose Reschedule', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                            ),
+                                    try {
+                                      showDialog(
+                                        context: this.context,
+                                        barrierDismissible: false,
+                                        builder: (context) => const Center(
+                                          child: CircularProgressIndicator(
+                                              color: AppTheme.orange500),
+                                        ),
+                                      );
+                                      await HomeownerService.instance
+                                          .performWorkOrderAction(
+                                        workOrderId: woId,
+                                        action: 'propose_reschedule',
+                                        extra: {
+                                          'proposedStart': start,
+                                          'proposedEnd': end,
+                                          'reason': reason,
+                                          'contractorId': contractorId,
+                                          'requester_user_id':
+                                              AuthService.instance.userId,
+                                        },
+                                      );
+                                      if (mounted) Navigator.pop(this.context);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(this.context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                                'Reschedule request sent successfully'),
+                                            backgroundColor: AppTheme.success,
+                                          ),
+                                        );
+                                        _fetchJobs(showLoading: false);
+                                      }
+                                    } catch (e) {
+                                      if (mounted) Navigator.pop(this.context);
+                                      if (mounted) {
+                                        AppNotification.showError(
+                                          this.context,
+                                          e,
+                                          fallback:
+                                              'We couldn\'t send the reschedule request. Please try again.',
+                                        );
+                                      }
+                                    }
+                                  },
+                            child: const Text('Propose Reschedule',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800)),
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -598,10 +761,10 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Remove loader
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error loading availability: ${e.toString()}'),
-              backgroundColor: AppTheme.error),
+        AppNotification.showError(
+          context,
+          e,
+          fallback: 'We couldn\'t load available times. Please try again.',
         );
       }
     }
@@ -634,19 +797,18 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   extra: {'reason': 'homeowner_cancelled'},
                 );
                 if (!mounted) return;
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Booking cancelled successfully.'),
-                    backgroundColor: AppTheme.error,
-                  ),
+                AppNotification.showSuccess(
+                  this.context,
+                  'Booking cancelled successfully.',
                 );
                 _fetchJobs(showLoading: false);
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  SnackBar(
-                      content: Text('Cancel failed: ${e.toString()}'),
-                      backgroundColor: AppTheme.error),
+                AppNotification.showError(
+                  this.context,
+                  e,
+                  fallback:
+                      'We couldn\'t cancel this booking. Please try again.',
                 );
               }
             },
@@ -752,56 +914,24 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   }
 
   Widget _buildBookingsHeader() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Bookings',
-                  style: TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 24,
-                    height: 1.05,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 40,
-                height: 40,
-                child: IconButton(
-                  tooltip: 'Filter bookings',
-                  onPressed: () {},
-                  style: IconButton.styleFrom(
-                    backgroundColor: const Color(0xFFF4F6FA),
-                    foregroundColor: AppTheme.navy700,
-                    shape: const CircleBorder(),
-                  ),
-                  icon: const Icon(Icons.tune_rounded, size: 20),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(0, 0, 0, 18),
-          child: _buildHeaderControls(),
-        ),
-      ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE6E8EC))),
+      ),
+      child: _buildHeaderControls(),
     );
   }
 
   Widget _buildHeaderControls() {
     return Container(
-      height: 50,
+      height: 44,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: const Color(0xFFF1F4F8),
-        borderRadius: BorderRadius.circular(44),
+        borderRadius: BorderRadius.circular(100),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -812,18 +942,18 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOutCubic,
                 left: _activeSegment * itemWidth,
-                top: 2,
-                bottom: 2,
+                top: 0,
+                bottom: 0,
                 width: itemWidth,
                 child: Container(
                   decoration: BoxDecoration(
                     color: AppTheme.navy700,
-                    borderRadius: BorderRadius.circular(25),
+                    borderRadius: BorderRadius.circular(100),
                     boxShadow: [
                       BoxShadow(
-                        color: AppTheme.navy900.withOpacity(0.15),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 2,
+                        offset: const Offset(0, 2),
                       ),
                     ],
                   ),
@@ -868,17 +998,17 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                 duration: const Duration(milliseconds: 160),
                 style: TextStyle(
                   color: selected ? Colors.white : const Color(0xFF66758C),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                   height: 1,
                 ),
                 child: Text(label),
               ),
               if (selected && count != null && count > 0) ...[
-                const SizedBox(width: 7),
+                const SizedBox(width: 6),
                 Container(
-                  width: 24,
-                  height: 24,
+                  width: 20,
+                  height: 20,
                   alignment: Alignment.center,
                   decoration: const BoxDecoration(
                     color: AppTheme.orange500,
@@ -888,7 +1018,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                     count.toString(),
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 13,
+                      fontSize: 10,
                       fontWeight: FontWeight.w900,
                       height: 1,
                     ),
@@ -952,7 +1082,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           sliver: SliverList(
             delegate: SliverChildListDelegate(
               _activeSegment == 0
@@ -1077,8 +1207,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFDDE3EA)),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE6E8EC)),
         ),
         child: Stack(
           children: [
@@ -1093,7 +1223,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                 ),
               ),
             Padding(
-              padding: EdgeInsets.fromLTRB(isAlert ? 14 : 12, 12, 12, 14),
+              padding: EdgeInsets.fromLTRB(isAlert ? 20 : 14, 14, 14, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1103,7 +1233,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                       Expanded(
                         child: Text(
                           service,
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Color(0xFF202B3D),
@@ -1117,13 +1247,13 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                       _buildStatusBadge(status),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
                   _buildProviderRow(
                     initials: initials,
                     proName: proName,
                     priority: tier,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   _buildInfoLine(
                     icon: Icons.insert_drive_file_outlined,
                     label: _formatUpcomingLine(job, isAlert: isAlert),
@@ -1168,24 +1298,24 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return Row(
       children: [
         Container(
-          width: 36,
-          height: 36,
+          width: 32,
+          height: 32,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: avatarColor,
-            shape: BoxShape.circle,
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Text(
             initials,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w900,
               height: 1,
             ),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: Row(
             children: [
@@ -1202,7 +1332,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   ),
                 ),
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: 6),
               _buildPriorityBadge(priority),
             ],
           ),
@@ -1214,16 +1344,16 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   Widget _buildPriorityBadge(String priority) {
     final urgent = priority.toLowerCase().contains('urgent');
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: urgent ? const Color(0xFFE2F7F8) : const Color(0xFFF0F3F7),
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         urgent ? 'URGENT' : 'STANDARD',
         style: TextStyle(
           color: urgent ? AppTheme.teal500 : const Color(0xFF66758C),
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: FontWeight.w900,
           height: 1,
         ),
@@ -1263,17 +1393,17 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                 : Icons.insert_drive_file_outlined;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: fill,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color, width: 1.4),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 13),
-          const SizedBox(width: 5),
+          Icon(icon, color: color, size: 12),
+          const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
@@ -1295,8 +1425,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(icon, color: const Color(0xFF66758C), size: 16),
-        const SizedBox(width: 8),
+        Icon(icon, color: const Color(0xFF66758C), size: 14),
+        const SizedBox(width: 6),
         Expanded(
           child: Text(
             label,
@@ -1305,8 +1435,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             style: const TextStyle(
               color: Color(0xFF66758C),
               fontSize: 13,
-              height: 1.25,
-              fontWeight: FontWeight.w500,
+              height: 1,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ),
@@ -1419,13 +1549,13 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         const SizedBox(width: 8),
         const Flexible(
           child: Text(
-          'Live · updated just now',
-          style: TextStyle(
-            color: Color(0xFF66758C),
-            fontSize: 12,
-            height: 1,
-            fontWeight: FontWeight.w500,
-          ),
+            'Live · updated just now',
+            style: TextStyle(
+              color: Color(0xFF66758C),
+              fontSize: 12,
+              height: 1,
+              fontWeight: FontWeight.w500,
+            ),
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -1439,7 +1569,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         Expanded(
           child: _buildOutlineAction(
             label: 'Reschedule',
-            onPressed: () => _rescheduleDialog(job),
+            onPressed: () => _openReschedule(job),
           ),
         ),
         const SizedBox(width: 10),
@@ -1462,7 +1592,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         : 'When you book a service, your work\norders will show up here.';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 42, 28, 32),
+      padding: const EdgeInsets.fromLTRB(28, 48, 28, 32),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -1473,12 +1603,12 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: AppTheme.navy700,
-              fontSize: 20,
+              fontSize: 18,
               height: 1.05,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             subtitle,
             textAlign: TextAlign.center,
@@ -1491,7 +1621,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 24),
           SizedBox(
-            width: 200,
+            width: 160,
             child: _buildPrimaryAction(
               label: 'Browse services',
               onPressed: widget.onBookNowTap,
@@ -1504,15 +1634,15 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
 
   Widget _buildEmptyIllustration() {
     return SizedBox(
-      width: 76,
-      height: 76,
+      width: 120,
+      height: 120,
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
           Container(
-            width: 76,
-            height: 76,
+            width: 120,
+            height: 120,
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
@@ -1520,29 +1650,29 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
               boxShadow: [
                 BoxShadow(
                   color: AppTheme.navy900.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
+                  blurRadius: 6,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
           ),
           Container(
-            width: 44,
-            height: 44,
+            width: 48,
+            height: 48,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: const Color(0xFFDDF0FC),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(
               Icons.calendar_today_outlined,
               color: AppTheme.navy700,
-              size: 24,
+              size: 28,
             ),
           ),
           Positioned(
-            right: 6,
-            bottom: 8,
+            right: 11,
+            bottom: 11,
             child: Container(
               width: 28,
               height: 28,
@@ -1578,13 +1708,15 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     final address = _jobAddress(job);
     final initials = _jobInitials(proName);
     final reviewed = _jobHasReview(job);
+    final reviewRating = _jobRating(job);
+    final reviewText = _jobReviewText(job);
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDDE3EA)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE6E8EC)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1595,7 +1727,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
               Expanded(
                 child: Text(
                   service,
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Color(0xFF202B3D),
@@ -1609,13 +1741,13 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
               _buildStatusBadge(status),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           _buildProviderRow(
             initials: initials,
             proName: proName,
             priority: _jobPriority(job),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           _buildInfoLine(
             icon: Icons.insert_drive_file_outlined,
             label: _formatHistoryLine(job, isCancelled: isCancelled),
@@ -1626,7 +1758,13 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             label: address,
           ),
           const SizedBox(height: 12),
-          _buildHistoryActions(job, reviewed: reviewed, isCancelled: isCancelled),
+          _buildHistoryActions(
+            job,
+            reviewed: reviewed,
+            reviewRating: reviewRating,
+            reviewText: reviewText,
+            isCancelled: isCancelled,
+          ),
         ],
       ),
     );
@@ -1635,6 +1773,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   Widget _buildHistoryActions(
     Map<String, dynamic> job, {
     required bool reviewed,
+    required int reviewRating,
+    required String reviewText,
     required bool isCancelled,
   }) {
     if (isCancelled) {
@@ -1645,36 +1785,59 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     }
 
     if (reviewed) {
-      return Row(
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '★ ★ ★ ★ ★',
-            style: TextStyle(
-              color: AppTheme.orange500,
-              fontSize: 14,
-              height: 1,
-              fontWeight: FontWeight.w900,
-            ),
+          Row(
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(
+                  5,
+                  (index) => Icon(
+                    index < reviewRating
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    color: index < reviewRating
+                        ? AppTheme.orange500
+                        : const Color(0xFFB9C4D3),
+                    size: 18,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Reviewed',
+                  style: TextStyle(
+                    color: AppTheme.success,
+                    fontSize: 14,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 110,
+                child: _buildOutlineAction(
+                  label: 'Book again',
+                  onPressed: widget.onBookNowTap,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Reviewed',
-              style: TextStyle(
-                color: AppTheme.success,
-                fontSize: 14,
-                height: 1,
-                fontWeight: FontWeight.w900,
+          if (reviewText.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              reviewText,
+              style: const TextStyle(
+                color: Color(0xFF52627A),
+                fontSize: 12.5,
+                height: 1.35,
+                fontStyle: FontStyle.italic,
               ),
             ),
-          ),
-          SizedBox(
-            width: 110,
-            child: _buildOutlineAction(
-              label: 'Book again',
-              onPressed: widget.onBookNowTap,
-            ),
-          ),
+          ],
         ],
       );
     }
@@ -1711,7 +1874,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
           ),
         ),
         child: FittedBox(
@@ -1742,11 +1905,11 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           backgroundColor: Colors.white,
           side: BorderSide(
             color: color == AppTheme.navy700
-                ? const Color(0xFFDDE3EA)
+                ? const Color(0xFFE6E8EC)
                 : color.withOpacity(0.52),
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
           ),
         ),
         child: FittedBox(
@@ -1768,6 +1931,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     Map<String, dynamic> job, {
     required bool reviewed,
   }) async {
+    var isLoadingDialogOpen = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1778,9 +1942,12 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
 
     try {
       final jobId = _resolveWorkOrderId(job);
-      final eligibility =
-          await HomeownerService.instance.getReviewEligibility(workOrderId: jobId);
-      if (mounted) Navigator.pop(context);
+      final eligibility = await HomeownerService.instance
+          .getReviewEligibility(workOrderId: jobId);
+      if (mounted) {
+        Navigator.pop(context);
+        isLoadingDialogOpen = false;
+      }
 
       if (eligibility['eligible'] == false) {
         final reason = eligibility['reason']?.toString();
@@ -1790,27 +1957,29 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             _leaveReviewDialog(job);
             return;
           }
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('You have already submitted a review for this service.'),
-              backgroundColor: AppTheme.error,
-            ),
+          // The eligibility endpoint knows a review exists even when the list
+          // response omitted it. Fetch it before deciding what to show.
+          final existingReview =
+              await HomeownerService.instance.getReview(jobId);
+          if (!mounted) return;
+          if (existingReview != null) {
+            setState(() => _localReviews[jobId] = existingReview);
+            _leaveReviewDialog(job);
+            return;
+          }
+          AppNotification.showInfo(
+            context,
+            'Your existing review is syncing. Pull down to refresh and try again.',
           );
         } else if (reason == 'not_completed') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Only completed services can be reviewed.'),
-              backgroundColor: AppTheme.error,
-            ),
+          AppNotification.showInfo(
+            context,
+            'Only completed services can be reviewed.',
           );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'This service is not eligible for review: ${reason ?? "unknown"}.',
-              ),
-              backgroundColor: AppTheme.error,
-            ),
+          AppNotification.showInfo(
+            context,
+            'This service is not eligible for review yet.',
           );
         }
         return;
@@ -1819,12 +1988,11 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       if (mounted) _leaveReviewDialog(job);
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error checking eligibility: ${e.toString()}'),
-            backgroundColor: AppTheme.error,
-          ),
+        if (isLoadingDialogOpen) Navigator.pop(context);
+        AppNotification.showError(
+          context,
+          e,
+          fallback: 'We couldn\'t check review eligibility. Please try again.',
         );
       }
     }
@@ -1925,9 +2093,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   String _clockLabel(DateTime date) {
     var hour = date.hour % 12;
     if (hour == 0) hour = 12;
-    final minute = date.minute == 0
-        ? ''
-        : ':${date.minute.toString().padLeft(2, '0')}';
+    final minute =
+        date.minute == 0 ? '' : ':${date.minute.toString().padLeft(2, '0')}';
     final period = date.hour >= 12 ? 'PM' : 'AM';
     return '$hour$minute $period';
   }

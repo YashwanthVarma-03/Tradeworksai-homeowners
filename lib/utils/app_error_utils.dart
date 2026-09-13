@@ -41,7 +41,12 @@ class AppErrorUtils {
   static String friendlyMessage(
     Object error, {
     String fallback = genericMessage,
+    // Keep this alias while callers migrate to `fallback`. It prevents a
+    // stale hot-reload source file from turning error handling itself into a
+    // compilation failure.
+    String? fallbackMessage,
   }) {
+    final effectiveFallback = fallbackMessage ?? fallback;
     final raw = error.toString().replaceAll('Exception: ', '').trim();
     final lowerRaw = raw.toLowerCase();
 
@@ -55,8 +60,35 @@ class AppErrorUtils {
       return noInternetMessage;
     }
 
+    if (lowerRaw.contains('not_cancellable') ||
+        lowerRaw.contains('not cancellable')) {
+      return 'This booking can no longer be cancelled.';
+    }
+
+    if (lowerRaw.contains('not_reschedulable') ||
+        lowerRaw.contains('not reschedulable')) {
+      return 'This booking can no longer be rescheduled.';
+    }
+
+    if (lowerRaw.contains('booking_cap')) {
+      return 'You have reached the maximum number of open bookings. Complete or cancel an existing booking before creating a new one.';
+    }
+
+    if (lowerRaw.contains('unauthenticated') ||
+        lowerRaw.contains('unauthorized') ||
+        lowerRaw.contains('invalid jwt') ||
+        lowerRaw.contains('expired token')) {
+      return 'Please sign in again to continue.';
+    }
+
+    if (lowerRaw.contains('server_error') ||
+        lowerRaw.contains('internal server error') ||
+        lowerRaw.contains('status code 5')) {
+      return effectiveFallback;
+    }
+
     if (raw.isEmpty) {
-      return fallback;
+      return effectiveFallback;
     }
 
     final sanitized = raw
@@ -64,6 +96,14 @@ class AppErrorUtils {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
-    return sanitized.isEmpty ? fallback : sanitized;
+    // Single-token and snake_case responses are implementation codes, not
+    // customer-facing copy (for example, `not_cancellable`).
+    if (sanitized.isEmpty ||
+        !sanitized.contains(' ') ||
+        sanitized.contains('_')) {
+      return effectiveFallback;
+    }
+
+    return sanitized;
   }
 }

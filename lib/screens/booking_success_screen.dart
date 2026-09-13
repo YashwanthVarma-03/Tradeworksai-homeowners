@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../services/homeowner_service.dart';
+import '../services/stream_service.dart';
 import '../theme.dart';
+import '../widgets/app_notification.dart';
+import '../widgets/main_bottom_navigation.dart';
 import 'chat_screen.dart';
 import 'work_orders/work_order_detail.dart';
 
@@ -52,16 +55,8 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
   String get _contractorId {
     final supplied = widget.contractorId?.trim() ?? '';
     if (supplied.isNotEmpty) return supplied;
-    final pro =
-        _asMap(widget.workOrder?['pro'] ?? widget.workOrder?['contractor']);
-    return _text(
-      pro['id'],
-      _text(
-        pro['contractorId'],
-        _text(widget.workOrder?['contractorId'],
-            _text(widget.workOrder?['contractor_id'])),
-      ),
-    );
+    return StreamService.instance.resolveMessagingUserId(widget.workOrder) ??
+        '';
   }
 
   String get _serviceName => _text(
@@ -95,6 +90,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
     if (_isOpeningWorkOrder) return;
     setState(() => _isOpeningWorkOrder = true);
 
+    var didExitAfterCancellation = false;
     try {
       final id = _workOrderId(widget.workOrder);
       Map<String, dynamic>? resolved = widget.workOrder == null
@@ -109,30 +105,32 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
 
       if (!mounted) return;
       if (resolved == null || _workOrderId(resolved).isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Your booking is still being prepared. Try again in a moment.'),
-          ),
+        AppNotification.showInfo(
+          context,
+          'Your booking is still being prepared. Try again in a moment.',
         );
         return;
       }
-      await Navigator.push(
+      final wasCancelled = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
             builder: (_) => WorkOrderDetailScreen(job: resolved!)),
       );
+      if (wasCancelled == true && mounted) {
+        didExitAfterCancellation = true;
+        Navigator.pop(context, true);
+      }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'We could not open this work order right now. Please try again.'),
-          ),
+        AppNotification.showInfo(
+          context,
+          'We could not open this work order right now. Please try again.',
         );
       }
     } finally {
-      if (mounted) setState(() => _isOpeningWorkOrder = false);
+      if (mounted && !didExitAfterCancellation) {
+        setState(() => _isOpeningWorkOrder = false);
+      }
     }
   }
 
@@ -159,12 +157,16 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
+      bottomNavigationBar: MainBottomNavigation(
+        currentIndex: 2,
+        onTap: _navigateToAppTab,
+      ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
                 child: Column(
                   children: [
                     Container(
@@ -180,17 +182,17 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                         size: 42,
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     const Text(
                       'Booking confirmed!',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppTheme.navy700,
-                        fontSize: 26,
+                        fontSize: 22,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Text(
                       widget.woNumber?.trim().isNotEmpty == true
                           ? 'Your work order #${widget.woNumber} has been created.'
@@ -198,10 +200,10 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: AppTheme.gray,
-                        fontSize: 15,
+                        fontSize: 13,
                       ),
                     ),
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 16),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
@@ -219,7 +221,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                                   _proName,
                                   style: const TextStyle(
                                     color: AppTheme.navy700,
-                                    fontSize: 20,
+                                    fontSize: 15,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
@@ -227,7 +229,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                               if (trade.isNotEmpty)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
+                                    horizontal: 8,
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
@@ -238,23 +240,23 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                                     trade,
                                     style: const TextStyle(
                                       color: AppTheme.teal500,
-                                      fontSize: 12,
+                                      fontSize: 10,
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
                                 ),
                             ],
                           ),
-                          const Divider(height: 28),
+                          const Divider(height: 25, color: Color(0xFFE6E8EC)),
                           _detailBlock('SERVICE', _serviceName),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           _detailBlock(
                               'SCHEDULED', _formatSchedule(_start, _end)),
                           if (_address.isNotEmpty) ...[
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 12),
                             _detailBlock('LOCATION', _address),
                           ],
-                          const Divider(height: 28),
+                          const Divider(height: 25, color: Color(0xFFE6E8EC)),
                           Row(
                             children: [
                               const Expanded(
@@ -262,7 +264,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                                   'Upfront price',
                                   style: TextStyle(
                                     color: AppTheme.ink,
-                                    fontSize: 16,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
@@ -271,7 +273,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                                 price,
                                 style: const TextStyle(
                                   color: AppTheme.navy700,
-                                  fontSize: 22,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
@@ -280,10 +282,10 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
-                      height: 48,
+                      height: 44,
                       child: ElevatedButton(
                         onPressed: _isOpeningWorkOrder ? null : _openWorkOrder,
                         style: ElevatedButton.styleFrom(
@@ -291,7 +293,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                           foregroundColor: Colors.white,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                         child: _isOpeningWorkOrder
@@ -306,7 +308,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                             : const Text(
                                 'View work order',
                                 style: TextStyle(
-                                  fontSize: 16,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -315,20 +317,20 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                     const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,
-                      height: 48,
+                      height: 44,
                       child: OutlinedButton(
                         onPressed: _contractorId.isEmpty ? null : _openMessage,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.teal500,
                           side: const BorderSide(color: AppTheme.teal500),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                         child: Text(
                           'Message $_proName',
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 14,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -338,11 +340,15 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                 ),
               ),
             ),
-            const _BookingSuccessNav(),
           ],
         ),
       ),
     );
+  }
+
+  void _navigateToAppTab(int index) {
+    AppTabNavigation.request(index);
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   Widget _detailBlock(String label, String value) {
@@ -352,17 +358,17 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
         Text(
           label,
           style: const TextStyle(
-            color: AppTheme.gray,
-            fontSize: 12,
+            color: Color(0xFF64748B),
+            fontSize: 11,
             fontWeight: FontWeight.w800,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           value,
           style: const TextStyle(
             color: AppTheme.ink,
-            fontSize: 16,
+            fontSize: 13,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -485,64 +491,5 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
   String _text(dynamic value, [String fallback = '']) {
     final text = value?.toString().trim() ?? '';
     return text.isEmpty || text.toLowerCase() == 'null' ? fallback : text;
-  }
-}
-
-class _BookingSuccessNav extends StatelessWidget {
-  const _BookingSuccessNav();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 66,
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: AppTheme.line)),
-      ),
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _SuccessNavItem(icon: Icons.home_outlined, label: 'Home'),
-          _SuccessNavItem(icon: Icons.search_rounded, label: 'Search'),
-          _SuccessNavItem(
-            icon: Icons.calendar_today_outlined,
-            label: 'Bookings',
-            selected: true,
-          ),
-          _SuccessNavItem(icon: Icons.person_outline_rounded, label: 'Profile'),
-        ],
-      ),
-    );
-  }
-}
-
-class _SuccessNavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-
-  const _SuccessNavItem({
-    required this.icon,
-    required this.label,
-    this.selected = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? AppTheme.navy700 : AppTheme.gray;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, color: color, size: 23),
-        const SizedBox(height: 3),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-          ),
-        ),
-      ],
-    );
   }
 }

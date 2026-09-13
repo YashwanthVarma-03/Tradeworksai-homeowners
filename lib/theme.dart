@@ -13,7 +13,8 @@ class AppTheme {
   static const Color tealTint = Color(0xFFE6F2F7); // Light teal tint
 
   static const Color orange700 = Color(0xFFC75D0D); // Darker orange
-  static const Color orange500 = Color(0xFFE8751A); // --color-orange - Accent / CTA
+  static const Color orange500 =
+      Color(0xFFE8751A); // --color-orange - Accent / CTA
   static const Color orangeTint = Color(0xFFFFF7ED); // Light orange tint
 
   // Neutral Colors
@@ -103,12 +104,20 @@ class AppTheme {
         brightness: Brightness.light,
       ),
       textTheme: textTheme,
+      iconTheme: const IconThemeData(
+        weight: 600,
+        opticalSize: 24,
+      ),
       dividerTheme: const DividerThemeData(color: line, thickness: 1),
       scaffoldBackgroundColor: white,
       appBarTheme: const AppBarTheme(
         backgroundColor: white,
         elevation: 0,
-        iconTheme: IconThemeData(color: navy700),
+        iconTheme: IconThemeData(
+          color: navy700,
+          weight: 600,
+          opticalSize: 24,
+        ),
       ),
     );
   }
@@ -128,12 +137,21 @@ class AppTheme {
         bodyColor: const Color(0xFFF2F5F9),
         displayColor: const Color(0xFFF2F5F9),
       ),
-      dividerTheme: const DividerThemeData(color: Color(0xFF26384F), thickness: 1),
+      iconTheme: const IconThemeData(
+        weight: 600,
+        opticalSize: 24,
+      ),
+      dividerTheme:
+          const DividerThemeData(color: Color(0xFF26384F), thickness: 1),
       scaffoldBackgroundColor: const Color(0xFF0F1A2B),
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFF0F1A2B),
         elevation: 0,
-        iconTheme: IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(
+          color: Colors.white,
+          weight: 600,
+          opticalSize: 24,
+        ),
       ),
     );
   }

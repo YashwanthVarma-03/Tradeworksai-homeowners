@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
-import '../../utils/app_error_utils.dart';
+import '../../widgets/app_notification.dart';
 
 class PaymentMethodsScreen extends StatefulWidget {
   const PaymentMethodsScreen({super.key});
@@ -40,11 +40,10 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppErrorUtils.friendlyMessage(e)),
-          backgroundColor: AppTheme.error,
-        ),
+      AppNotification.showError(
+        context,
+        e,
+        fallback: 'We couldn\'t load payment methods. Please try again.',
       );
     }
   }
@@ -155,7 +154,9 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
               borderRadius: BorderRadius.circular(5),
             ),
             child: Text(
-              brand.toLowerCase().contains('master') ? 'MC' : brand.toUpperCase(),
+              brand.toLowerCase().contains('master')
+                  ? 'MC'
+                  : brand.toUpperCase(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(

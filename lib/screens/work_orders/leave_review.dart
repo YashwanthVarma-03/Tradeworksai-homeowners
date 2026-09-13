@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
+import '../../widgets/app_notification.dart';
 
 class LeaveReviewScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -63,7 +64,8 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
 
       setState(() => _isSubmitting = true);
       if (!widget.isEdit) {
-        final eligibility = await HomeownerService.instance.getReviewEligibility(
+        final eligibility =
+            await HomeownerService.instance.getReviewEligibility(
           workOrderId: widget.jobId,
         );
         if (eligibility['eligible'] == false) {
@@ -88,11 +90,10 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSubmitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to submit review: ${e.toString()}'),
-            backgroundColor: AppTheme.error,
-          ),
+        AppNotification.showError(
+          context,
+          e,
+          fallback: 'We couldn\'t submit your review. Please try again.',
         );
       }
     }
@@ -121,7 +122,7 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: AppTheme.ink,
-                          fontSize: 14.5,
+                            fontSize: 14.5,
                             fontWeight: FontWeight.w900,
                           ),
                         ),

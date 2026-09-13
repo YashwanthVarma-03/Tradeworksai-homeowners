@@ -3,8 +3,12 @@ import '../../theme.dart';
 import 'package:intl/intl.dart';
 import 'nte_approval.dart';
 import 'leave_review.dart';
+import 'reschedule_work_order.dart';
 import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
+import '../../services/stream_service.dart';
+import '../../widgets/app_notification.dart';
+import '../chat_screen.dart';
 
 class WorkOrderDetailScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -17,6 +21,7 @@ class WorkOrderDetailScreen extends StatefulWidget {
 
 class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   Map<String, dynamic>? _review;
+  bool _isCancelling = false;
 
   @override
   void initState() {
@@ -42,16 +47,23 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           _review = rev;
         });
       }
-      // If no review found in work order data, check eligibility 
+      // If no review found in work order data, check eligibility
       // to determine if one exists in the DB (already_reviewed means it exists)
       if (rev == null && mounted) {
         try {
-          final eligibility = await HomeownerService.instance.getReviewEligibility(workOrderId: woId);
-          if (eligibility['eligible'] == false && eligibility['reason'] == 'already_reviewed') {
+          final eligibility = await HomeownerService.instance
+              .getReviewEligibility(workOrderId: woId);
+          if (eligibility['eligible'] == false &&
+              eligibility['reason'] == 'already_reviewed') {
             if (mounted) {
               setState(() {
                 // Create a placeholder so the "Edit Review" button shows
-                _review = {'rating': 5.0, 'reviewText': '', 'displayName': null, '_needsLoad': true};
+                _review = {
+                  'rating': 5.0,
+                  'reviewText': '',
+                  'displayName': null,
+                  '_needsLoad': true
+                };
               });
             }
           }
@@ -442,7 +454,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                     Container(
                       width: 2,
                       height: 34,
-                      color: index < currentIndex ? AppTheme.teal500 : AppTheme.line,
+                      color: index < currentIndex
+                          ? AppTheme.teal500
+                          : AppTheme.line,
                     ),
                 ],
               ),
@@ -458,7 +472,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                       style: TextStyle(
                         color: isActive
                             ? AppTheme.teal500
-                            : (index <= currentIndex ? AppTheme.ink : AppTheme.gray),
+                            : (index <= currentIndex
+                                ? AppTheme.ink
+                                : AppTheme.gray),
                         fontSize: 13,
                         fontWeight: index <= currentIndex
                             ? FontWeight.w900
@@ -590,7 +606,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           const SizedBox(height: 10),
           _plainDetailRow('Address', address),
           const SizedBox(height: 10),
-          _plainDetailRow('Urgency', urgency, valueColor: _urgencyColor(urgency)),
+          _plainDetailRow('Urgency', urgency,
+              valueColor: _urgencyColor(urgency)),
           const SizedBox(height: 10),
           _plainDetailRow('Your note', note),
         ],
@@ -752,11 +769,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           child: _outlineButton(
             'Message',
             icon: Icons.chat_bubble_outline_rounded,
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Messaging will open here.')),
-              );
-            },
+            onPressed: _openMessage,
           ),
         ),
         const SizedBox(width: 12),
@@ -772,6 +785,69 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _openMessage() async {
+    final pro = widget.job['pro'];
+    final contractor = widget.job['contractor'];
+    final proData = pro is Map
+        ? Map<String, dynamic>.from(pro)
+        : contractor is Map
+            ? Map<String, dynamic>.from(contractor)
+            : const <String, dynamic>{};
+    String? messagingUserId =
+        StreamService.instance.resolveMessagingUserId(proData) ??
+            _readString(widget.job['chatUserId']) ??
+            _readString(widget.job['chat_user_id']) ??
+            _readString(widget.job['streamUserId']) ??
+            _readString(widget.job['stream_user_id']) ??
+            _readString(widget.job['contractorUserId']) ??
+            _readString(widget.job['contractor_user_id']);
+
+    if (messagingUserId == null) {
+      final slug = _readString(widget.job['proSlug']) ??
+          _readString(widget.job['pro_slug']) ??
+          _readString(widget.job['contractorSlug']) ??
+          _readString(widget.job['contractor_slug']) ??
+          _readString(proData['slug']) ??
+          _readString(proData['profileSlug']) ??
+          _readString(proData['profile_slug']) ??
+          _readString(proData['businessSlug']) ??
+          _readString(proData['business_slug']) ??
+          _readString(proData['contractorSlug']) ??
+          _readString(proData['contractor_slug']);
+      if (slug != null) {
+        try {
+          final profile =
+              await HomeownerService.instance.getContractorProfile(slug);
+          messagingUserId =
+              StreamService.instance.resolveMessagingUserId(profile);
+        } catch (_) {
+          // The explicit user ID in the work order remains the preferred path.
+        }
+      }
+    }
+
+    if (!mounted) return;
+    if (messagingUserId == null || messagingUserId.isEmpty) {
+      AppNotification.showInfo(
+        context,
+        'Messaging is not available for this contractor yet.',
+      );
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          contractorId: messagingUserId!,
+          contractorName: _proName().isEmpty ? 'Contractor' : _proName(),
+          workOrderTitle: _serviceName(),
+          workOrderStatus: _readString(widget.job['status']),
+        ),
+      ),
     );
   }
 
@@ -844,21 +920,38 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     }
   }
 
-  void _cancelJob() async {
+  Future<void> _cancelJob() async {
+    if (_isCancelling) return;
+    setState(() => _isCancelling = true);
+
     final woId = int.tryParse(widget.job['id']?.toString() ??
             widget.job['workOrderId']?.toString() ??
             '0') ??
         0;
-    await HomeownerService.instance
-        .performWorkOrderAction(workOrderId: woId, action: 'cancel');
-    if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Request cancelled')));
+
+    var didCancel = false;
+    try {
+      await HomeownerService.instance
+          .performWorkOrderAction(workOrderId: woId, action: 'cancel');
+      if (!mounted) return;
+
+      AppNotification.showSuccess(context, 'Booking cancelled.');
+      didCancel = true;
       Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        AppNotification.showError(
+          context,
+          error,
+          fallback: 'We couldn\'t cancel this booking. Please try again.',
+        );
+      }
+    } finally {
+      if (mounted && !didCancel) setState(() => _isCancelling = false);
     }
   }
 
-  Future<void> _requestReschedule() async {
+  Future<void> _legacyRescheduleSheet() async {
     String? readValue(dynamic value) {
       final text = value?.toString().trim();
       if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
@@ -887,11 +980,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
         0;
     if (contractorId == null || woId == 0) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Reschedule is not available for this booking.'),
-            backgroundColor: AppTheme.error,
-          ),
+        AppNotification.showInfo(
+          context,
+          'Rescheduling is not available for this booking.',
         );
       }
       return;
@@ -908,11 +999,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       final slots = avail['slots'] as List? ?? const [];
       if (!mounted) return;
       if (slots.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No alternate slots are currently available.'),
-            backgroundColor: AppTheme.error,
-          ),
+        AppNotification.showInfo(
+          context,
+          'No alternate times are currently available.',
         );
         return;
       }
@@ -942,7 +1031,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
         builder: (sheetContext) {
           String selectedDate = sortedDates.first;
           Map<String, dynamic>? selectedSlot = slotsByDate[selectedDate]?.first;
-          final reasonController = TextEditingController(text: 'Homeowner requested reschedule');
+          final reasonController =
+              TextEditingController(text: 'Homeowner requested reschedule');
 
           return StatefulBuilder(
             builder: (BuildContext context, StateSetter setModalState) {
@@ -950,7 +1040,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
 
               return SafeArea(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, MediaQuery.of(context).viewInsets.bottom + 16),
+                  padding: EdgeInsets.fromLTRB(16, 12, 16,
+                      MediaQuery.of(context).viewInsets.bottom + 16),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -977,7 +1068,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                       const SizedBox(height: 12),
                       const Text(
                         'Select Date:',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.navy700),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.navy700),
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -989,10 +1082,33 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                           itemBuilder: (context, idx) {
                             final dateKey = sortedDates[idx];
                             final isSelected = dateKey == selectedDate;
-                            final parsedDate = DateTime.tryParse(dateKey) ?? DateTime.now();
-                            final weekDayStr = const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][parsedDate.weekday - 1];
-                            final monthStr = const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parsedDate.month - 1];
-                            final label = '$weekDayStr, $monthStr ${parsedDate.day}';
+                            final parsedDate =
+                                DateTime.tryParse(dateKey) ?? DateTime.now();
+                            final weekDayStr = const [
+                              'Mon',
+                              'Tue',
+                              'Wed',
+                              'Thu',
+                              'Fri',
+                              'Sat',
+                              'Sun'
+                            ][parsedDate.weekday - 1];
+                            final monthStr = const [
+                              'Jan',
+                              'Feb',
+                              'Mar',
+                              'Apr',
+                              'May',
+                              'Jun',
+                              'Jul',
+                              'Aug',
+                              'Sep',
+                              'Oct',
+                              'Nov',
+                              'Dec'
+                            ][parsedDate.month - 1];
+                            final label =
+                                '$weekDayStr, $monthStr ${parsedDate.day}';
 
                             return ChoiceChip(
                               label: Text(label),
@@ -1000,7 +1116,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                               selectedColor: AppTheme.orange500,
                               backgroundColor: AppTheme.pageAlt,
                               labelStyle: TextStyle(
-                                color: isSelected ? Colors.white : AppTheme.navy700,
+                                color: isSelected
+                                    ? Colors.white
+                                    : AppTheme.navy700,
                                 fontWeight: FontWeight.bold,
                               ),
                               onSelected: (val) {
@@ -1018,7 +1136,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                       const SizedBox(height: 16),
                       const Text(
                         'Select Time:',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.navy700),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.navy700),
                       ),
                       const SizedBox(height: 8),
                       Wrap(
@@ -1026,9 +1146,13 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                         runSpacing: 8,
                         children: activeSlots.map((slot) {
                           final startStr = slot['start']?.toString() ?? '';
-                          final parsedTime = DateTime.tryParse(startStr) ?? DateTime.now();
-                          final hour = parsedTime.hour > 12 ? parsedTime.hour - 12 : (parsedTime.hour == 0 ? 12 : parsedTime.hour);
-                          final min = parsedTime.minute.toString().padLeft(2, '0');
+                          final parsedTime =
+                              DateTime.tryParse(startStr) ?? DateTime.now();
+                          final hour = parsedTime.hour > 12
+                              ? parsedTime.hour - 12
+                              : (parsedTime.hour == 0 ? 12 : parsedTime.hour);
+                          final min =
+                              parsedTime.minute.toString().padLeft(2, '0');
                           final period = parsedTime.hour >= 12 ? 'PM' : 'AM';
                           final timeLabel = '$hour:$min $period';
                           final isSelected = selectedSlot == slot;
@@ -1039,7 +1163,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                             selectedColor: AppTheme.orange500,
                             backgroundColor: AppTheme.pageAlt,
                             labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : AppTheme.navy700,
+                              color:
+                                  isSelected ? Colors.white : AppTheme.navy700,
                               fontWeight: FontWeight.bold,
                             ),
                             onSelected: (val) {
@@ -1055,7 +1180,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                       const SizedBox(height: 16),
                       const Text(
                         'Reason for Rescheduling:',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.navy700),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.navy700),
                       ),
                       const SizedBox(height: 8),
                       TextField(
@@ -1063,7 +1190,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                         maxLines: 2,
                         decoration: InputDecoration(
                           hintText: 'Enter reason here...',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
                           contentPadding: const EdgeInsets.all(12),
                         ),
                       ),
@@ -1073,63 +1201,83 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                           Expanded(
                             child: OutlinedButton(
                               onPressed: () => Navigator.pop(sheetContext),
-                              child: const Text('Cancel', style: TextStyle(color: AppTheme.navy700)),
+                              child: const Text('Cancel',
+                                  style: TextStyle(color: AppTheme.navy700)),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.orange500),
-                              onPressed: selectedSlot == null ? null : () async {
-                                final start = selectedSlot!['start']?.toString() ?? '';
-                                final end = selectedSlot!['end']?.toString() ?? '';
-                                final reason = reasonController.text.trim().isNotEmpty
-                                    ? reasonController.text.trim()
-                                    : 'Homeowner requested reschedule';
-                                Navigator.pop(sheetContext);
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.orange500),
+                              onPressed: selectedSlot == null
+                                  ? null
+                                  : () async {
+                                      final start =
+                                          selectedSlot!['start']?.toString() ??
+                                              '';
+                                      final end =
+                                          selectedSlot!['end']?.toString() ??
+                                              '';
+                                      final reason = reasonController.text
+                                              .trim()
+                                              .isNotEmpty
+                                          ? reasonController.text.trim()
+                                          : 'Homeowner requested reschedule';
+                                      Navigator.pop(sheetContext);
 
-                                try {
-                                  showDialog(
-                                    context: this.context,
-                                    barrierDismissible: false,
-                                    builder: (context) => const Center(
-                                      child: CircularProgressIndicator(color: AppTheme.orange500),
-                                    ),
-                                  );
-                                  await HomeownerService.instance.performWorkOrderAction(
-                                    workOrderId: woId,
-                                    action: 'propose_reschedule',
-                                    extra: {
-                                      'proposedStart': start,
-                                      'proposedEnd': end,
-                                      'reason': reason,
-                                      'contractorId': contractorId,
-                                      'requester_user_id': AuthService.instance.userId,
+                                      try {
+                                        showDialog(
+                                          context: this.context,
+                                          barrierDismissible: false,
+                                          builder: (context) => const Center(
+                                            child: CircularProgressIndicator(
+                                                color: AppTheme.orange500),
+                                          ),
+                                        );
+                                        await HomeownerService.instance
+                                            .performWorkOrderAction(
+                                          workOrderId: woId,
+                                          action: 'propose_reschedule',
+                                          extra: {
+                                            'proposedStart': start,
+                                            'proposedEnd': end,
+                                            'reason': reason,
+                                            'contractorId': contractorId,
+                                            'requester_user_id':
+                                                AuthService.instance.userId,
+                                          },
+                                        );
+                                        if (mounted)
+                                          Navigator.pop(this.context);
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(this.context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                  'Reschedule request sent successfully'),
+                                              backgroundColor: AppTheme.success,
+                                            ),
+                                          );
+                                          Navigator.pop(this.context, true);
+                                        }
+                                      } catch (e) {
+                                        if (mounted)
+                                          Navigator.pop(this.context);
+                                        if (mounted) {
+                                          AppNotification.showError(
+                                            this.context,
+                                            e,
+                                            fallback:
+                                                'We couldn\'t send the reschedule request. Please try again.',
+                                          );
+                                        }
+                                      }
                                     },
-                                  );
-                                  if (mounted) Navigator.pop(this.context);
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(this.context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Reschedule request sent successfully'),
-                                        backgroundColor: AppTheme.success,
-                                      ),
-                                    );
-                                    Navigator.pop(this.context, true);
-                                  }
-                                } catch (e) {
-                                  if (mounted) Navigator.pop(this.context);
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(this.context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Reschedule failed: ${e.toString()}'),
-                                        backgroundColor: AppTheme.error,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                              child: const Text('Propose Reschedule', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              child: const Text('Propose Reschedule',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ],
@@ -1144,14 +1292,25 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: AppTheme.error,
-          ),
+        AppNotification.showError(
+          context,
+          e,
+          fallback: 'We couldn\'t load alternate times. Please try again.',
         );
       }
     }
+  }
+
+  Future<void> _requestReschedule() async {
+    final changed = await openRescheduleWorkOrder(context, widget.job);
+    if (!changed || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Reschedule request sent successfully.'),
+        backgroundColor: AppTheme.success,
+      ),
+    );
+    Navigator.pop(context, true);
   }
 
   void _showReceiptModal(BuildContext context) {
@@ -1197,7 +1356,6 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       ),
     );
   }
-
 }
 
 class _TimelineStep {

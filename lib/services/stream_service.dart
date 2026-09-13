@@ -44,6 +44,10 @@ class StreamService extends ChangeNotifier {
     }
 
     for (final key in const [
+      'chatUserId',
+      'chat_user_id',
+      'streamUserId',
+      'stream_user_id',
       'userId',
       'user_id',
       'contractorUserId',
@@ -63,11 +67,8 @@ class StreamService extends ChangeNotifier {
       if (resolved != null) return resolved;
     }
 
-    for (final key in const ['contractorId', 'contractor_id', 'id']) {
-      final value = read(data[key]);
-      if (value != null) return value;
-    }
-
+    // A contractor profile ID and a work-order ID are not Stream user IDs.
+    // Only an explicit user-id field is valid for creating a direct channel.
     return null;
   }
 
@@ -214,9 +215,6 @@ class StreamService extends ChangeNotifier {
           fallback: 'Chat is unavailable right now.',
         );
         _lastFailureAt = DateTime.now();
-        if (kDebugMode) {
-          print('StreamService connection error: $_lastError');
-        }
         rethrow;
       } finally {
         _isConnecting = false;
@@ -232,11 +230,7 @@ class StreamService extends ChangeNotifier {
   Future<void> disconnect() async {
     try {
       await _client?.disconnectUser(flushChatPersistence: false);
-    } catch (e) {
-      if (kDebugMode) {
-        print('StreamService disconnect error: $e');
-      }
-    }
+    } catch (_) {}
     _lastError = null;
     notifyListeners();
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 import '../services/auth_service.dart';
+import '../widgets/app_notification.dart';
 
 class PasswordResetPage extends StatefulWidget {
   const PasswordResetPage({super.key});
@@ -10,16 +11,17 @@ class PasswordResetPage extends StatefulWidget {
   State<PasswordResetPage> createState() => _PasswordResetPageState();
 }
 
-class _PasswordResetPageState extends State<PasswordResetPage> with SingleTickerProviderStateMixin {
+class _PasswordResetPageState extends State<PasswordResetPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
+
   final _requestFormKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
-  
+
   final _resetFormKey = GlobalKey<FormState>();
   final _tokenController = TextEditingController();
   final _passwordController = TextEditingController();
-  
+
   bool _isLoading = false;
 
   @override
@@ -60,11 +62,10 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString().replaceAll('Exception: ', '')),
-              backgroundColor: Colors.red,
-            ),
+          AppNotification.showError(
+            context,
+            e,
+            fallback: 'We couldn\'t send a reset code. Please try again.',
           );
         }
       } finally {
@@ -99,11 +100,10 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString().replaceAll('Exception: ', '')),
-              backgroundColor: Colors.red,
-            ),
+          AppNotification.showError(
+            context,
+            e,
+            fallback: 'We couldn\'t reset your password. Please try again.',
           );
         }
       } finally {
@@ -123,9 +123,11 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Password Reset', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text('Password Reset',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         backgroundColor: Colors.transparent,
-        iconTheme: IconThemeData(color: isDark ? Colors.white : AppTheme.navy700),
+        iconTheme:
+            IconThemeData(color: isDark ? Colors.white : AppTheme.navy700),
         bottom: TabBar(
           controller: _tabController,
           labelColor: AppTheme.orange500,
@@ -174,7 +176,8 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
                           const SizedBox(height: 24),
                           const Text(
                             'Email Address',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12.5),
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
@@ -183,14 +186,20 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
                             enabled: !_isLoading,
                             decoration: InputDecoration(
                               hintText: 'e.g. yashwanth@example.com',
-                              hintStyle: TextStyle(color: isDark ? Colors.white38 : AppTheme.gray, fontSize: 13),
+                              hintStyle: TextStyle(
+                                  color:
+                                      isDark ? Colors.white38 : AppTheme.gray,
+                                  fontSize: 13),
                               filled: true,
-                              fillColor: isDark ? const Color(0xFF1E2E4A) : AppTheme.pageAlt,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E2E4A)
+                                  : AppTheme.pageAlt,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                                 borderSide: BorderSide.none,
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
                             ),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) {
@@ -202,7 +211,8 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
                           const SizedBox(height: 28),
                           if (_isLoading)
                             const Center(
-                              child: CircularProgressIndicator(color: AppTheme.orange500),
+                              child: CircularProgressIndicator(
+                                  color: AppTheme.orange500),
                             )
                           else
                             HoverButton(
@@ -215,7 +225,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
                   ),
                 ),
               ),
-              
+
               // 2. Perform reset tab
               Center(
                 child: SingleChildScrollView(
@@ -247,7 +257,8 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
                           const SizedBox(height: 24),
                           const Text(
                             'Reset Token',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12.5),
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
@@ -255,14 +266,20 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
                             enabled: !_isLoading,
                             decoration: InputDecoration(
                               hintText: 'Paste token from email link',
-                              hintStyle: TextStyle(color: isDark ? Colors.white38 : AppTheme.gray, fontSize: 13),
+                              hintStyle: TextStyle(
+                                  color:
+                                      isDark ? Colors.white38 : AppTheme.gray,
+                                  fontSize: 13),
                               filled: true,
-                              fillColor: isDark ? const Color(0xFF1E2E4A) : AppTheme.pageAlt,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E2E4A)
+                                  : AppTheme.pageAlt,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                                 borderSide: BorderSide.none,
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
                             ),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) {
@@ -274,7 +291,8 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
                           const SizedBox(height: 18),
                           const Text(
                             'New Password',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12.5),
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
@@ -283,14 +301,20 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
                             enabled: !_isLoading,
                             decoration: InputDecoration(
                               hintText: 'Min 6 characters',
-                              hintStyle: TextStyle(color: isDark ? Colors.white38 : AppTheme.gray, fontSize: 13),
+                              hintStyle: TextStyle(
+                                  color:
+                                      isDark ? Colors.white38 : AppTheme.gray,
+                                  fontSize: 13),
                               filled: true,
-                              fillColor: isDark ? const Color(0xFF1E2E4A) : AppTheme.pageAlt,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E2E4A)
+                                  : AppTheme.pageAlt,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                                 borderSide: BorderSide.none,
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
                             ),
                             validator: (val) {
                               if (val == null || val.length < 6) {
@@ -302,7 +326,8 @@ class _PasswordResetPageState extends State<PasswordResetPage> with SingleTicker
                           const SizedBox(height: 28),
                           if (_isLoading)
                             const Center(
-                              child: CircularProgressIndicator(color: AppTheme.orange500),
+                              child: CircularProgressIndicator(
+                                  color: AppTheme.orange500),
                             )
                           else
                             HoverButton(

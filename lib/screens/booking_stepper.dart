@@ -3,6 +3,7 @@ import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 import '../services/homeowner_service.dart';
 import '../services/auth_service.dart';
+import '../widgets/app_notification.dart';
 import 'booking_success_screen.dart';
 
 class BookingStepper extends StatefulWidget {
@@ -64,6 +65,12 @@ class _BookingStepperState extends State<BookingStepper> {
 
   Future<void> _fetchAddresses() async {
     if (!mounted) return;
+    if (!AuthService.instance.isAuthenticated) {
+      // Guests can browse and choose a service, but they do not have a saved
+      // address to fetch until the sign-in step.
+      setState(() => _isLoadingAddresses = false);
+      return;
+    }
     setState(() => _isLoadingAddresses = true);
     try {
       final profileResp = await HomeownerService.instance.fetchProfile();
@@ -400,10 +407,11 @@ class _BookingStepperState extends State<BookingStepper> {
                                   backgroundColor: AppTheme.success),
                             );
                           } catch (err) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('Failed to resend: $err'),
-                                  backgroundColor: AppTheme.error),
+                            AppNotification.showError(
+                              context,
+                              err,
+                              fallback:
+                                  'We couldn\'t resend the verification code. Please try again.',
                             );
                           }
                         },
@@ -652,7 +660,8 @@ class _BookingStepperState extends State<BookingStepper> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('How soon do you need this?', style: AppTheme.textTheme.titleLarge),
+        Text('How soon do you need this?',
+            style: AppTheme.textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
           'Choose how soon you need this. Urgency fees go to the pro.',
@@ -1051,10 +1060,9 @@ class _BookingStepperState extends State<BookingStepper> {
                           cityCtrl.text.trim().isEmpty ||
                           stateCtrl.text.trim().isEmpty ||
                           zipCtrl.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Please fill all required fields'),
-                              backgroundColor: AppTheme.error),
+                        AppNotification.showInfo(
+                          context,
+                          'Please fill in all required fields.',
                         );
                         return;
                       }
@@ -1077,10 +1085,11 @@ class _BookingStepperState extends State<BookingStepper> {
                         }
                       } catch (e) {
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text('Failed to save address: $e'),
-                                backgroundColor: AppTheme.error),
+                          AppNotification.showError(
+                            context,
+                            e,
+                            fallback:
+                                'We couldn\'t save this address. Please try again.',
                           );
                         }
                       } finally {
@@ -1197,7 +1206,8 @@ class _BookingStepperState extends State<BookingStepper> {
                 decoration: BoxDecoration(
                   color: AppTheme.orangeTint,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppTheme.orange500.withOpacity(0.25)),
+                  border:
+                      Border.all(color: AppTheme.orange500.withOpacity(0.25)),
                 ),
                 child: const Text(
                   'You will earn service credits when this work order is completed.',

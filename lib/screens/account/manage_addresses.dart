@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
-import '../../utils/app_error_utils.dart';
+import '../../widgets/app_notification.dart';
 
 class ManageAddressesScreen extends StatefulWidget {
   const ManageAddressesScreen({super.key});
@@ -363,11 +363,10 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
 
   void _showError(Object error) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(AppErrorUtils.friendlyMessage(error)),
-        backgroundColor: AppTheme.error,
-      ),
+    AppNotification.showError(
+      context,
+      error,
+      fallback: 'We couldn\'t update your addresses. Please try again.',
     );
   }
 }
@@ -400,15 +399,16 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
   void initState() {
     super.initState();
     final address = widget.addressToEdit ?? const {};
-    _labelCtrl = TextEditingController(text: address['label']?.toString() ?? '');
+    _labelCtrl =
+        TextEditingController(text: address['label']?.toString() ?? '');
     _streetCtrl =
         TextEditingController(text: address['street']?.toString() ?? '');
     _unitCtrl = TextEditingController(text: address['unit']?.toString() ?? '');
     _cityCtrl = TextEditingController(text: address['city']?.toString() ?? '');
-    _stateCtrl = TextEditingController(text: address['state']?.toString() ?? '');
+    _stateCtrl =
+        TextEditingController(text: address['state']?.toString() ?? '');
     _zipCtrl = TextEditingController(text: address['zip']?.toString() ?? '');
-    _isDefault =
-        address['isDefault'] == true || address['isDefault'] == 'true';
+    _isDefault = address['isDefault'] == true || address['isDefault'] == 'true';
   }
 
   @override
@@ -446,11 +446,10 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppErrorUtils.friendlyMessage(e)),
-          backgroundColor: AppTheme.error,
-        ),
+      AppNotification.showError(
+        context,
+        e,
+        fallback: 'We couldn\'t save this address. Please try again.',
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -611,8 +610,7 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(11),
-              borderSide:
-                  const BorderSide(color: AppTheme.teal500, width: 1.3),
+              borderSide: const BorderSide(color: AppTheme.teal500, width: 1.3),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(11),

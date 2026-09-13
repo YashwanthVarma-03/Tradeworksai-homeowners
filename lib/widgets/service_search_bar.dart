@@ -86,8 +86,11 @@ class ServiceSearchBar extends StatelessWidget {
                       onTapOutside: onTapOutside,
                       onChanged: onChanged,
                       onSubmitted: (_) => onSubmit(),
+                      showCursor: focusNode.hasFocus,
                       cursorColor: AppTheme.navy700,
                       cursorHeight: 16,
+                      cursorWidth: 1.5,
+                      cursorRadius: const Radius.circular(0.75),
                       maxLines: 1,
                       textAlignVertical: const TextAlignVertical(y: -0.08),
                       style: GoogleFonts.inter(
@@ -112,7 +115,9 @@ class ServiceSearchBar extends StatelessWidget {
                             BoxConstraints(minWidth: _leftInset),
                       ),
                     ),
-                    if (isEmpty && (hint != null || emptyOverlay != null))
+                    if (isEmpty &&
+                        !focusNode.hasFocus &&
+                        (hint != null || emptyOverlay != null))
                       Positioned(
                         left: _leftInset,
                         right: 4,
@@ -142,13 +147,13 @@ class ServiceSearchBar extends StatelessWidget {
               _ActionButton(
                 width: iconButtonWidth,
                 tooltip: 'Describe with a photo',
-                icon: Icons.camera_alt_outlined,
+                icon: Icons.camera_alt,
                 onPressed: onPhotoTap,
               ),
               _ActionButton(
                 width: iconButtonWidth,
                 tooltip: 'Describe with voice',
-                icon: Icons.mic_none_rounded,
+                icon: Icons.mic,
                 onPressed: onVoiceTap,
               ),
               Container(

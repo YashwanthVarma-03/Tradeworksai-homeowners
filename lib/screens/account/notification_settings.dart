@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../services/homeowner_service.dart';
+import '../../services/auth_service.dart';
+import '../../services/notification_preferences.dart';
+import '../../services/push_notification_service.dart';
 import '../../theme.dart';
-import '../../utils/app_error_utils.dart';
+import '../../widgets/app_notification.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -26,11 +29,99 @@ class _NotificationSettingsScreenState
   bool _pushPromos = false;
   bool _emailReceipts = false;
   bool _emailPromos = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+  }
+
+  NotificationPreferences get _preferences => NotificationPreferences(
+        pushStatus: _pushStatus,
+        pushMessages: _pushMessages,
+        pushCredits: _pushCredits,
+        pushPromos: _pushPromos,
+        emailReceipts: _emailReceipts,
+        emailPromos: _emailPromos,
+      );
+
+  Future<void> _savePreferences(NotificationPreferences next) async {
+    final previous = _preferences;
+    final userId = AuthService.instance.userId;
+    if (userId == null || userId.isEmpty) {
+      AppNotification.showInfo(
+          context, 'Please sign in to update notifications.');
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _pushStatus = next.pushStatus;
+      _pushMessages = next.pushMessages;
+      _pushCredits = next.pushCredits;
+      _pushPromos = next.pushPromos;
+      _emailReceipts = next.emailReceipts;
+      _emailPromos = next.emailPromos;
+    });
+
+    try {
+      if (next.hasPushEnabled) {
+        final allowed =
+            await PushNotificationService.instance.requestPermissionAndRegister(
+          userId: userId,
+          preferences: next,
+        );
+        if (!allowed) {
+          throw StateError(
+            PushNotificationService.instance.isAvailable
+                ? 'permission_denied'
+                : 'push_not_configured',
+          );
+        }
+      }
+      await HomeownerService.instance.updateNotificationSettings(next.toJson());
+      await PushNotificationService.instance.updatePreferences(
+        userId: userId,
+        preferences: next,
+      );
+      if (mounted) {
+        AppNotification.showSuccess(context, 'Notification preferences saved.');
+      }
+    } on StateError catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _pushStatus = previous.pushStatus;
+        _pushMessages = previous.pushMessages;
+        _pushCredits = previous.pushCredits;
+        _pushPromos = previous.pushPromos;
+        _emailReceipts = previous.emailReceipts;
+        _emailPromos = previous.emailPromos;
+      });
+      AppNotification.showInfo(
+        context,
+        error.message == 'push_not_configured'
+            ? 'Phone notifications are not configured for this app build yet.'
+            : 'Allow notifications in your device settings to receive alerts.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _pushStatus = previous.pushStatus;
+        _pushMessages = previous.pushMessages;
+        _pushCredits = previous.pushCredits;
+        _pushPromos = previous.pushPromos;
+        _emailReceipts = previous.emailReceipts;
+        _emailPromos = previous.emailPromos;
+      });
+      AppNotification.showError(
+        context,
+        error,
+        fallback: 'We couldn\'t save your notification preferences.',
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -67,11 +158,10 @@ class _NotificationSettingsScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppErrorUtils.friendlyMessage(e)),
-          backgroundColor: AppTheme.error,
-        ),
+      AppNotification.showError(
+        context,
+        e,
+        fallback: 'We couldn\'t load notification settings. Please try again.',
       );
     }
   }
@@ -97,25 +187,69 @@ class _NotificationSettingsScreenState
                     title: 'Work-order status updates',
                     subtitle: 'Booked, en route, arrived, completed',
                     value: _pushStatus,
-                    onChanged: (value) => setState(() => _pushStatus = value),
+                    onChanged: _isSaving
+                        ? null
+                        : (value) => _savePreferences(
+                              NotificationPreferences(
+                                pushStatus: value,
+                                pushMessages: _pushMessages,
+                                pushCredits: _pushCredits,
+                                pushPromos: _pushPromos,
+                                emailReceipts: _emailReceipts,
+                                emailPromos: _emailPromos,
+                              ),
+                            ),
                   ),
                   _toggleTile(
                     title: 'Messages from your pro',
                     subtitle: 'New messages on a work order',
                     value: _pushMessages,
-                    onChanged: (value) => setState(() => _pushMessages = value),
+                    onChanged: _isSaving
+                        ? null
+                        : (value) => _savePreferences(
+                              NotificationPreferences(
+                                pushStatus: _pushStatus,
+                                pushMessages: value,
+                                pushCredits: _pushCredits,
+                                pushPromos: _pushPromos,
+                                emailReceipts: _emailReceipts,
+                                emailPromos: _emailPromos,
+                              ),
+                            ),
                   ),
                   _toggleTile(
                     title: 'Service credits & rewards',
                     subtitle: 'When credits are earned',
                     value: _pushCredits,
-                    onChanged: (value) => setState(() => _pushCredits = value),
+                    onChanged: _isSaving
+                        ? null
+                        : (value) => _savePreferences(
+                              NotificationPreferences(
+                                pushStatus: _pushStatus,
+                                pushMessages: _pushMessages,
+                                pushCredits: value,
+                                pushPromos: _pushPromos,
+                                emailReceipts: _emailReceipts,
+                                emailPromos: _emailPromos,
+                              ),
+                            ),
                   ),
                   _toggleTile(
                     title: 'Promotions & offers',
                     subtitle: 'Occasional offers',
                     value: _pushPromos,
-                    onChanged: (value) => setState(() => _pushPromos = value),
+                    onChanged: _isSaving
+                        ? null
+                        : (value) => _savePreferences(
+                              NotificationPreferences(
+                                pushStatus: _pushStatus,
+                                pushMessages: _pushMessages,
+                                pushCredits: _pushCredits,
+                                pushPromos: value,
+                                emailReceipts: _emailReceipts,
+                                emailPromos: _emailPromos,
+                              ),
+                            ),
                   ),
                   const SizedBox(height: 18),
                   _sectionLabel('EMAIL'),
@@ -123,14 +257,35 @@ class _NotificationSettingsScreenState
                     title: 'Booking receipts',
                     subtitle: 'A receipt after each completed job',
                     value: _emailReceipts,
-                    onChanged: (value) =>
-                        setState(() => _emailReceipts = value),
+                    onChanged: _isSaving
+                        ? null
+                        : (value) => _savePreferences(
+                              NotificationPreferences(
+                                pushStatus: _pushStatus,
+                                pushMessages: _pushMessages,
+                                pushCredits: _pushCredits,
+                                pushPromos: _pushPromos,
+                                emailReceipts: value,
+                                emailPromos: _emailPromos,
+                              ),
+                            ),
                   ),
                   _toggleTile(
                     title: 'Promotions & offers',
                     subtitle: 'Occasional offers',
                     value: _emailPromos,
-                    onChanged: (value) => setState(() => _emailPromos = value),
+                    onChanged: _isSaving
+                        ? null
+                        : (value) => _savePreferences(
+                              NotificationPreferences(
+                                pushStatus: _pushStatus,
+                                pushMessages: _pushMessages,
+                                pushCredits: _pushCredits,
+                                pushPromos: _pushPromos,
+                                emailReceipts: _emailReceipts,
+                                emailPromos: value,
+                              ),
+                            ),
                   ),
                   const SizedBox(height: 18),
                   _infoCallout(),
@@ -186,7 +341,7 @@ class _NotificationSettingsScreenState
     required String title,
     required String subtitle,
     required bool value,
-    required ValueChanged<bool> onChanged,
+    required ValueChanged<bool>? onChanged,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),

@@ -5,10 +5,12 @@ import 'package:image_picker/image_picker.dart';
 
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
+import '../services/stream_service.dart';
 import '../theme.dart';
-import '../widgets/main_bottom_navigation.dart';
 import 'account/manage_addresses.dart';
 import 'booking_success_screen.dart';
+import 'login_page.dart';
+import 'signup_page.dart';
 
 enum _BookingPage {
   service,
@@ -31,7 +33,10 @@ class BookFlowScreen extends StatefulWidget {
 
 class _BookFlowScreenState extends State<BookFlowScreen> {
   static const double _contentInset = 16;
-  static const double _headerInset = 0;
+  static const double _headerInset = 8;
+  static const Color _surfaceLine = Color(0xFFE6E8EC);
+  static const Color _mutedText = Color(0xFF64748B);
+  static const Color _inkText = Color(0xFF1E293B);
 
   late final PageController _pageController;
   final _issueController = TextEditingController();
@@ -78,8 +83,14 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     _pageController = PageController();
     _issueController.text = _backendDescription;
     _loadProfileAndAvailability();
-    _loadAddresses();
-    _loadServiceCredits();
+    if (AuthService.instance.isAuthenticated) {
+      _loadAddresses();
+      _loadServiceCredits();
+    } else {
+      // Guests can complete selection steps, but never issue an authenticated
+      // booking request before they create an account.
+      _isLoadingAddresses = false;
+    }
   }
 
   @override
@@ -1072,6 +1083,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         service: service,
         pricing: selectedPricing,
       );
+      final messagingUserId =
+          StreamService.instance.resolveMessagingUserId(_mergedPro) ??
+              StreamService.instance
+                  .resolveMessagingUserId(_contractorProfileResponse) ??
+              StreamService.instance.resolveMessagingUserId(workOrder);
       final viewed = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
@@ -1085,7 +1101,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             address:
                 '${address['street'] ?? ''}, ${address['city'] ?? ''}, ${address['state'] ?? ''}',
             price: _workOrderPriceText(workOrder, selectedPricing),
-            contractorId: contractorId,
+            contractorId: messagingUserId,
             workOrder: workOrder,
           ),
         ),
@@ -1296,7 +1312,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                         _contentInset,
                         0,
                         _contentInset,
-                        18,
+                        24,
                       ),
                       child: _buildStepFor(_pages[index]),
                     );
@@ -1320,11 +1336,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           children: [
             IconButton(
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 48),
               icon: const Icon(
                 Icons.arrow_back_rounded,
-                color: AppTheme.navy700,
-                size: 22,
+                color: _inkText,
+                size: 20,
               ),
               onPressed: _goBack,
             ),
@@ -1335,20 +1351,20 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: AppTheme.gray,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
+                    color: _mutedText,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ),
             IconButton(
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 48),
               icon: const Icon(
                 Icons.close_rounded,
-                color: AppTheme.navy700,
-                size: 22,
+                color: _inkText,
+                size: 20,
               ),
               onPressed: () => Navigator.pop(context),
             ),
@@ -1401,6 +1417,49 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return const SizedBox.shrink();
   }
 
+  Widget _bookingStepHeader({
+    required String title,
+    required String subtitle,
+  }) {
+    final pro = _proName.isEmpty ? 'this pro' : _proName;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'BOOK $pro'.toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppTheme.teal500,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppTheme.navy700,
+            fontSize: 22,
+            height: 1.25,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            color: _mutedText,
+            fontSize: 13,
+            height: 1.4,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildStepFor(_BookingPage page) {
     switch (page) {
       case _BookingPage.service:
@@ -1416,49 +1475,24 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       case _BookingPage.location:
         return _buildLocationStep();
       case _BookingPage.review:
-        return _buildReviewStep();
+        return AuthService.instance.isAuthenticated
+            ? _buildReviewStep()
+            : _buildGuestReviewStep();
     }
   }
 
   Widget _buildServiceStep() {
     final options = _serviceOptions;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 150),
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'BOOK ${_proName.isEmpty ? 'THIS PRO' : _proName.toUpperCase()}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppTheme.teal500,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.5,
-            ),
+          _bookingStepHeader(
+            title: 'Confirm your service',
+            subtitle: 'Based on your search. You can change it below.',
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Confirm your service',
-            style: TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 24,
-              height: 1.1,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Based on your search. You can change it below.',
-            style: TextStyle(
-              color: AppTheme.gray,
-              fontSize: 14,
-              height: 1.35,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 13),
           if (_profileLoadError != null)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -1541,9 +1575,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          height: 60,
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
@@ -1578,7 +1611,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -1587,7 +1619,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: AppTheme.ink,
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -1598,8 +1630,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: AppTheme.gray,
-                          fontSize: 13,
+                          color: _mutedText,
+                          fontSize: 12,
                           height: 1.15,
                           fontWeight: FontWeight.w500,
                         ),
@@ -1616,7 +1648,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                   style: TextStyle(
                     color:
                         priceIsEstimate ? AppTheme.success : AppTheme.navy700,
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -1634,48 +1666,24 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     final searchPhotos = _searchPhotoUrls;
 
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 150),
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Book ${_proName.isNotEmpty ? _proName : 'this pro'}'.toUpperCase(),
-            style: const TextStyle(
-              color: AppTheme.teal500,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.5,
-            ),
+          _bookingStepHeader(
+            title: 'Anything else we should know?',
+            subtitle:
+                'Optional - add details or photos to help ${_proName.isNotEmpty ? _proName : 'the pro'} prepare. You can also skip this step.',
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Anything else we should know?',
-            style: TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Optional - add details or photos to help ${_proName.isNotEmpty ? _proName : 'the pro'} prepare. You can also skip this step.',
-            style: const TextStyle(
-              color: AppTheme.gray,
-              fontSize: 14,
-              height: 1.35,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 13),
           Container(
             width: double.infinity,
             height: 100,
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE6E8EC)),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _surfaceLine),
             ),
             child: TextField(
               controller: _issueController,
@@ -1683,7 +1691,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               expands: true,
               style: const TextStyle(
                 color: Color(0xFF1E293B),
-                fontSize: 14,
+                fontSize: 13,
                 height: 1.4,
               ),
               decoration: const InputDecoration(
@@ -1691,8 +1699,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 border: InputBorder.none,
                 hintText: 'AC isn\'t cooling properly',
                 hintStyle: TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 14,
+                  color: _mutedText,
+                  fontSize: 13,
                   height: 1.4,
                 ),
               ),
@@ -1944,39 +1952,16 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   Widget _buildUrgencyStep() {
     return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 150),
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'BOOK ${_proName.isEmpty ? 'THIS PRO' : _proName.toUpperCase()}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-                color: AppTheme.teal500,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5),
+          _bookingStepHeader(
+            title: 'When do you need this?',
+            subtitle:
+                'These options and fees are set by $_proName. Other pros differ.',
           ),
           const SizedBox(height: 12),
-          const Text(
-            'When do you need this?',
-            style: TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 24,
-              height: 1.12,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-              'These options and fees are set by $_proName. Other pros differ.',
-              style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 14,
-                  height: 1.35,
-                  fontWeight: FontWeight.w500)),
-          const SizedBox(height: 13),
           ..._urgencyOptions.asMap().entries.map((entry) {
             final index = entry.key;
             final tier = entry.value;
@@ -1997,25 +1982,22 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       : null,
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    constraints: const BoxConstraints(minHeight: 68),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 11,
-                    ),
+                    constraints: const BoxConstraints(minHeight: 64),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                           color: selected
                               ? AppTheme.navy700
-                              : const Color(0xFFDDE3EA),
+                              : _surfaceLine,
                           width: selected ? 2 : 1),
                     ),
                     child: Row(
                       children: [
                         Container(
-                          width: 18,
-                          height: 18,
+                          width: 16,
+                          height: 16,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: Colors.white,
@@ -2037,7 +2019,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                                 tier.label,
                                 style: const TextStyle(
                                   color: AppTheme.ink,
-                                  fontSize: 16,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -2047,8 +2029,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  color: AppTheme.gray,
-                                  fontSize: 13,
+                                  color: _mutedText,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -2072,7 +2054,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                                     color: isIncluded
                                         ? AppTheme.success
                                         : AppTheme.ink,
-                                    fontSize: 15,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
@@ -2084,7 +2066,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                                     overflow: TextOverflow.ellipsis,
                                     textAlign: TextAlign.right,
                                     style: const TextStyle(
-                                      color: AppTheme.gray,
+                                      color: _mutedText,
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -2132,26 +2114,13 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         ? const <Map<String, dynamic>>[]
         : _slotsByDate[_selectedDate] ?? const <Map<String, dynamic>>[];
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 150),
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('BOOK ${_proName.isEmpty ? 'THIS PRO' : _proName.toUpperCase()}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-                color: AppTheme.teal500,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5)),
-        const SizedBox(height: 8),
-        const Text('Pick a time',
-            style: TextStyle(
-                color: AppTheme.navy700,
-                fontSize: 24,
-                fontWeight: FontWeight.w900)),
-        const SizedBox(height: 5),
-        Text('Available times for $_proName',
-            style: const TextStyle(color: AppTheme.gray, fontSize: 12)),
-        const SizedBox(height: 13),
+        _bookingStepHeader(
+          title: 'Pick a time',
+          subtitle: 'Available times for $_proName',
+        ),
+        const SizedBox(height: 12),
         if (_isLoadingSlots)
           const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
@@ -2182,7 +2151,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _dates.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 7),
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (context, index) {
                 final date = _dates[index];
                 final selected = date == _selectedDate;
@@ -2195,16 +2164,16 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                         ? null
                         : options.first['label']?.toString();
                   }),
-                  borderRadius: BorderRadius.circular(7),
+                  borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    width: 76,
+                    width: 80,
                     decoration: BoxDecoration(
                         color: selected ? AppTheme.navy700 : Colors.white,
-                        borderRadius: BorderRadius.circular(7),
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                             color: selected
                                 ? AppTheme.navy700
-                                : const Color(0xFFE0E4EA))),
+                                : _surfaceLine)),
                     child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -2241,16 +2210,16 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               final selected = label == _selectedTime;
               return InkWell(
                 onTap: () => setState(() => _selectedTime = label),
-                borderRadius: BorderRadius.circular(7),
+                borderRadius: BorderRadius.circular(8),
                 child: Container(
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(7),
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                           color: selected
                               ? AppTheme.navy700
-                              : const Color(0xFFE0E4EA),
+                              : _surfaceLine,
                           width: selected ? 1.8 : 1)),
                   child: Text(label,
                       style: TextStyle(
@@ -2470,26 +2439,13 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     final emergencySurcharge = _selectedEmergencySurchargeLabel();
 
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 150),
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('BOOK ${_proName.isEmpty ? 'THIS PRO' : _proName.toUpperCase()}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-                color: AppTheme.teal500,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5)),
+        _bookingStepHeader(
+          title: 'Review & confirm',
+          subtitle: 'Confirm the details below to book.',
+        ),
         const SizedBox(height: 12),
-        const Text('Review & confirm',
-            style: TextStyle(
-                color: AppTheme.navy700,
-                fontSize: 24,
-                fontWeight: FontWeight.w900)),
-        const SizedBox(height: 10),
-        const Text('Confirm the details below to book.',
-            style: TextStyle(color: AppTheme.gray, fontSize: 14)),
-        const SizedBox(height: 14),
         _reviewPanel(Column(children: [
           _reviewLine('Pro', _proName, onChange: () => _goToPage(0)),
           _reviewLine('Service', _selectedService.title,
@@ -2598,13 +2554,58 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     );
   }
 
+  Widget _buildGuestReviewStep() {
+    final pricing = _selectedPricingChoice;
+    final when = _selectedDate != null && _selectedTime != null
+        ? '$_selectedDate $_selectedTime'
+        : 'Select a time';
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _bookingStepHeader(
+          title: 'Review & confirm',
+          subtitle: 'Create an account or sign in to complete your booking.',
+        ),
+        const SizedBox(height: 12),
+        _reviewPanel(Column(children: [
+          _reviewLine('Pro', _proName, onChange: () => _goToPage(0)),
+          _reviewLine('Service', _selectedService.title,
+              onChange: () => _goToPage(0)),
+          _reviewLine('When', when, onChange: () => _goToPage(3)),
+          _reviewLine('Urgency', _selectedUrgency.label,
+              onChange: () => _goToPage(2)),
+        ])),
+        const SizedBox(height: 11),
+        _reviewPanel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('SERVICE ADDRESS', style: TextStyle(color: AppTheme.gray, fontSize: 12, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 5),
+          const Text('Add your service address after creating your account.', style: TextStyle(color: AppTheme.ink, fontSize: 14, fontWeight: FontWeight.w700)),
+        ])),
+        const SizedBox(height: 11),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: const Color(0xFFEAF4FF), borderRadius: BorderRadius.circular(12)),
+          child: Row(children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('UPFRONT PRICE', style: TextStyle(color: AppTheme.teal500, fontSize: 12, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Text('You pay $_proName directly · \$0 markup', style: const TextStyle(color: AppTheme.gray, fontSize: 12)),
+            ])),
+            Text(_priceText(pricing), style: const TextStyle(color: AppTheme.navy700, fontSize: 24, fontWeight: FontWeight.w900)),
+          ]),
+        ),
+      ]),
+    );
+  }
+
   Widget _reviewPanel(Widget child) => Container(
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE0E4EA))),
+            border: Border.all(color: _surfaceLine)),
         child: child,
       );
 
@@ -2853,63 +2854,100 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   }
 
   Widget _buildFooter() {
-    final label = _isLastPage ? 'Confirm booking' : 'Continue';
-    return Container(
-      color: Colors.white,
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                _contentInset,
-                12,
-                _contentInset,
-                12,
-              ),
-              child: SizedBox(
+    if (_isLastPage && !AuthService.instance.isAuthenticated) {
+      return Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: _surfaceLine)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(_contentInset, 12, _contentInset, 8),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              SizedBox(
                 width: double.infinity,
-                height: 45,
+                height: 44,
                 child: ElevatedButton(
-                  onPressed: _isSubmitting
-                      ? null
-                      : () {
-                          if (_isLastPage) {
-                            _submitBooking();
-                          } else {
-                            _goToNext();
-                          }
-                        },
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SignupPage()),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.orange500,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(9),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          label,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
+                  child: const Text('Create account to book', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
                 ),
               ),
+              TextButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginPage()),
+                ),
+                child: const Text('Already have an account? Sign in'),
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
+    final label = _isLastPage ? 'Confirm booking' : 'Continue';
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: _surfaceLine)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            _contentInset,
+            12,
+            _contentInset,
+            12,
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton(
+              onPressed: _isSubmitting
+                  ? null
+                  : () {
+                      if (_isLastPage) {
+                        _submitBooking();
+                      } else {
+                        _goToNext();
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.orange500,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
             ),
-            _buildBottomNavBar(),
-          ],
+          ),
         ),
       ),
     );
@@ -3081,15 +3119,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   }
 
   Widget _buildBottomNavBar() {
-    return MainBottomNavigation(
-      currentIndex: 1,
-      onTap: _navigateToAppTab,
-    );
-  }
-
-  void _navigateToAppTab(int index) {
-    AppTabNavigation.request(index);
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    return const SizedBox.shrink();
   }
 
   Widget _selectionCard({
