@@ -69,7 +69,7 @@ class _ServiceZipEntryDialogState extends State<_ServiceZipEntryDialog> {
               autofocus: true,
               maxLength: 5,
               decoration: InputDecoration(
-                hintText: '33578',
+                hintText: '5-digit ZIP code',
                 prefixIcon: const Icon(
                   Icons.location_on_outlined,
                   color: AppTheme.orange500,
@@ -90,7 +90,7 @@ class _ServiceZipEntryDialogState extends State<_ServiceZipEntryDialog> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'This only changes the ZIP used in your local browser test session.',
+              'This ZIP is used only for your current browsing session.',
               style: TextStyle(
                 color: AppTheme.gray,
                 fontSize: 12,

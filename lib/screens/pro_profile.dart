@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -11,11 +12,15 @@ import '../theme.dart';
 import '../widgets/app_notification.dart';
 import 'book_flow.dart';
 import 'chat_screen.dart';
+import 'login_page.dart';
 
 class ProProfileScreen extends StatefulWidget {
   final Map<String, dynamic> pro;
 
-  const ProProfileScreen({super.key, required this.pro});
+  const ProProfileScreen({
+    super.key,
+    required this.pro,
+  });
 
   @override
   State<ProProfileScreen> createState() => _ProProfileScreenState();
@@ -118,6 +123,8 @@ class _FigmaProfileSurface extends StatelessWidget {
   final _ReviewSort reviewSort;
   final String responseSummary;
   final bool loading;
+  final bool bookActionLoading;
+  final String bookActionLabel;
   final VoidCallback onBack;
   final VoidCallback onShare;
   final VoidCallback onBook;
@@ -160,6 +167,8 @@ class _FigmaProfileSurface extends StatelessWidget {
     required this.reviewSort,
     required this.responseSummary,
     required this.loading,
+    required this.bookActionLoading,
+    required this.bookActionLabel,
     required this.onBack,
     required this.onShare,
     required this.onBook,
@@ -1103,15 +1112,25 @@ class _FigmaProfileSurface extends StatelessWidget {
       );
 
   Widget _bookButton() => ElevatedButton(
-        onPressed: onBook,
+        onPressed: bookActionLoading ? null : onBook,
         style: ElevatedButton.styleFrom(
             backgroundColor: _orange,
             foregroundColor: Colors.white,
             elevation: 0,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-        child: const Text('Book this pro',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+        child: bookActionLoading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Text(bookActionLabel,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w800)),
       );
 
   Widget _panel(Widget child) => Container(
@@ -1330,6 +1349,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   static const double _contentInset = 20;
 
   bool _isLoading = true;
+  bool _isStartingBooking = false;
   String? _errorMessage;
   Map<String, dynamic>? _profile;
   String _reviewQuery = '';
@@ -1339,13 +1359,19 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   @override
   void initState() {
     super.initState();
+    AuthService.instance.addListener(_handleAuthChanged);
     _fetchProfile();
   }
 
   @override
   void dispose() {
+    AuthService.instance.removeListener(_handleAuthChanged);
     _profileScrollController.dispose();
     super.dispose();
+  }
+
+  void _handleAuthChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _fetchProfile() async {
@@ -2650,13 +2676,42 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   }
 
   Future<void> _openBooking() async {
-    final navigator = Navigator.of(context);
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => BookFlowScreen(pro: _displayPro)),
-    );
-    if (result == true && mounted) {
-      navigator.pop(true);
+    if (_isStartingBooking) return;
+    setState(() => _isStartingBooking = true);
+    try {
+      if (!AuthService.instance.isAuthenticated) {
+        final loggedIn = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LoginPage(returnToPreviousPage: true),
+          ),
+        );
+        if (!mounted ||
+            loggedIn != true ||
+            !AuthService.instance.isAuthenticated) {
+          return;
+        }
+        unawaited(HomeownerService.instance.primeAuthenticatedCache());
+      }
+
+      if (!mounted) return;
+      final navigator = Navigator.of(context);
+      final result = await navigator.push(
+        MaterialPageRoute(
+          builder: (context) => BookFlowScreen(
+            pro: _displayPro,
+          ),
+        ),
+      );
+      if (result == BookFlowExit.changeContractor && mounted) {
+        navigator.pop(BookFlowExit.changeContractor);
+        return;
+      }
+      if (result == true && mounted) {
+        navigator.pop(true);
+      }
+    } finally {
+      if (mounted) setState(() => _isStartingBooking = false);
     }
   }
 
@@ -2672,8 +2727,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
 
     try {
       await Share.share(
-        'Check out $_businessName on TradeWorksAI for $service.$ratingLine\n$profileUrl',
-        subject: '$_businessName on TradeWorksAI',
+        'Check out $_businessName on Tradeworks One for $service.$ratingLine\n$profileUrl',
+        subject: '$_businessName on Tradeworks One',
       );
     } catch (_) {
       if (!mounted) return;
@@ -2787,6 +2842,10 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       reviewSort: _reviewSort,
       responseSummary: _responseSummary,
       loading: _isLoading,
+      bookActionLoading: _isStartingBooking,
+      bookActionLabel: AuthService.instance.isAuthenticated
+          ? 'Book this pro'
+          : 'Log in to book',
       onBack: () => Navigator.pop(context),
       onShare: _shareContractor,
       onBook: _openBooking,
@@ -3201,7 +3260,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
             width: double.infinity,
             height: 46,
             child: ElevatedButton(
-              onPressed: _openBooking,
+              onPressed: _isStartingBooking ? null : _openBooking,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.orange500,
                 foregroundColor: Colors.white,
@@ -3210,13 +3269,24 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: const Text(
-                'Book this pro',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
+              child: _isStartingBooking
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      AuthService.instance.isAuthenticated
+                          ? 'Book this pro'
+                          : 'Log in to book',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
             ),
           ),
           const SizedBox(height: 13),
@@ -3846,7 +3916,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
                 width: 146,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _openBooking,
+                  onPressed: _isStartingBooking ? null : _openBooking,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.orange500,
                     foregroundColor: Colors.white,
@@ -3856,10 +3926,24 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: const Text(
-                    'Book this pro',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                  ),
+                  child: _isStartingBooking
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          AuthService.instance.isAuthenticated
+                              ? 'Book this pro'
+                              : 'Log in to book',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                 ),
               ),
             ],

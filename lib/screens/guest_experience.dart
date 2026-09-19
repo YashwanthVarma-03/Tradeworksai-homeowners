@@ -24,7 +24,7 @@ class GuestHomeTab extends StatefulWidget {
 
 class _GuestHomeTabState extends State<GuestHomeTab> {
   final _searchController = TextEditingController();
-  String _zip = '33578';
+  String _zip = '';
 
   @override
   void dispose() {
@@ -91,7 +91,7 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
                             color: Colors.white, size: 18),
                         const SizedBox(width: 5),
                         Text(
-                          'Riverview, FL $_zip',
+                          _zip.isEmpty ? 'Enter ZIP code' : _zip,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 13,

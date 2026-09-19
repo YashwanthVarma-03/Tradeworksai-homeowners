@@ -19,6 +19,7 @@ import 'signup_page.dart';
 import 'support_page.dart';
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
+import '../services/service_location.dart';
 import '../widgets/main_bottom_navigation.dart';
 
 class DashboardShell extends StatefulWidget {
@@ -38,6 +39,9 @@ class _DashboardShellState extends State<DashboardShell>
   @override
   void initState() {
     super.initState();
+    // A manually entered ZIP is only a one-page search override. Starting a
+    // new shell (app launch, login, or logout) must never inherit it.
+    unawaited(ServiceLocation.clear());
     AppTabNavigation.requestedTab.addListener(_applyRequestedTab);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -84,15 +88,29 @@ class _DashboardShellState extends State<DashboardShell>
   void _applyRequestedTab() {
     final index = AppTabNavigation.requestedTab.value;
     if (index == null || !mounted || index < 0 || index > 4) return;
-    setState(() => _currentIndex = index);
+    _selectTab(index);
     AppTabNavigation.requestedTab.value = null;
+  }
+
+  void _selectTab(int index) {
+    if (index == _currentIndex) return;
+    if (AuthService.instance.isAuthenticated) {
+      unawaited(ServiceLocation.clear());
+    }
+    setState(() => _currentIndex = index);
+  }
+
+  Future<void> _resetAuthenticatedLocation() async {
+    if (AuthService.instance.isAuthenticated) {
+      await ServiceLocation.clear();
+    }
   }
 
   Future<void> _openBookingFlow(
     Map<String, dynamic> pro, {
     bool popCurrentRouteOnSuccess = false,
   }) async {
-    final booked = await Navigator.push<bool>(
+    final result = await Navigator.push<Object?>(
       context,
       MaterialPageRoute(
         builder: (context) =>
@@ -100,7 +118,9 @@ class _DashboardShellState extends State<DashboardShell>
       ),
     );
 
-    if (booked != true || !mounted) return;
+    if (result == BookFlowExit.changeContractor) return;
+    final booked = result == true;
+    if (!booked || !mounted) return;
     if (popCurrentRouteOnSuccess && Navigator.canPop(context)) {
       Navigator.pop(context, true);
       return;
@@ -121,6 +141,7 @@ class _DashboardShellState extends State<DashboardShell>
           label: 'View Booking',
           textColor: Colors.white,
           onPressed: () {
+            unawaited(ServiceLocation.clear());
             setState(() {
               _bookingsInitialSegment = 0;
               _currentIndex = 2;
@@ -131,6 +152,7 @@ class _DashboardShellState extends State<DashboardShell>
       ),
     );
 
+    unawaited(ServiceLocation.clear());
     setState(() {
       _bookingsInitialSegment = 0;
       _currentIndex = 2;
@@ -153,10 +175,12 @@ class _DashboardShellState extends State<DashboardShell>
                 ),
               ),
             );
+            await _resetAuthenticatedLocation();
           },
         ),
       ),
     );
+    await _resetAuthenticatedLocation();
   }
 
   @override
@@ -236,7 +260,7 @@ class _DashboardShellState extends State<DashboardShell>
             child: IndexedStack(index: _currentIndex, children: guestTabs)),
         bottomNavigationBar: MainBottomNavigation(
           currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
+          onTap: _selectTab,
         ),
       );
     }
@@ -249,6 +273,7 @@ class _DashboardShellState extends State<DashboardShell>
               builder: (context) => const BrowseScreen(showAppBar: true),
             ),
           );
+          await _resetAuthenticatedLocation();
           if (booked == true) {
             setState(() {
               _bookingsInitialSegment = 0;
@@ -258,6 +283,7 @@ class _DashboardShellState extends State<DashboardShell>
           }
         },
         onJobTap: (_) {
+          unawaited(ServiceLocation.clear());
           setState(() {
             _bookingsInitialSegment = 0;
             _currentIndex = 2;
@@ -286,6 +312,7 @@ class _DashboardShellState extends State<DashboardShell>
               ),
             ),
           );
+          await _resetAuthenticatedLocation();
           if (booked == true) {
             setState(() {
               _bookingsInitialSegment = 0;
@@ -305,6 +332,7 @@ class _DashboardShellState extends State<DashboardShell>
               ),
             ),
           );
+          await _resetAuthenticatedLocation();
           if (booked == true) {
             setState(() {
               _bookingsInitialSegment = 0;
@@ -318,6 +346,7 @@ class _DashboardShellState extends State<DashboardShell>
           final addresses = List<dynamic>.from(
               HomeownerService.instance.cachedAddresses ?? const []);
           if (addresses.isEmpty) {
+            unawaited(ServiceLocation.clear());
             setState(() {
               _currentIndex = 4;
             });
@@ -342,6 +371,7 @@ class _DashboardShellState extends State<DashboardShell>
               builder: (context) => const BrowseScreen(showAppBar: true),
             ),
           );
+          await _resetAuthenticatedLocation();
           if (booked == true) {
             setState(() {
               _bookingsInitialSegment = 0;
@@ -359,6 +389,7 @@ class _DashboardShellState extends State<DashboardShell>
               builder: (context) => const BrowseScreen(showAppBar: true),
             ),
           );
+          await _resetAuthenticatedLocation();
           if (booked == true) {
             setState(() {
               _bookingsInitialSegment = 0;
@@ -370,6 +401,7 @@ class _DashboardShellState extends State<DashboardShell>
       ),
       ProfileTab(
         onLogout: () async {
+          await ServiceLocation.clear();
           await AuthService.instance.logout();
           if (context.mounted) {
             Navigator.pushAndRemoveUntil(
@@ -380,6 +412,7 @@ class _DashboardShellState extends State<DashboardShell>
           }
         },
         onRewardsTap: () {
+          unawaited(ServiceLocation.clear());
           setState(() {
             _currentIndex = 3; // Rewards Tab
           });
@@ -394,7 +427,7 @@ class _DashboardShellState extends State<DashboardShell>
         onPopInvoked: (didPop) {
           if (didPop) return;
           if (_currentIndex != 0) {
-            setState(() => _currentIndex = 0);
+            _selectTab(0);
           } else {
             SystemNavigator.pop();
           }
@@ -416,7 +449,7 @@ class _DashboardShellState extends State<DashboardShell>
       ),
       bottomNavigationBar: MainBottomNavigation(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: _selectTab,
       ),
     );
   }
@@ -600,14 +633,16 @@ class BrowseScreen extends StatelessWidget {
           top: !showAppBar,
           child: SearchTab(
             onBookPro: (pro) async {
-              final booked = await Navigator.push<bool>(
+              final result = await Navigator.push<Object?>(
                 context,
                 MaterialPageRoute(
                   builder: (context) =>
                       BookFlowScreen(pro: Map<String, dynamic>.from(pro)),
                 ),
               );
-              if (booked == true && context.mounted) {
+              if (result == BookFlowExit.changeContractor) return;
+              final booked = result == true;
+              if (booked && context.mounted) {
                 Navigator.pop(context, true);
               }
             },

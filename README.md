@@ -39,4 +39,4 @@ Authentication → URL Configuration:
 - the exact web origin being tested, such as `http://localhost:port`
 
 Google must be enabled in the Supabase Google provider settings with the same
-web OAuth client and secret used by the TradeWorksAI website.
+web OAuth client and secret used by the Tradeworks One website.

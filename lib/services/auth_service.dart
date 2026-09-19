@@ -6,8 +6,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'stream_service.dart';
 
+/// Signals that Supabase created the account but requires email confirmation
+/// before it can issue a session.
+class SignUpConfirmationRequired implements Exception {
+  const SignUpConfirmationRequired();
+}
+
 class AuthService extends ChangeNotifier {
   static final AuthService instance = AuthService._internal();
+  static const String _rememberLoginKey = 'rememberLogin';
+  static const String _rememberedLoginEmailKey = 'rememberedLoginEmail';
 
   AuthService._internal();
 
@@ -53,20 +61,38 @@ class AuthService extends ChangeNotifier {
 
   Future<void> loadSession() async {
     _prefs = await SharedPreferences.getInstance();
-    _bindAuthListener();
+
+    final rememberLogin = _prefs!.getBool(_rememberLoginKey) ?? true;
+    if (!rememberLogin) {
+      await _clearSession(notify: false);
+      try {
+        await _client.auth.signOut(scope: SignOutScope.local);
+      } catch (_) {}
+      _bindAuthListener();
+      return;
+    }
 
     final session = _client.auth.currentSession;
     if (session == null) {
       await _clearSession(notify: false);
+      _bindAuthListener();
       return;
     }
 
     if (session.isExpired) {
-      await _discardInvalidSession(notify: false);
+      final refreshedSession = await _refreshSession(session);
+      if (refreshedSession == null || refreshedSession.isExpired) {
+        await _discardInvalidSession(notify: false);
+        _bindAuthListener();
+        return;
+      }
+      await _syncFromSession(refreshedSession);
+      _bindAuthListener();
       return;
     }
 
     await _syncFromSession(session);
+    _bindAuthListener();
   }
 
   void _bindAuthListener() {
@@ -80,7 +106,12 @@ class AuthService extends ChangeNotifier {
         }
 
         if (session.isExpired) {
-          await _discardInvalidSession();
+          final refreshedSession = await _refreshSession(session);
+          if (refreshedSession == null || refreshedSession.isExpired) {
+            await _discardInvalidSession();
+            return;
+          }
+          await _syncFromSession(refreshedSession);
           return;
         }
 
@@ -100,6 +131,7 @@ class AuthService extends ChangeNotifier {
     final response = await _client.auth.signUp(
       email: email,
       password: password,
+      emailRedirectTo: kIsWeb ? Uri.base.origin : _nativeGoogleCallbackUrl,
       data: {
         'name': name,
         'full_name': name,
@@ -115,21 +147,13 @@ class AuthService extends ChangeNotifier {
       return;
     }
 
-    final signInResponse = await _client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
-    if (signInResponse.session == null) {
-      throw Exception(
-        'Account created, but no session was returned. Please verify your email and log in.',
-      );
-    }
-    await _syncFromSession(signInResponse.session);
+    throw const SignUpConfirmationRequired();
   }
 
   Future<void> login({
     required String email,
     required String password,
+    bool rememberMe = true,
   }) async {
     final response = await _client.auth.signInWithPassword(
       email: email,
@@ -140,10 +164,15 @@ class AuthService extends ChangeNotifier {
       throw Exception('Invalid email or password.');
     }
 
+    await setRememberLoginPreference(
+      rememberMe: rememberMe,
+      email: email,
+    );
     await _syncFromSession(response.session);
   }
 
-  Future<void> signInWithGoogleInteractive() async {
+  Future<void> signInWithGoogleInteractive({bool rememberMe = true}) async {
+    await setRememberLoginPreference(rememberMe: rememberMe);
     // This matches the website's auth flow. Supabase owns the Google exchange
     // and establishes the app session after the browser redirects back.
     final launched = await _client.auth.signInWithOAuth(
@@ -153,6 +182,40 @@ class AuthService extends ChangeNotifier {
     );
     if (!launched) {
       throw Exception('Unable to open Google sign-in. Please try again.');
+    }
+  }
+
+  Future<bool> loadRememberLoginPreference() async {
+    _prefs = await SharedPreferences.getInstance();
+    return _prefs!.getBool(_rememberLoginKey) ?? true;
+  }
+
+  Future<String?> loadRememberedLoginEmail() async {
+    _prefs = await SharedPreferences.getInstance();
+    if (!(_prefs!.getBool(_rememberLoginKey) ?? true)) return null;
+    return _readString(_prefs!.getString(_rememberedLoginEmailKey));
+  }
+
+  Future<void> setRememberLoginPreference({
+    required bool rememberMe,
+    String? email,
+  }) async {
+    _prefs = await SharedPreferences.getInstance();
+    await _prefs!.setBool(_rememberLoginKey, rememberMe);
+
+    final normalizedEmail = email?.trim();
+    if (rememberMe && normalizedEmail != null && normalizedEmail.isNotEmpty) {
+      await _prefs!.setString(_rememberedLoginEmailKey, normalizedEmail);
+    } else if (!rememberMe) {
+      await _prefs!.remove(_rememberedLoginEmailKey);
+    }
+  }
+
+  Future<Session?> _refreshSession(Session session) async {
+    try {
+      return (await _client.auth.refreshSession(session.refreshToken)).session;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -174,7 +237,8 @@ class AuthService extends ChangeNotifier {
   }) async {
     final email = _prefs?.getString('pendingPasswordResetEmail');
     if (email == null || email.isEmpty) {
-      throw Exception('Request a reset link first so the app knows which email to verify.');
+      throw Exception(
+          'Request a reset link first so the app knows which email to verify.');
     }
 
     final response = await _client.auth.verifyOTP(
@@ -258,9 +322,13 @@ class AuthService extends ChangeNotifier {
         resolvedEmail.split('@').first;
     final resolvedRoles = _readRoles(appMeta['roles']);
     final givenName = _readString(userMeta['given_name']) ??
-        (resolvedName.contains(' ') ? resolvedName.split(' ').first : resolvedName);
+        (resolvedName.contains(' ')
+            ? resolvedName.split(' ').first
+            : resolvedName);
     final familyName = _readString(userMeta['family_name']) ??
-        (resolvedName.contains(' ') ? resolvedName.split(' ').skip(1).join(' ') : '');
+        (resolvedName.contains(' ')
+            ? resolvedName.split(' ').skip(1).join(' ')
+            : '');
     final avatarUrl = _readString(userMeta['picture']) ??
         _readString(userMeta['picture_url']) ??
         _readString(userMeta['avatar_url']);
@@ -301,6 +369,10 @@ class AuthService extends ChangeNotifier {
       textMessage: _textMessage ?? false,
       whatsapp: _whatsapp ?? false,
     );
+
+    if (_prefs!.getBool(_rememberLoginKey) ?? true) {
+      await _prefs!.setString(_rememberedLoginEmailKey, resolvedEmail);
+    }
 
     notifyListeners();
   }
@@ -354,7 +426,8 @@ class AuthService extends ChangeNotifier {
     await _prefs!.setString('userName', name);
     await _prefs!.setString('givenName', givenName);
     await _prefs!.setString('familyName', familyName);
-    await _prefs!.setString('role_assigned', roles.isEmpty ? 'homeowner' : roles.first);
+    await _prefs!
+        .setString('role_assigned', roles.isEmpty ? 'homeowner' : roles.first);
     await _prefs!.setString('userRoles', roles.toString());
     await _prefs!.setString('loginTimestamp', DateTime.now().toIso8601String());
     if (pictureUrl != null && pictureUrl.isNotEmpty) {
@@ -426,7 +499,10 @@ class AuthService extends ChangeNotifier {
 
   List<String> _readRoles(dynamic value) {
     if (value is List) {
-      return value.map((item) => item.toString()).where((item) => item.isNotEmpty).toList();
+      return value
+          .map((item) => item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList();
     }
     final single = _readString(value);
     if (single == null || single.isEmpty) {
@@ -450,5 +526,4 @@ class AuthService extends ChangeNotifier {
     if (text == 'false') return false;
     return null;
   }
-
 }

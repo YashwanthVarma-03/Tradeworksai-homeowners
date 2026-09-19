@@ -4,14 +4,15 @@ import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
+import '../../widgets/transaction_guard.dart';
 
 /// Opens the one rescheduling experience used by every booking surface.
 ///
 /// The caller only supplies the work-order payload; contractor resolution,
 /// availability, and submitting the proposal live here so entry points cannot
 /// drift into different rescheduling behavior or UI.
-Future<bool> openRescheduleWorkOrder(BuildContext context,
-    Map<String, dynamic> job) async {
+Future<bool> openRescheduleWorkOrder(
+    BuildContext context, Map<String, dynamic> job) async {
   final workOrderId = _workOrderId(job);
   if (workOrderId == 0) {
     AppNotification.showInfo(context, 'This booking cannot be rescheduled.');
@@ -126,8 +127,8 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
     });
     try {
       final now = DateTime.now();
-      final availability = await HomeownerService.instance
-          .getContractorAvailability(
+      final availability =
+          await HomeownerService.instance.getContractorAvailability(
         contractorId: widget.contractorId,
         fromDate: _dateKey(now),
         toDate: _dateKey(now.add(const Duration(days: 7))),
@@ -197,128 +198,150 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
     final slots = _selectedDate == null
         ? const <Map<String, dynamic>>[]
         : _slotsByDate[_selectedDate] ?? const <Map<String, dynamic>>[];
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    return TransactionGuard(
+      isProcessing: _isSubmitting,
+      blockedMessage:
+          'Please wait while your reschedule request is being sent.',
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        foregroundColor: AppTheme.navy700,
-        title: const Text('Reschedule booking',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-      ),
-      body: SafeArea(
-        top: false,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator(color: AppTheme.orange500))
-            : _error != null
-                ? _ErrorState(message: _error!, onRetry: _loadAvailability)
-                : dates.isEmpty
-                    ? _ErrorState(
-                        message: 'No alternate times are available in the next 7 days.',
-                        onRetry: _loadAvailability,
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                        children: [
-                          Text(
-                            _serviceName(widget.job),
-                            style: const TextStyle(
-                              color: AppTheme.navy700,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          foregroundColor: AppTheme.navy700,
+          title: const Text('Reschedule booking',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        ),
+        body: SafeArea(
+          top: false,
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: AppTheme.orange500))
+              : _error != null
+                  ? _ErrorState(message: _error!, onRetry: _loadAvailability)
+                  : dates.isEmpty
+                      ? _ErrorState(
+                          message:
+                              'No alternate times are available in the next 7 days.',
+                          onRetry: _loadAvailability,
+                        )
+                      : ListView(
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                          children: [
+                            Text(
+                              _serviceName(widget.job),
+                              style: const TextStyle(
+                                color: AppTheme.navy700,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text('Choose a new time, then send your request.',
-                              style: TextStyle(color: AppTheme.gray, fontSize: 13)),
-                          const SizedBox(height: 24),
-                          const Text('Select date', style: _labelStyle),
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            height: 44,
-                            child: ListView.separated(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: dates.length,
-                              separatorBuilder: (_, __) => const SizedBox(width: 8),
-                              itemBuilder: (_, index) {
-                                final date = dates[index];
-                                final selected = date == _selectedDate;
+                            const SizedBox(height: 4),
+                            const Text(
+                                'Choose a new time, then send your request.',
+                                style: TextStyle(
+                                    color: AppTheme.gray, fontSize: 13)),
+                            const SizedBox(height: 24),
+                            const Text('Select date', style: _labelStyle),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              height: 44,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: dates.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 8),
+                                itemBuilder: (_, index) {
+                                  final date = dates[index];
+                                  final selected = date == _selectedDate;
+                                  return ChoiceChip(
+                                    label: Text(_dateLabel(date)),
+                                    selected: selected,
+                                    selectedColor: AppTheme.orange500,
+                                    backgroundColor: AppTheme.pageAlt,
+                                    labelStyle: TextStyle(
+                                      color: selected
+                                          ? Colors.white
+                                          : AppTheme.navy700,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    onSelected: (_) => setState(() {
+                                      _selectedDate = date;
+                                      _selectedSlot = _slotsByDate[date]!.first;
+                                    }),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            const Text('Select time', style: _labelStyle),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: slots.map((slot) {
+                                final selected = identical(
+                                        slot, _selectedSlot) ||
+                                    (slot['start'] == _selectedSlot?['start']);
                                 return ChoiceChip(
-                                  label: Text(_dateLabel(date)),
+                                  label: Text(_timeLabel(
+                                      slot['start']?.toString() ?? '')),
                                   selected: selected,
                                   selectedColor: AppTheme.orange500,
                                   backgroundColor: AppTheme.pageAlt,
                                   labelStyle: TextStyle(
-                                    color: selected ? Colors.white : AppTheme.navy700,
+                                    color: selected
+                                        ? Colors.white
+                                        : AppTheme.navy700,
                                     fontWeight: FontWeight.w700,
                                   ),
-                                  onSelected: (_) => setState(() {
-                                    _selectedDate = date;
-                                    _selectedSlot = _slotsByDate[date]!.first;
-                                  }),
+                                  onSelected: (_) =>
+                                      setState(() => _selectedSlot = slot),
                                 );
-                              },
+                              }).toList(),
                             ),
-                          ),
-                          const SizedBox(height: 24),
-                          const Text('Select time', style: _labelStyle),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: slots.map((slot) {
-                              final selected = identical(slot, _selectedSlot) ||
-                                  (slot['start'] == _selectedSlot?['start']);
-                              return ChoiceChip(
-                                label: Text(_timeLabel(slot['start']?.toString() ?? '')),
-                                selected: selected,
-                                selectedColor: AppTheme.orange500,
-                                backgroundColor: AppTheme.pageAlt,
-                                labelStyle: TextStyle(
-                                  color: selected ? Colors.white : AppTheme.navy700,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                                onSelected: (_) => setState(() => _selectedSlot = slot),
-                              );
-                            }).toList(),
-                          ),
-                          const SizedBox(height: 24),
-                          const Text('Reason for rescheduling', style: _labelStyle),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: _reasonController,
-                            maxLines: 3,
-                            textCapitalization: TextCapitalization.sentences,
-                            decoration: InputDecoration(
-                              hintText: 'Tell the pro why you need another time',
-                              border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                          const SizedBox(height: 28),
-                          SizedBox(
-                            height: 52,
-                            child: ElevatedButton(
-                              onPressed: _selectedSlot == null || _isSubmitting
-                                  ? null
-                                  : _submit,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.orange500,
-                                foregroundColor: Colors.white,
+                            const SizedBox(height: 24),
+                            const Text('Reason for rescheduling',
+                                style: _labelStyle),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: _reasonController,
+                              maxLines: 3,
+                              textCapitalization: TextCapitalization.sentences,
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Tell the pro why you need another time',
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
-                              child: _isSubmitting
-                                  ? const SizedBox(
-                                      height: 22,
-                                      width: 22,
-                                      child: CircularProgressIndicator(
-                                          color: Colors.white, strokeWidth: 2),
-                                    )
-                                  : const Text('Send reschedule request',
-                                      style: TextStyle(fontWeight: FontWeight.w800)),
                             ),
-                          ),
-                        ],
-                      ),
+                            const SizedBox(height: 28),
+                            SizedBox(
+                              height: 52,
+                              child: ElevatedButton(
+                                onPressed:
+                                    _selectedSlot == null || _isSubmitting
+                                        ? null
+                                        : _submit,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.orange500,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: _isSubmitting
+                                    ? const SizedBox(
+                                        height: 22,
+                                        width: 22,
+                                        child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2),
+                                      )
+                                    : const Text('Send reschedule request',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w800)),
+                              ),
+                            ),
+                          ],
+                        ),
+        ),
       ),
     );
   }
@@ -340,10 +363,13 @@ class _ErrorState extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(28),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.event_busy_outlined, size: 40, color: AppTheme.gray),
+            const Icon(Icons.event_busy_outlined,
+                size: 40, color: AppTheme.gray),
             const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.navy700, fontWeight: FontWeight.w600)),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: AppTheme.navy700, fontWeight: FontWeight.w600)),
             const SizedBox(height: 16),
             OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
           ]),
@@ -357,14 +383,28 @@ String _dateLabel(String value) {
   final date = DateTime.tryParse(value);
   if (date == null) return value;
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
   return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
 }
 
 String _timeLabel(String value) {
   final time = DateTime.tryParse(value);
   if (time == null) return value;
-  final hour = time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
+  final hour =
+      time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
   final minute = time.minute.toString().padLeft(2, '0');
   return '$hour:$minute ${time.hour >= 12 ? 'PM' : 'AM'}';
 }

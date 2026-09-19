@@ -313,7 +313,19 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   void _handleSharedLocationChanged() {
     final location = ServiceLocation.selected.value;
-    if (location == null || !mounted || _manualZipOverride == location.zip) {
+    if (!mounted) {
+      return;
+    }
+    if (location == null) {
+      if (_manualZipOverride == null && _manualLocationName == null) return;
+      setState(() {
+        _manualZipOverride = null;
+        _manualLocationName = null;
+      });
+      return;
+    }
+    if (_manualZipOverride == location.zip &&
+        _manualLocationName == location.locationName) {
       return;
     }
     setState(() {
@@ -328,7 +340,14 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     final match = _addresses.firstWhere(
       (dynamic item) =>
           item is Map &&
-          (item['isDefault'] == true || item['isDefault'] == 'true'),
+          (item['isDefault'] == true ||
+              item['isDefault'] == 'true' ||
+              item['is_default'] == true ||
+              item['is_default'] == 'true' ||
+              item['isPrimary'] == true ||
+              item['isPrimary'] == 'true' ||
+              item['is_primary'] == true ||
+              item['is_primary'] == 'true'),
       orElse: () => _addresses.first,
     );
     if (match is Map<String, dynamic>) {

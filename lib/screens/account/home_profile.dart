@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../theme.dart';
+import '../../widgets/app_notification.dart';
+import '../../widgets/transaction_guard.dart';
 
 class HomeProfileScreen extends StatefulWidget {
   final List<dynamic> addresses;
@@ -26,6 +28,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
   final Map<String, Map<String, TextEditingController>> _controllers = {};
   final Map<String, List<Map<String, dynamic>>> _systemsByAddress = {};
   bool _isLoading = true;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -89,24 +92,27 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
   }
 
   Future<void> _saveAllProfiles() async {
-    final prefs = await SharedPreferences.getInstance();
-    for (final dynamic item in widget.addresses) {
-      final address = _asMap(item);
-      final addressId = _string(address['id']) ?? '';
-      if (addressId.isEmpty || !_controllers.containsKey(addressId)) continue;
-      final ctrls = _controllers[addressId]!;
-      await prefs.setString(
-        'home_profile_$addressId',
-        jsonEncode({
-          'sqft': ctrls['sqft']!.text.trim(),
-          'yearBuilt': ctrls['yearBuilt']!.text.trim(),
-          'bedrooms': ctrls['bedrooms']!.text.trim(),
-          'bathrooms': ctrls['bathrooms']!.text.trim(),
-        }),
-      );
-    }
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final dynamic item in widget.addresses) {
+        final address = _asMap(item);
+        final addressId = _string(address['id']) ?? '';
+        if (addressId.isEmpty || !_controllers.containsKey(addressId)) continue;
+        final ctrls = _controllers[addressId]!;
+        await prefs.setString(
+          'home_profile_$addressId',
+          jsonEncode({
+            'sqft': ctrls['sqft']!.text.trim(),
+            'yearBuilt': ctrls['yearBuilt']!.text.trim(),
+            'bedrooms': ctrls['bedrooms']!.text.trim(),
+            'bathrooms': ctrls['bathrooms']!.text.trim(),
+          }),
+        );
+      }
 
-    if (mounted) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Home profile saved'),
@@ -114,27 +120,40 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
         ),
       );
       Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      AppNotification.showError(
+        context,
+        error,
+        fallback: 'We couldn\'t save your home profile. Please try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _pageBackground,
-      appBar: _appBar('Home profile'),
-      body: widget.addresses.isEmpty
-          ? _emptyState()
-          : _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: AppTheme.orange500),
-                )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 124),
-                  children: widget.addresses
-                      .map((dynamic item) => _addressSection(_asMap(item)))
-                      .toList(),
-                ),
-      bottomNavigationBar: widget.addresses.isEmpty ? null : _saveBar(),
+    return TransactionGuard(
+      isProcessing: _isSaving,
+      blockedMessage: 'Please wait while your home profile is being saved.',
+      child: Scaffold(
+        backgroundColor: _pageBackground,
+        appBar: _appBar('Home profile'),
+        body: widget.addresses.isEmpty
+            ? _emptyState()
+            : _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppTheme.orange500),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 124),
+                    children: widget.addresses
+                        .map((dynamic item) => _addressSection(_asMap(item)))
+                        .toList(),
+                  ),
+        bottomNavigationBar: widget.addresses.isEmpty ? null : _saveBar(),
+      ),
     );
   }
 
@@ -356,7 +375,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                    const SizedBox(height: 3),
+                const SizedBox(height: 3),
                 Text(
                   _systemSubtitle(system),
                   maxLines: 1,
@@ -482,7 +501,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: _inkStrong,
-              fontSize: 15,
+                fontSize: 15,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -500,7 +519,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
         border: Border(top: BorderSide(color: _lineSoft)),
       ),
       child: ElevatedButton(
-        onPressed: _saveAllProfiles,
+        onPressed: _isSaving ? null : _saveAllProfiles,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.orange500,
           foregroundColor: Colors.white,
@@ -510,13 +529,22 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        child: const Text(
-          'Save home profile',
-          style: TextStyle(
-            fontSize: 14.5,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
+        child: _isSaving
+            ? const SizedBox(
+                width: 19,
+                height: 19,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : const Text(
+                'Save home profile',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
       ),
     );
   }

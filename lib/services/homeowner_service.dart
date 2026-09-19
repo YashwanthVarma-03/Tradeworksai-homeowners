@@ -66,6 +66,7 @@ class HomeownerService {
   /// availability or profile details) must be reloaded by Browse.
   final ValueNotifier<int> contractorCatalogVersion = ValueNotifier<int>(0);
   Future<void>? _backgroundSyncInFlight;
+  String? _activeCacheUserId;
   final Map<int, Map<String, dynamic>> _reviewEligibilityCache = {};
   final Map<int, DateTime> _reviewEligibilityCacheAt = {};
   final Map<int, Future<Map<String, dynamic>>> _reviewEligibilityInFlight = {};
@@ -79,6 +80,8 @@ class HomeownerService {
   final Map<String, DateTime> _zipCoverageCacheAt = {};
   final Map<String, Map<String, dynamic>> _availabilityCache = {};
   final Map<String, DateTime> _availabilityCacheAt = {};
+  final Map<String, Future<Map<String, dynamic>>> _bookingCommitsInFlight = {};
+  final Map<String, Map<String, dynamic>> _completedBookingCommits = {};
   SharedPreferences? _preferences;
   Future<SharedPreferences>? _preferencesInFlight;
   final Map<String, _RecentRequestFailure> _recentRequestFailures = {};
@@ -537,7 +540,35 @@ class HomeownerService {
     return null;
   }
 
-  String? get _userId => AuthService.instance.userId;
+  String? get _userId {
+    final currentUserId = AuthService.instance.userId;
+    if (currentUserId != _activeCacheUserId) {
+      _clearAuthenticatedMemory();
+      _activeCacheUserId = currentUserId;
+    }
+    return currentUserId;
+  }
+
+  void _clearAuthenticatedMemory() {
+    _cachedProfile = null;
+    _cachedProfileAt = null;
+    _profileInFlight = null;
+    _cachedRewards = null;
+    _cachedRewardsAt = null;
+    _rewardsInFlight = null;
+    _cachedWorkOrdersResponse = null;
+    _cachedWorkOrdersAt = null;
+    _workOrdersInFlight = null;
+    _backgroundSyncInFlight = null;
+    _mockAddresses = null;
+    _mockWorkOrders.clear();
+    _mockReviews.clear();
+    _reviewEligibilityCache.clear();
+    _reviewEligibilityCacheAt.clear();
+    _reviewEligibilityInFlight.clear();
+    _bookingCommitsInFlight.clear();
+    _completedBookingCommits.clear();
+  }
 
   /// Demo/mock mode is permanently disabled for the commercial build.
   /// It previously auto-enabled on `localhost`/`127.0.0.1`, which meant
@@ -1049,6 +1080,9 @@ class HomeownerService {
     _workOrdersInFlight = future;
     try {
       final resp = await future;
+      if (_userId != uid) {
+        throw Exception('The signed-in user changed during this request.');
+      }
       _cachedWorkOrdersResponse = resp;
       _cachedWorkOrdersAt = DateTime.now();
       await _writePersistentCache('work-orders', resp);
@@ -1464,7 +1498,8 @@ class HomeownerService {
       };
     }
 
-    if (_userId == null) throw Exception('User is not authenticated');
+    final uid = _userId;
+    if (uid == null) throw Exception('User is not authenticated');
 
     final inFlight = _rewardsInFlight;
     if (inFlight != null) return inFlight;
@@ -1494,6 +1529,9 @@ class HomeownerService {
     _rewardsInFlight = future;
     try {
       final resp = await future;
+      if (_userId != uid) {
+        throw Exception('The signed-in user changed during this request.');
+      }
       _cachedRewards = resp;
       _cachedRewardsAt = DateTime.now();
       await _writePersistentCache('rewards', resp);
@@ -1562,6 +1600,9 @@ class HomeownerService {
     _profileInFlight = future;
     try {
       final resp = await future;
+      if (_userId != uid) {
+        throw Exception('The signed-in user changed during this request.');
+      }
       _cachedProfile = resp;
       _cachedProfileAt = DateTime.now();
       _mockAddresses = resp['addresses'] ?? resp['profile']?['addresses'] ?? [];
@@ -1840,6 +1881,59 @@ class HomeownerService {
     required Map<String, dynamic> booking,
     String? startsAt,
     String? endsAt,
+    String? transactionId,
+  }) {
+    if (!_isDemo && _userId == null) {
+      return Future.error(Exception('User is not authenticated'));
+    }
+    final key = transactionId?.trim() ?? '';
+    if (key.isEmpty) {
+      return _commitBooking(
+        contractorId: contractorId,
+        action: action,
+        urgency: urgency,
+        booking: booking,
+        startsAt: startsAt,
+        endsAt: endsAt,
+      );
+    }
+
+    final completed = _completedBookingCommits[key];
+    if (completed != null) {
+      return Future.value(Map<String, dynamic>.from(completed));
+    }
+
+    final inFlight = _bookingCommitsInFlight[key];
+    if (inFlight != null) return inFlight;
+
+    final request = _commitBooking(
+      contractorId: contractorId,
+      action: action,
+      urgency: urgency,
+      booking: booking,
+      startsAt: startsAt,
+      endsAt: endsAt,
+      transactionId: key,
+    );
+    _bookingCommitsInFlight[key] = request;
+
+    return request.then((result) {
+      if (_completedBookingCommits.length >= 50) {
+        _completedBookingCommits.remove(_completedBookingCommits.keys.first);
+      }
+      _completedBookingCommits[key] = Map<String, dynamic>.from(result);
+      return result;
+    }).whenComplete(() => _bookingCommitsInFlight.remove(key));
+  }
+
+  Future<Map<String, dynamic>> _commitBooking({
+    required String contractorId,
+    required String action,
+    required String urgency,
+    required Map<String, dynamic> booking,
+    String? startsAt,
+    String? endsAt,
+    String? transactionId,
   }) async {
     if (_isDemo) {
       _ensureDemoState();
@@ -1885,6 +1979,9 @@ class HomeownerService {
 
     final bookingPayload = Map<String, dynamic>.from(booking);
     bookingPayload['requester_user_id'] = uid;
+    if (transactionId != null) {
+      bookingPayload['client_request_id'] = transactionId;
+    }
 
     final body = {
       'contractorId': contractorId,
@@ -1893,6 +1990,7 @@ class HomeownerService {
       'booking': bookingPayload,
       if (startsAt != null) 'startsAt': startsAt,
       if (endsAt != null) 'endsAt': endsAt,
+      if (transactionId != null) 'idempotencyKey': transactionId,
       if (action == 'commit' && booking['address_zip'] != null)
         'propertyZip': booking['address_zip'],
     };
@@ -1912,6 +2010,9 @@ class HomeownerService {
           data['success'] == false) {
         throw Exception(
             data['reason'] ?? data['error'] ?? 'Booking commit failed');
+      }
+      if (_userId != uid) {
+        throw Exception('The signed-in user changed during this request.');
       }
       await _invalidateWorkOrderCache();
       await _invalidateAvailabilityCache();

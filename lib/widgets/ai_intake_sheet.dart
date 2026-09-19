@@ -9,6 +9,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../services/intake_service.dart';
 import '../theme.dart';
 import '../utils/app_error_utils.dart';
+import 'transaction_guard.dart';
 
 class AiIntakeResult {
   const AiIntakeResult({
@@ -261,7 +262,9 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
           final resolvedQuery =
               resolution.scopedDescription?.trim().isNotEmpty == true
                   ? resolution.scopedDescription!.trim()
-                  : (query.isNotEmpty ? query : (resolution.label ?? 'Home Repair'));
+                  : (query.isNotEmpty
+                      ? query
+                      : (resolution.label ?? 'Home Repair'));
           Navigator.of(context).pop(
             AiIntakeResult(
               query: resolvedQuery,
@@ -270,7 +273,8 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
           );
           return;
         default:
-          final fallbackLabel = resolution.label ?? (query.isNotEmpty ? query : 'Home Service');
+          final fallbackLabel =
+              resolution.label ?? (query.isNotEmpty ? query : 'Home Service');
           Navigator.of(context).pop(
             AiIntakeResult(
               query: fallbackLabel,
@@ -292,109 +296,114 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
   Widget build(BuildContext context) {
     final isVoiceMode = widget.initialMode == 'voice';
 
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 14,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: 44,
-              height: 5,
-              decoration: BoxDecoration(
-                color: AppTheme.line,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                isVoiceMode ? 'Voice intake' : 'Camera intake',
-                style: const TextStyle(
-                  color: AppTheme.navy700,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                isVoiceMode
-                    ? 'Describe what you need done in your own words and our AI will match the right pro.'
-                    : 'Take or choose photos of the problem area to match with the right service.',
-                style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 13,
-                  height: 1.45,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (isVoiceMode) _buildVoiceSection() else _buildCameraSection(),
-            if (_message != null) ...[
-              const SizedBox(height: 14),
+    return TransactionGuard(
+      isProcessing: _isSubmitting || _isUploadingPhoto,
+      blockedMessage: 'Please wait while your request is being prepared.',
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 14,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
               Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
+                width: 44,
+                height: 5,
                 decoration: BoxDecoration(
-                  color: AppTheme.navyTint,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppTheme.line),
+                  color: AppTheme.line,
+                  borderRadius: BorderRadius.circular(999),
                 ),
+              ),
+              const SizedBox(height: 18),
+              Align(
+                alignment: Alignment.centerLeft,
                 child: Text(
-                  _message!,
-                  textAlign: TextAlign.center,
+                  isVoiceMode ? 'Voice intake' : 'Camera intake',
                   style: const TextStyle(
                     color: AppTheme.navy700,
-                    fontSize: 13,
-                    height: 1.4,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
                   ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  isVoiceMode
+                      ? 'Describe what you need done in your own words and our AI will match the right pro.'
+                      : 'Take or choose photos of the problem area to match with the right service.',
+                  style: const TextStyle(
+                    color: AppTheme.gray,
+                    fontSize: 13,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              if (isVoiceMode) _buildVoiceSection() else _buildCameraSection(),
+              if (_message != null) ...[
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.navyTint,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppTheme.line),
+                  ),
+                  child: Text(
+                    _message!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppTheme.navy700,
+                      fontSize: 13,
+                      height: 1.4,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed:
+                      _isSubmitting || _isUploadingPhoto ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.orange500,
+                    foregroundColor: AppTheme.navy700,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: AppTheme.navy700,
+                          ),
+                        )
+                      : const Text(
+                          'Find pros',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
                 ),
               ),
             ],
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isSubmitting || _isUploadingPhoto ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.orange500,
-                  foregroundColor: AppTheme.navy700,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 0,
-                ),
-                child: _isSubmitting
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.4,
-                          color: AppTheme.navy700,
-                        ),
-                      )
-                    : const Text(
-                        'Find pros',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        ),
-                      ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -422,9 +431,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                             : const Color(0xFFF7FAFD)),
                     border: Border.all(
                       color: AppTheme.orange500.withOpacity(
-                        _isListening
-                            ? 0.8
-                            : (_speechReady ? 0.3 : 0.15),
+                        _isListening ? 0.8 : (_speechReady ? 0.3 : 0.15),
                       ),
                       width: 3,
                     ),
@@ -443,9 +450,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                     size: 44,
                     color: _isListening
                         ? Colors.white
-                        : (_speechReady
-                            ? AppTheme.orange500
-                            : AppTheme.gray),
+                        : (_speechReady ? AppTheme.orange500 : AppTheme.gray),
                   ),
                 ),
               );
@@ -615,7 +620,8 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                         onPressed: _isUploadingPhoto
                             ? null
                             : () => _pickPhoto(ImageSource.gallery),
-                        icon: const Icon(Icons.photo_library_outlined, size: 18),
+                        icon:
+                            const Icon(Icons.photo_library_outlined, size: 18),
                         label: Text(kIsWeb ? 'Choose File' : 'Gallery'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.navy700,

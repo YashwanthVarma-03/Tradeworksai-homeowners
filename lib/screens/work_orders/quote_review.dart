@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
+import '../../widgets/transaction_guard.dart';
 
 class QuoteReviewScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -47,6 +48,7 @@ class _QuoteReviewScreenState extends State<QuoteReviewScreen> {
   }
 
   Future<void> _acceptQuote() async {
+    if (_isProcessing) return;
     setState(() => _isProcessing = true);
     try {
       final startsAt = widget.job['proposedStart'] ??
@@ -91,6 +93,7 @@ class _QuoteReviewScreenState extends State<QuoteReviewScreen> {
   }
 
   Future<void> _declineAll() async {
+    if (_isProcessing) return;
     setState(() => _isProcessing = true);
     try {
       await HomeownerService.instance.respondToQuote(
@@ -124,71 +127,75 @@ class _QuoteReviewScreenState extends State<QuoteReviewScreen> {
     final materials = _quote['materials'] as double;
     final anode = (total - labor - materials).clamp(0, total).toDouble();
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          _screenHeader('Review quote'),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _infoBanner(),
-                  const SizedBox(height: 22),
-                  _sectionLabel('WHAT THE PRO FOUND'),
-                  const SizedBox(height: 10),
-                  _diagnosisCard(),
-                  const SizedBox(height: 16),
-                  _capCard(total),
-                  const SizedBox(height: 22),
-                  _sectionLabel('ESTIMATE BREAKDOWN'),
-                  const SizedBox(height: 14),
-                  _lineItem('Anode rod replacement', anode),
-                  const SizedBox(height: 14),
-                  _lineItem('Tank flush & descale', materials),
-                  const SizedBox(height: 14),
-                  _lineItem('Labor', labor),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 14),
-                    child: Divider(height: 1, color: AppTheme.line),
-                  ),
-                  _lineItem('Total Cap Estimate', total,
-                      isTotal: true, valueColor: AppTheme.orange500),
-                  const SizedBox(height: 22),
-                  _primaryButton('Approve cap', _acceptQuote),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _outlineButton(
-                          'Message pro',
-                          color: AppTheme.navy700,
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Messaging will open here.'),
-                              ),
-                            );
-                          },
+    return TransactionGuard(
+      isProcessing: _isProcessing,
+      blockedMessage: 'Please wait while your quote response is being saved.',
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Column(
+          children: [
+            _screenHeader('Review quote'),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _infoBanner(),
+                    const SizedBox(height: 22),
+                    _sectionLabel('WHAT THE PRO FOUND'),
+                    const SizedBox(height: 10),
+                    _diagnosisCard(),
+                    const SizedBox(height: 16),
+                    _capCard(total),
+                    const SizedBox(height: 22),
+                    _sectionLabel('ESTIMATE BREAKDOWN'),
+                    const SizedBox(height: 14),
+                    _lineItem('Anode rod replacement', anode),
+                    const SizedBox(height: 14),
+                    _lineItem('Tank flush & descale', materials),
+                    const SizedBox(height: 14),
+                    _lineItem('Labor', labor),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      child: Divider(height: 1, color: AppTheme.line),
+                    ),
+                    _lineItem('Total Cap Estimate', total,
+                        isTotal: true, valueColor: AppTheme.orange500),
+                    const SizedBox(height: 22),
+                    _primaryButton('Approve cap', _acceptQuote),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _outlineButton(
+                            'Message pro',
+                            color: AppTheme.navy700,
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Messaging will open here.'),
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _outlineButton(
-                          'Decline',
-                          color: const Color(0xFFC83B3B),
-                          onPressed: _declineAll,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _outlineButton(
+                            'Decline',
+                            color: const Color(0xFFC83B3B),
+                            onPressed: _declineAll,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

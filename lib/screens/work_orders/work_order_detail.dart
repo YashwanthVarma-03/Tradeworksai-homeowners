@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 import '../../services/stream_service.dart';
 import '../../widgets/app_notification.dart';
+import '../../widgets/transaction_guard.dart';
 import '../chat_screen.dart';
 
 class WorkOrderDetailScreen extends StatefulWidget {
@@ -244,85 +245,89 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     final proName = _proName();
     final displayPro = proName.isEmpty ? 'Gulf Coast Air' : proName;
 
-    return Scaffold(
-      backgroundColor: AppTheme.pageAlt,
-      body: Column(
-        children: [
-          _screenHeader('Work order'),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(14, 16, 14, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    service,
-                    style: const TextStyle(
-                      color: AppTheme.navy700,
-                      fontSize: 20,
-                      height: 1.08,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '#$woId',
-                    style: const TextStyle(
-                      color: AppTheme.gray,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      _statusChip(status, _statusDisplayColor(statusLower)),
-                      const SizedBox(width: 10),
-                      const _Dot(color: AppTheme.success),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Updated just now',
-                        style: TextStyle(
-                          color: AppTheme.gray,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
+    return TransactionGuard(
+      isProcessing: _isCancelling,
+      blockedMessage: 'Please wait while this booking is being cancelled.',
+      child: Scaffold(
+        backgroundColor: AppTheme.pageAlt,
+        body: Column(
+          children: [
+            _screenHeader('Work order'),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(14, 16, 14, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      service,
+                      style: const TextStyle(
+                        color: AppTheme.navy700,
+                        fontSize: 20,
+                        height: 1.08,
+                        fontWeight: FontWeight.w900,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 22),
-                  _sectionLabel('STATUS TIMELINE'),
-                  const SizedBox(height: 12),
-                  _buildTimeline(statusLower, dateStr),
-                  const SizedBox(height: 18),
-                  const Divider(height: 1, color: AppTheme.line),
-                  const SizedBox(height: 12),
-                  _proPanel(displayPro),
-                  const SizedBox(height: 10),
-                  _proActions(),
-                  const SizedBox(height: 14),
-                  const Divider(height: 1, color: AppTheme.line),
-                  const SizedBox(height: 20),
-                  _sectionLabel('DETAILS'),
-                  const SizedBox(height: 10),
-                  _detailsCard(
-                    when: dateStr,
-                    address: addressStr,
-                    urgency: _priorityText(),
-                    note: _readString(widget.job['description']) ??
-                        _readString(widget.job['note']) ??
-                        _readString(widget.job['customerNote']) ??
-                        'AC isn\'t cooling properly',
-                  ),
-                  const SizedBox(height: 14),
-                  _priceCard(_priceText(), displayPro),
-                  const SizedBox(height: 18),
-                  _detailActions(statusLower),
-                ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '#$woId',
+                      style: const TextStyle(
+                        color: AppTheme.gray,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        _statusChip(status, _statusDisplayColor(statusLower)),
+                        const SizedBox(width: 10),
+                        const _Dot(color: AppTheme.success),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Updated just now',
+                          style: TextStyle(
+                            color: AppTheme.gray,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+                    _sectionLabel('STATUS TIMELINE'),
+                    const SizedBox(height: 12),
+                    _buildTimeline(statusLower, dateStr),
+                    const SizedBox(height: 18),
+                    const Divider(height: 1, color: AppTheme.line),
+                    const SizedBox(height: 12),
+                    _proPanel(displayPro),
+                    const SizedBox(height: 10),
+                    _proActions(),
+                    const SizedBox(height: 14),
+                    const Divider(height: 1, color: AppTheme.line),
+                    const SizedBox(height: 20),
+                    _sectionLabel('DETAILS'),
+                    const SizedBox(height: 10),
+                    _detailsCard(
+                      when: dateStr,
+                      address: addressStr,
+                      urgency: _priorityText(),
+                      note: _readString(widget.job['description']) ??
+                          _readString(widget.job['note']) ??
+                          _readString(widget.job['customerNote']) ??
+                          'AC isn\'t cooling properly',
+                    ),
+                    const SizedBox(height: 14),
+                    _priceCard(_priceText(), displayPro),
+                    const SizedBox(height: 18),
+                    _detailActions(statusLower),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

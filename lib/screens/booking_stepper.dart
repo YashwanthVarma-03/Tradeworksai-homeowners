@@ -3,6 +3,7 @@ import '../theme.dart';
 import '../widgets/custom_widgets.dart';
 import '../services/homeowner_service.dart';
 import '../services/auth_service.dart';
+import '../utils/transaction_id.dart';
 import '../widgets/app_notification.dart';
 import 'booking_success_screen.dart';
 
@@ -29,6 +30,7 @@ class _BookingStepperState extends State<BookingStepper> {
   String _selectedTime = '';
   final TextEditingController _gateCodeController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
+  late final String _bookingTransactionId = TransactionId.create('booking');
 
   final List<Map<String, dynamic>> _tiers = [
     {
@@ -61,6 +63,13 @@ class _BookingStepperState extends State<BookingStepper> {
     super.initState();
     _fetchAddresses();
     _fetchAvailability();
+  }
+
+  @override
+  void dispose() {
+    _gateCodeController.dispose();
+    _notesController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchAddresses() async {
@@ -283,11 +292,11 @@ class _BookingStepperState extends State<BookingStepper> {
         booking: bookingData,
         startsAt: startsAt,
         endsAt: endsAt,
+        transactionId: _bookingTransactionId,
       );
 
       if (!mounted) return;
-      final viewed = await Navigator.push<bool>(
-        context,
+      Navigator.of(context).pushReplacement<void, Object?>(
         MaterialPageRoute(
           builder: (context) => BookingSuccessScreen(
             woNumber: response['woNumber']?.toString(),
@@ -295,9 +304,7 @@ class _BookingStepperState extends State<BookingStepper> {
           ),
         ),
       );
-      if (viewed == true && mounted) {
-        widget.onBookingComplete();
-      }
+      return;
     } catch (e) {
       final errStr = e.toString().replaceAll('Exception: ', '');
       if (errStr.contains('verification_required') && mounted) {
@@ -487,24 +494,35 @@ class _BookingStepperState extends State<BookingStepper> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
-          _buildDragHandle(),
-          _buildStepperHeader(),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20.0),
-              child: _buildCurrentStepContent(),
+    return PopScope(
+      canPop: !_isSubmittingBooking,
+      onPopInvoked: (didPop) {
+        if (!didPop && _isSubmittingBooking) {
+          AppNotification.showInfo(
+            context,
+            'Please wait while your booking is being confirmed.',
+          );
+        }
+      },
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            _buildDragHandle(),
+            _buildStepperHeader(),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20.0),
+                child: _buildCurrentStepContent(),
+              ),
             ),
-          ),
-          _buildFooterNavigation(),
-        ],
+            _buildFooterNavigation(),
+          ],
+        ),
       ),
     );
   }

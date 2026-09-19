@@ -64,6 +64,9 @@ class SearchTab extends StatefulWidget {
 }
 
 class _SearchTabState extends State<SearchTab> {
+  static const double _railTileWidth = 88;
+  static const double _railTileGap = 8;
+
   static const Map<String, Color> _homeCategoryBackgrounds = {
     'HVAC': Color(0xFFE3F2FD),
     'Plumbing': Color(0xFFE0F7FA),
@@ -92,6 +95,7 @@ class _SearchTabState extends State<SearchTab> {
   String? _committedQuery;
   bool _isLoadingResults = false;
   bool _isLoadingCoverage = false;
+  bool _suppressLocationReset = false;
   String? _resultsError;
   int _availabilityHydrationToken = 0;
   int _prosRequestToken = 0;
@@ -187,6 +191,9 @@ class _SearchTabState extends State<SearchTab> {
     _railController.dispose();
     _searchController.dispose();
     _locationController.dispose();
+    if (AuthService.instance.isAuthenticated) {
+      unawaited(ServiceLocation.clear());
+    }
     super.dispose();
   }
 
@@ -251,12 +258,13 @@ class _SearchTabState extends State<SearchTab> {
 
   Future<void> _loadLocationAndResults() async {
     await _loadSharedLocationOverride();
-    if (await _requestGuestZipIfNeeded()) {
-      return;
-    }
     await _loadLocationFromProfile();
     if (_selectedZip.isEmpty) {
-      return;
+      final hasPendingSearch =
+          (_committedQuery != null && _committedQuery!.isNotEmpty) ||
+              (widget.initialCategory != null &&
+                  widget.initialCategory != 'All');
+      if (!hasPendingSearch || !await _requestZipIfNeeded()) return;
     }
     await _refreshZipCoverage();
     _locationController.text = _normalizeLocationText(_locationController.text);
@@ -284,9 +292,11 @@ class _SearchTabState extends State<SearchTab> {
     await _runCategorySearch(_selectedCategory);
   }
 
-  Future<void> _loadLocationFromProfile() async {
+  Future<void> _loadLocationFromProfile({
+    bool ignoreSharedOverride = false,
+  }) async {
     final sharedZip = await _getSharedZipOverride();
-    if (sharedZip != null) {
+    if (!ignoreSharedOverride && sharedZip != null) {
       return;
     }
     // Browse is public. Guest location comes from the shared ZIP/fallback,
@@ -303,7 +313,16 @@ class _SearchTabState extends State<SearchTab> {
       if (addresses.isEmpty) return;
 
       final defaultAddr = addresses.firstWhere(
-        (a) => a is Map && (a['isDefault'] == true || a['isDefault'] == 'true'),
+        (a) =>
+            a is Map &&
+            (a['isDefault'] == true ||
+                a['isDefault'] == 'true' ||
+                a['is_default'] == true ||
+                a['is_default'] == 'true' ||
+                a['isPrimary'] == true ||
+                a['isPrimary'] == 'true' ||
+                a['is_primary'] == true ||
+                a['is_primary'] == 'true'),
         orElse: () => addresses.first,
       );
       if (defaultAddr is! Map) return;
@@ -352,14 +371,8 @@ class _SearchTabState extends State<SearchTab> {
     await ServiceLocation.save(zip: zip, locationName: locationName);
   }
 
-  Future<bool> _requestGuestZipIfNeeded() async {
-    if (AuthService.instance.isAuthenticated) {
-      return false;
-    }
-    final sharedZip = await _getSharedZipOverride();
-    if (!mounted || sharedZip != null) {
-      return false;
-    }
+  Future<bool> _requestZipIfNeeded() async {
+    if (!mounted || _selectedZip.isNotEmpty) return true;
 
     final zip = await showServiceZipEntryDialog(
       context,
@@ -368,16 +381,65 @@ class _SearchTabState extends State<SearchTab> {
     if (zip == null || !mounted) {
       return false;
     }
-    await _applyLocationInput(zip);
+    await _applyLocationInput(zip, refreshResults: false);
     return true;
   }
 
   void _handleSharedLocationChanged() {
     final location = ServiceLocation.selected.value;
-    if (location == null || !mounted || location.zip == _selectedZip) {
+    if (!mounted) {
       return;
     }
+    if (location == null) {
+      if (_suppressLocationReset) return;
+      if (AuthService.instance.isAuthenticated) {
+        unawaited(_restorePrimaryLocation());
+      } else if (_selectedZip.isNotEmpty) {
+        setState(() {
+          _selectedZip = '';
+          _applyLocationLabel('Enter ZIP code', '');
+          _livePros.clear();
+          _liveNextSlotLabels.clear();
+          _categoryCounts.clear();
+          _categoryCoverage.clear();
+          _isLoadingResults = false;
+          _isLoadingCoverage = false;
+        });
+      }
+      return;
+    }
+    if (location.zip == _selectedZip) return;
     unawaited(_applyLocationInput(location.zip));
+  }
+
+  Future<void> _restorePrimaryLocation() async {
+    if (!AuthService.instance.isAuthenticated) return;
+
+    if (mounted) {
+      setState(() {
+        _selectedZip = '';
+        _applyLocationLabel('Enter ZIP code', '');
+        _livePros.clear();
+        _liveNextSlotLabels.clear();
+        _categoryCounts.clear();
+        _categoryCoverage.clear();
+        _resultsError = null;
+      });
+    }
+
+    await _loadLocationFromProfile(ignoreSharedOverride: true);
+    if (_selectedZip.isEmpty) return;
+    await _refreshZipCoverage();
+    if (!mounted) return;
+
+    final query = _committedQuery?.trim();
+    if (query != null && query.isNotEmpty) {
+      await _runQuerySearch(query);
+    } else if (_selectedCategory == 'All') {
+      await _runAllServicesSearch();
+    } else {
+      await _runCategorySearch(_selectedCategory);
+    }
   }
 
   List<_BrowseCategory> get _visibleRailCategories => _allCategories
@@ -407,10 +469,15 @@ class _SearchTabState extends State<SearchTab> {
     if (_selectedCategory != 'All' && categoryIndex == -1) return;
     final selectedIndex = _selectedCategory == 'All' ? 0 : categoryIndex + 1;
     if (selectedIndex < 0) return;
-    final targetOffset = (selectedIndex * 102.0 - 10).clamp(
-      0.0,
-      _railController.position.maxScrollExtent,
-    );
+    // A tile plus its separator is its complete horizontal footprint. This
+    // keeps an active category aligned with the page's left content edge,
+    // exactly like the initial All tile.
+    final targetOffset = (selectedIndex * (_railTileWidth + _railTileGap))
+        .clamp(
+          0.0,
+          _railController.position.maxScrollExtent,
+        )
+        .toDouble();
     _railController.animateTo(
       targetOffset,
       duration: const Duration(milliseconds: 220),
@@ -487,7 +554,6 @@ class _SearchTabState extends State<SearchTab> {
           .where((part) => part != null && part.trim().isNotEmpty)
           .join(', ');
       final returnedZip = _readText(coverage['zip']) ?? zip;
-      await _saveSharedLocationOverride(returnedZip, resolvedLocation);
 
       if (!mounted) {
         _categoryCounts
@@ -596,7 +662,10 @@ class _SearchTabState extends State<SearchTab> {
     });
   }
 
-  Future<void> _applyLocationInput(String raw) async {
+  Future<void> _applyLocationInput(
+    String raw, {
+    bool refreshResults = true,
+  }) async {
     final normalized = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
     final nextZip = _extractZip(normalized) ?? _selectedZip;
     final cityLabel = normalized.isEmpty
@@ -626,6 +695,8 @@ class _SearchTabState extends State<SearchTab> {
     });
     await _saveSharedLocationOverride(nextZip, cityLabel);
     await _refreshZipCoverage();
+
+    if (!refreshResults) return;
 
     if (_committedQuery != null && _committedQuery!.isNotEmpty) {
       await _runQuerySearch(_committedQuery!);
@@ -713,6 +784,13 @@ class _SearchTabState extends State<SearchTab> {
       _livePros.clear();
       _view = _BrowseView.browse;
     });
+    if (AuthService.instance.isAuthenticated) {
+      _suppressLocationReset = true;
+      await ServiceLocation.clear();
+      _suppressLocationReset = false;
+      await _restorePrimaryLocation();
+      return;
+    }
     await _runAllServicesSearch();
   }
 
@@ -744,6 +822,10 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Future<void> _runAllServicesSearch() async {
+    if (_selectedZip.isEmpty && !await _requestZipIfNeeded()) return;
+    // Keep the catalogue visible while nearby-pro data refreshes. Previously,
+    // the async completion replaced this route with the default Browse view.
+    final keepAllServicesListVisible = _view == _BrowseView.allCategories;
     final categories = _categoriesWithLivePros;
     final requestToken = ++_prosRequestToken;
     final requestedZip = _selectedZip;
@@ -754,7 +836,9 @@ class _SearchTabState extends State<SearchTab> {
       _searchController.clear();
       _isLoadingResults = true;
       _resultsError = null;
-      _view = _BrowseView.browse;
+      _view = keepAllServicesListVisible
+          ? _BrowseView.allCategories
+          : _BrowseView.browse;
     });
     _searchFocusNode.unfocus();
 
@@ -825,7 +909,11 @@ class _SearchTabState extends State<SearchTab> {
       _categoryCoverage.addAll(discoveredCoverage);
       _isLoadingResults = false;
       _resultsError = mergedPros.isEmpty ? firstError : null;
-      _view = mergedPros.isEmpty ? _BrowseView.noCoverage : _BrowseView.browse;
+      _view = keepAllServicesListVisible
+          ? _BrowseView.allCategories
+          : mergedPros.isEmpty
+              ? _BrowseView.noCoverage
+              : _BrowseView.browse;
     });
     unawaited(_hydrateNextAvailability(mergedPros));
     _queueSelectedRailVisibility();
@@ -850,6 +938,7 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Future<void> _runQuerySearch(String query) async {
+    if (_selectedZip.isEmpty && !await _requestZipIfNeeded()) return;
     // A high-confidence local match is kept as a safety net for typo-only
     // requests. The AI intake can still enrich normal language queries.
     final localCategory = _resolveSearchCategory(query);
@@ -937,6 +1026,7 @@ class _SearchTabState extends State<SearchTab> {
     String urgency = 'standard',
     String? forcedSlug,
   }) async {
+    if (_selectedZip.isEmpty && !await _requestZipIfNeeded()) return;
     final requestToken = ++_prosRequestToken;
     final requestedZip = _selectedZip;
     final slug = forcedSlug ?? _categorySlugForName(category);
@@ -1997,8 +2087,8 @@ class _SearchTabState extends State<SearchTab> {
     };
   }
 
-  void _openProProfile(_BrowsePro pro) {
-    Navigator.push(
+  Future<void> _openProProfile(_BrowsePro pro) async {
+    await Navigator.push<Object?>(
       context,
       MaterialPageRoute(
         builder: (context) => ProProfileScreen(pro: _toProMap(pro)),
@@ -2008,6 +2098,10 @@ class _SearchTabState extends State<SearchTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (_selectedZip.isEmpty) {
+      return _buildZipRequired();
+    }
+
     final visiblePros = _livePros;
     final searchQuery = _searchController.text.trim();
     final activeTypeAhead = _matchesQuery(searchQuery);
@@ -2039,6 +2133,61 @@ class _SearchTabState extends State<SearchTab> {
     }
 
     return body;
+  }
+
+  Widget _buildZipRequired() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        _buildSearchInputPill(),
+        const SizedBox(height: 8),
+        _buildCompactLocationChip(),
+        const SizedBox(height: 64),
+        const Icon(
+          Icons.location_on_outlined,
+          color: AppTheme.navy700,
+          size: 48,
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Enter your ZIP code',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppTheme.navy700,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'We use it to show services and trusted pros available near you.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppTheme.gray,
+            fontSize: 13,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 22),
+        Center(
+          child: ElevatedButton(
+            onPressed: () async {
+              final zip = await showServiceZipEntryDialog(
+                context,
+                initialZip: '',
+              );
+              if (zip != null) await _applyLocationInput(zip);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.orange500,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
+            ),
+            child: const Text('Enter ZIP code'),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildBrowseDefault(List<_BrowsePro> visiblePros) {
@@ -2629,7 +2778,8 @@ class _SearchTabState extends State<SearchTab> {
           padding: EdgeInsets.zero,
           scrollDirection: Axis.horizontal,
           itemBuilder: (context, index) => chips[index],
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          separatorBuilder: (_, __) =>
+              const SizedBox(width: _railTileGap),
           itemCount: chips.length,
         ),
       ),
@@ -3450,7 +3600,7 @@ class _RailChip extends StatelessWidget {
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          width: 88,
+          width: _SearchTabState._railTileWidth,
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
           decoration: BoxDecoration(
             color: active

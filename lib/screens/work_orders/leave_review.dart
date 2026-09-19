@@ -4,6 +4,7 @@ import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
+import '../../widgets/transaction_guard.dart';
 
 class LeaveReviewScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -45,6 +46,7 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
   }
 
   Future<void> _submit() async {
+    if (_isSubmitting) return;
     final reviewText = _controller.text.trim();
     final statusLower = (widget.job['status']?.toString() ?? '').toLowerCase();
     final isCompleted = statusLower == 'completed' ||
@@ -101,140 +103,144 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          _screenHeader('Leave a review'),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _proHeader(),
-                  const SizedBox(height: 22),
-                  Center(
-                    child: Column(
-                      children: [
-                        const Text(
-                          'How was your experience?',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: AppTheme.ink,
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w900,
+    return TransactionGuard(
+      isProcessing: _isSubmitting,
+      blockedMessage: 'Please wait while your review is being submitted.',
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Column(
+          children: [
+            _screenHeader('Leave a review'),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _proHeader(),
+                    const SizedBox(height: 22),
+                    Center(
+                      child: Column(
+                        children: [
+                          const Text(
+                            'How was your experience?',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppTheme.ink,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        _stars(),
-                        const SizedBox(height: 8),
-                        Text(
-                          _ratingLabel(),
-                          style: const TextStyle(
-                            color: AppTheme.orange500,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
+                          const SizedBox(height: 10),
+                          _stars(),
+                          const SizedBox(height: 8),
+                          Text(
+                            _ratingLabel(),
+                            style: const TextStyle(
+                              color: AppTheme.orange500,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  const Text(
-                    'Tell others about your experience',
-                    style: TextStyle(
-                      color: AppTheme.ink,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _controller,
-                    maxLines: 5,
-                    decoration: InputDecoration(
-                      hintText:
-                          'What went well? Was the pro on time and professional?',
-                      hintStyle: const TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 12.5,
-                        height: 1.35,
-                      ),
-                      filled: true,
-                      fillColor: AppTheme.pageAlt,
-                      contentPadding: const EdgeInsets.all(14),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppTheme.line),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppTheme.teal500),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 22),
-                  _smallLabel('QUICK TAGS'),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 10,
-                    children: [
-                      'On time',
-                      'Professional',
-                      'Clean work',
-                      'Great communication',
-                      'Fair price',
-                    ].map(_tagChip).toList(),
-                  ),
-                  const SizedBox(height: 26),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _isSubmitting ? null : _submit,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.orange500,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      child: _isSubmitting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Submit review'),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Center(
-                    child: Text(
-                      'Your review will be public and tied to this work order',
-                      textAlign: TextAlign.center,
+                    const SizedBox(height: 22),
+                    const Text(
+                      'Tell others about your experience',
                       style: TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                        color: AppTheme.ink,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _controller,
+                      maxLines: 5,
+                      decoration: InputDecoration(
+                        hintText:
+                            'What went well? Was the pro on time and professional?',
+                        hintStyle: const TextStyle(
+                          color: AppTheme.gray,
+                          fontSize: 12.5,
+                          height: 1.35,
+                        ),
+                        filled: true,
+                        fillColor: AppTheme.pageAlt,
+                        contentPadding: const EdgeInsets.all(14),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppTheme.line),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppTheme.teal500),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    _smallLabel('QUICK TAGS'),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 10,
+                      children: [
+                        'On time',
+                        'Professional',
+                        'Clean work',
+                        'Great communication',
+                        'Fair price',
+                      ].map(_tagChip).toList(),
+                    ),
+                    const SizedBox(height: 26),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _isSubmitting ? null : _submit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.orange500,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Submit review'),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Center(
+                      child: Text(
+                        'Your review will be public and tied to this work order',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppTheme.gray,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -40,6 +40,7 @@ class BookingSuccessScreen extends StatefulWidget {
 
 class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
   bool _isOpeningWorkOrder = false;
+  bool _exitRequested = false;
 
   String get _proName {
     final supplied = widget.contractorName?.trim() ?? '';
@@ -118,7 +119,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
       );
       if (wasCancelled == true && mounted) {
         didExitAfterCancellation = true;
-        Navigator.pop(context, true);
+        _finishToTab(2);
       }
     } catch (_) {
       if (mounted) {
@@ -155,200 +156,233 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
     final price = _price;
     final trade = widget.trade?.trim() ?? '';
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      bottomNavigationBar: MainBottomNavigation(
-        currentIndex: 2,
-        onTap: _navigateToAppTab,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: const BoxDecoration(
-                        color: AppTheme.success,
-                        shape: BoxShape.circle,
+    return PopScope(
+      canPop: _exitRequested,
+      onPopInvoked: (didPop) {
+        if (!didPop) _finishToBrowse();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            tooltip: 'Back to browse',
+            onPressed: _finishToBrowse,
+            icon: const Icon(Icons.arrow_back_rounded),
+          ),
+          title: const Text(
+            'Booking confirmed',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          ),
+        ),
+        bottomNavigationBar: MainBottomNavigation(
+          currentIndex: 2,
+          onTap: _navigateToAppTab,
+        ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: const BoxDecoration(
+                          color: AppTheme.success,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: 42,
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.check_rounded,
-                        color: Colors.white,
-                        size: 42,
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Booking confirmed!',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppTheme.navy700,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Booking confirmed!',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppTheme.navy700,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
+                      const SizedBox(height: 6),
+                      Text(
+                        widget.woNumber?.trim().isNotEmpty == true
+                            ? 'Your work order #${widget.woNumber} has been created.'
+                            : 'Your work order has been created.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: AppTheme.gray,
+                          fontSize: 13,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      widget.woNumber?.trim().isNotEmpty == true
-                          ? 'Your work order #${widget.woNumber} has been created.'
-                          : 'Your work order has been created.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppTheme.pageAlt,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  _proName,
-                                  style: const TextStyle(
-                                    color: AppTheme.navy700,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w900,
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.pageAlt,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _proName,
+                                    style: const TextStyle(
+                                      color: AppTheme.navy700,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              if (trade.isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
+                                if (trade.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.tealTint,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      trade,
+                                      style: const TextStyle(
+                                        color: AppTheme.teal500,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.tealTint,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
+                              ],
+                            ),
+                            const Divider(height: 25, color: Color(0xFFE6E8EC)),
+                            _detailBlock('SERVICE', _serviceName),
+                            const SizedBox(height: 12),
+                            _detailBlock(
+                                'SCHEDULED', _formatSchedule(_start, _end)),
+                            if (_address.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              _detailBlock('LOCATION', _address),
+                            ],
+                            const Divider(height: 25, color: Color(0xFFE6E8EC)),
+                            Row(
+                              children: [
+                                const Expanded(
                                   child: Text(
-                                    trade,
-                                    style: const TextStyle(
-                                      color: AppTheme.teal500,
-                                      fontSize: 10,
+                                    'Upfront price',
+                                    style: TextStyle(
+                                      color: AppTheme.ink,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
                                 ),
-                            ],
-                          ),
-                          const Divider(height: 25, color: Color(0xFFE6E8EC)),
-                          _detailBlock('SERVICE', _serviceName),
-                          const SizedBox(height: 12),
-                          _detailBlock(
-                              'SCHEDULED', _formatSchedule(_start, _end)),
-                          if (_address.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            _detailBlock('LOCATION', _address),
+                                Text(
+                                  price,
+                                  style: const TextStyle(
+                                    color: AppTheme.navy700,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
-                          const Divider(height: 25, color: Color(0xFFE6E8EC)),
-                          Row(
-                            children: [
-                              const Expanded(
-                                child: Text(
-                                  'Upfront price',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: ElevatedButton(
+                          onPressed:
+                              _isOpeningWorkOrder ? null : _openWorkOrder,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.navy700,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: _isOpeningWorkOrder
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text(
+                                  'View work order',
                                   style: TextStyle(
-                                    color: AppTheme.ink,
-                                    fontSize: 13,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                              ),
-                              Text(
-                                price,
-                                style: const TextStyle(
-                                  color: AppTheme.navy700,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: ElevatedButton(
-                        onPressed: _isOpeningWorkOrder ? null : _openWorkOrder,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.navy700,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
                         ),
-                        child: _isOpeningWorkOrder
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text(
-                                'View work order',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: OutlinedButton(
-                        onPressed: _contractorId.isEmpty ? null : _openMessage,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.teal500,
-                          side: const BorderSide(color: AppTheme.teal500),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: OutlinedButton(
+                          onPressed:
+                              _contractorId.isEmpty ? null : _openMessage,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.teal500,
+                            side: const BorderSide(color: AppTheme.teal500),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          'Message $_proName',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                          child: Text(
+                            'Message $_proName',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _navigateToAppTab(int index) {
+  void _finishToBrowse() => _finishToTab(1);
+
+  void _finishToTab(int index) {
+    if (_exitRequested) return;
     AppTabNavigation.request(index);
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    setState(() => _exitRequested = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    });
+  }
+
+  void _navigateToAppTab(int index) {
+    _finishToTab(index);
   }
 
   Widget _detailBlock(String label, String value) {

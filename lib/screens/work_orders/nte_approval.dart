@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
+import '../../widgets/transaction_guard.dart';
 
 class NteApprovalScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -17,6 +18,7 @@ class _NteApprovalScreenState extends State<NteApprovalScreen> {
   bool _isProcessing = false;
 
   Future<void> _approveNte() async {
+    if (_isProcessing) return;
     setState(() => _isProcessing = true);
     try {
       await HomeownerService.instance.performWorkOrderAction(
@@ -52,54 +54,58 @@ class _NteApprovalScreenState extends State<NteApprovalScreen> {
     final firstPro = _proName();
     final firstTotal = _totalEstimate();
 
-    return Scaffold(
-      backgroundColor: AppTheme.pageAlt,
-      body: Column(
-        children: [
-          _screenHeader('Your estimates'),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
-              children: [
-                _requestCard(service, address),
-                const SizedBox(height: 14),
-                _estimateCard(
-                  initials: _initials(firstPro),
-                  proName: firstPro,
-                  rating: _ratingText(),
-                  reviewCount: _reviewCountText('212'),
-                  amount: firstTotal,
-                  bullets: const [
-                    '3-ton 16 SEER system',
-                    'Install + old-unit haul-away',
-                    '10-yr warranty',
-                  ],
-                  startText: 'Can start next week',
-                  startColor: const Color(0xFF2F9445),
-                  accent: AppTheme.navy700,
-                  onChoose: _approveNte,
-                ),
-                const SizedBox(height: 14),
-                _estimateCard(
-                  initials: 'BA',
-                  proName: 'Bay Area HVAC',
-                  rating: '4.8',
-                  reviewCount: '156',
-                  amount: (firstTotal * 0.94).clamp(0, firstTotal + 1500),
-                  bullets: const [
-                    '3-ton 15.2 SEER system',
-                    'Install + permit',
-                    '10-yr warranty',
-                  ],
-                  startText: 'Can start in 2 weeks',
-                  startColor: AppTheme.gray,
-                  accent: AppTheme.teal500,
-                  onChoose: _approveNte,
-                ),
-              ],
+    return TransactionGuard(
+      isProcessing: _isProcessing,
+      blockedMessage: 'Please wait while your approval is being saved.',
+      child: Scaffold(
+        backgroundColor: AppTheme.pageAlt,
+        body: Column(
+          children: [
+            _screenHeader('Your estimates'),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+                children: [
+                  _requestCard(service, address),
+                  const SizedBox(height: 14),
+                  _estimateCard(
+                    initials: _initials(firstPro),
+                    proName: firstPro,
+                    rating: _ratingText(),
+                    reviewCount: _reviewCountText('212'),
+                    amount: firstTotal,
+                    bullets: const [
+                      '3-ton 16 SEER system',
+                      'Install + old-unit haul-away',
+                      '10-yr warranty',
+                    ],
+                    startText: 'Can start next week',
+                    startColor: const Color(0xFF2F9445),
+                    accent: AppTheme.navy700,
+                    onChoose: _approveNte,
+                  ),
+                  const SizedBox(height: 14),
+                  _estimateCard(
+                    initials: 'BA',
+                    proName: 'Bay Area HVAC',
+                    rating: '4.8',
+                    reviewCount: '156',
+                    amount: (firstTotal * 0.94).clamp(0, firstTotal + 1500),
+                    bullets: const [
+                      '3-ton 15.2 SEER system',
+                      'Install + permit',
+                      '10-yr warranty',
+                    ],
+                    startText: 'Can start in 2 weeks',
+                    startColor: AppTheme.gray,
+                    accent: AppTheme.teal500,
+                    onChoose: _approveNte,
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

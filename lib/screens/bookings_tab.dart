@@ -34,6 +34,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   List<dynamic> _scheduledJobs = [];
   List<dynamic> _historyJobs = [];
   final Map<int, Map<String, dynamic>> _localReviews = {};
+  final Set<int> _pendingWorkOrderActions = {};
 
   @override
   void initState() {
@@ -788,11 +789,14 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
+              final workOrderId = _resolveWorkOrderId(job);
+              if (workOrderId == 0 ||
+                  !_pendingWorkOrderActions.add(workOrderId)) {
+                return;
+              }
               try {
                 await HomeownerService.instance.performWorkOrderAction(
-                  workOrderId: job['workOrderId'] is int
-                      ? job['workOrderId']
-                      : int.parse(job['workOrderId'].toString()),
+                  workOrderId: workOrderId,
                   action: 'cancel',
                   extra: {'reason': 'homeowner_cancelled'},
                 );
@@ -810,6 +814,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   fallback:
                       'We couldn\'t cancel this booking. Please try again.',
                 );
+              } finally {
+                _pendingWorkOrderActions.remove(workOrderId);
               }
             },
             style: ElevatedButton.styleFrom(

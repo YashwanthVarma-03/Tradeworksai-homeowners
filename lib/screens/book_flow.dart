@@ -7,10 +7,12 @@ import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
+import '../utils/transaction_id.dart';
+import '../widgets/app_notification.dart';
 import 'account/manage_addresses.dart';
 import 'booking_success_screen.dart';
-import 'login_page.dart';
-import 'signup_page.dart';
+
+enum BookFlowExit { changeContractor }
 
 enum _BookingPage {
   service,
@@ -25,7 +27,10 @@ enum _BookingPage {
 class BookFlowScreen extends StatefulWidget {
   final Map<String, dynamic> pro;
 
-  const BookFlowScreen({super.key, required this.pro});
+  const BookFlowScreen({
+    super.key,
+    required this.pro,
+  });
 
   @override
   State<BookFlowScreen> createState() => _BookFlowScreenState();
@@ -45,6 +50,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   final _creditAmountController = TextEditingController();
   final _picker = ImagePicker();
   final Set<String> _selectedDetailChips = <String>{};
+  late final String _bookingTransactionId = TransactionId.create('booking');
 
   final List<XFile> _selectedPhotos = [];
   final List<dynamic> _addresses = [];
@@ -61,6 +67,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   bool _isLoadingAddresses = true;
   bool _isLoadingSlots = false;
   bool _isSubmitting = false;
+  bool _exitRequested = false;
+  bool _returnToReviewAfterEdit = false;
   bool _useServiceCredits = false;
   String? _slotsError;
   String? _profileLoadError;
@@ -81,16 +89,16 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
-    _issueController.text = _backendDescription;
-    _loadProfileAndAvailability();
-    if (AuthService.instance.isAuthenticated) {
-      _loadAddresses();
-      _loadServiceCredits();
-    } else {
-      // Guests can complete selection steps, but never issue an authenticated
-      // booking request before they create an account.
+    if (!AuthService.instance.isAuthenticated) {
       _isLoadingAddresses = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.maybePop(context);
+      });
+      return;
     }
+    _loadProfileAndAvailability();
+    _loadAddresses();
+    _loadServiceCredits();
   }
 
   @override
@@ -142,6 +150,10 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   bool get _hasBookableService => _selectedService.title.trim().isNotEmpty;
 
   bool get _isDetailsPage => _currentPage == _BookingPage.details;
+
+  void _changeContractor() {
+    Navigator.of(context).pop(BookFlowExit.changeContractor);
+  }
 
   List<_ServiceOption> get _serviceOptions {
     final parsed = <_ServiceOption>[];
@@ -377,7 +389,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         return _UrgencyOption(
           label: 'Urgent',
           detail: _UrgencyOption.formatDetail(
-                _string(_mergedPro['urgentResponseTime']) ??
+            _string(_mergedPro['urgentResponseTime']) ??
                 _string(_mergedPro['urgent_response_time']) ??
                 _string(_mergedPro['urgentNextAvailable']) ??
                 _string(_mergedPro['urgent_next_available']) ??
@@ -391,7 +403,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         return _UrgencyOption(
           label: 'Emergency',
           detail: _UrgencyOption.formatDetail(
-                _string(_mergedPro['emergencyResponseTime']) ??
+            _string(_mergedPro['emergencyResponseTime']) ??
                 _string(_mergedPro['emergency_response_time']) ??
                 _string(_mergedPro['emergencyNextAvailable']) ??
                 _string(_mergedPro['emergency_next_available']) ??
@@ -424,8 +436,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   }
 
   String _urgencyFallbackPriceText(String urgency) {
-    final camelPrefix =
-        '${urgency[0].toLowerCase()}${urgency.substring(1)}';
+    final camelPrefix = '${urgency[0].toLowerCase()}${urgency.substring(1)}';
     final snakePrefix = urgency.toLowerCase();
     final explicit = _mergedPro['${camelPrefix}PriceLabel'] ??
         _mergedPro['${snakePrefix}_price_label'] ??
@@ -529,7 +540,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             _contractorProfileResponse = data;
             _contractorProfile = profile;
             _contractorId = resolvedId;
-            _issueController.text = _backendDescription;
           });
         }
       } else {
@@ -766,7 +776,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       }
     }));
 
-    if (!mounted || (details.isEmpty && prices.isEmpty && states.isEmpty)) return;
+    if (!mounted || (details.isEmpty && prices.isEmpty && states.isEmpty))
+      return;
     setState(() {
       _urgencyAvailabilityDetails.addAll(details);
       _urgencyAvailabilityPrices.addAll(prices);
@@ -974,18 +985,54 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     }
   }
 
+  void _editFromReview(int index) {
+    _returnToReviewAfterEdit = true;
+    _goToPage(index);
+  }
+
   void _goToNext() {
+    if (_returnToReviewAfterEdit && !_isLastPage) {
+      _returnToReviewAfterEdit = false;
+      _goToPage(_pages.length - 1);
+      return;
+    }
     if (_pageIndex < _pages.length - 1) {
       _goToPage(_pageIndex + 1);
     }
   }
 
   void _goBack() {
+    if (_isSubmitting) {
+      AppNotification.showInfo(
+        context,
+        'Please wait while your booking is being confirmed.',
+      );
+      return;
+    }
+    if (_returnToReviewAfterEdit) {
+      _returnToReviewAfterEdit = false;
+      _goToPage(_pages.length - 1);
+      return;
+    }
     if (_pageIndex > 0) {
       _goToPage(_pageIndex - 1);
     } else {
       Navigator.pop(context);
     }
+  }
+
+  void _closeFlow() {
+    if (_isSubmitting) {
+      AppNotification.showInfo(
+        context,
+        'Please wait while your booking is being confirmed.',
+      );
+      return;
+    }
+    setState(() => _exitRequested = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.pop(context);
+    });
   }
 
   Future<void> _autoAdvance() async {
@@ -997,6 +1044,17 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   Future<void> _submitBooking() async {
     if (_isSubmitting) return;
+    if (!AuthService.instance.isAuthenticated) {
+      AppNotification.showInfo(
+        context,
+        'Please log in from the contractor profile to start a booking.',
+      );
+      setState(() => _exitRequested = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.maybePop(context);
+      });
+      return;
+    }
     setState(() => _isSubmitting = true);
 
     try {
@@ -1043,9 +1101,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         'requester_name': AuthService.instance.userName ?? 'Homeowner',
         'requester_email': AuthService.instance.userEmail ?? '',
         'service_category': service.title,
-        'service_description': _issueController.text.trim().isNotEmpty
-            ? _issueController.text.trim()
-            : service.subtitle,
+        'service_description': _issueController.text.trim(),
         'address_street': street,
         'address_city': city,
         'address_state': state,
@@ -1071,6 +1127,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         booking: bookingData,
         startsAt: startsAt,
         endsAt: endsAt,
+        transactionId: _bookingTransactionId,
       );
 
       if (!mounted) return;
@@ -1088,8 +1145,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               StreamService.instance
                   .resolveMessagingUserId(_contractorProfileResponse) ??
               StreamService.instance.resolveMessagingUserId(workOrder);
-      final viewed = await Navigator.push<bool>(
-        context,
+      Navigator.of(context).pushReplacement<void, Object?>(
         MaterialPageRoute(
           builder: (context) => BookingSuccessScreen(
             woNumber: workOrder['woNumber']?.toString(),
@@ -1106,9 +1162,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           ),
         ),
       );
-      if (viewed == true && mounted) {
-        Navigator.pop(context, true);
-      }
+      return;
     } catch (e) {
       final errStr = e.toString().replaceAll('Exception: ', '');
       if (errStr.contains('verification_required') && mounted) {
@@ -1283,8 +1337,14 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!AuthService.instance.isAuthenticated) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF5F7FA),
+        body: SizedBox.shrink(),
+      );
+    }
     return PopScope(
-      canPop: false,
+      canPop: _exitRequested || (!_isSubmitting && _pageIndex == 0),
       onPopInvoked: (didPop) {
         if (didPop) return;
         _goBack();
@@ -1366,7 +1426,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 color: _inkText,
                 size: 20,
               ),
-              onPressed: () => Navigator.pop(context),
+              onPressed: _closeFlow,
             ),
           ],
         ),
@@ -1475,9 +1535,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       case _BookingPage.location:
         return _buildLocationStep();
       case _BookingPage.review:
-        return AuthService.instance.isAuthenticated
-            ? _buildReviewStep()
-            : _buildGuestReviewStep();
+        return _buildReviewStep();
     }
   }
 
@@ -1554,8 +1612,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       _urgencyAvailabilityDetails.clear();
       _urgencyAvailabilityPrices.clear();
       _urgencyAvailabilityStates.clear();
-      _issueController.text =
-          service.subtitle.isNotEmpty ? service.subtitle : _backendDescription;
     });
     _refreshAvailability();
     _hydrateUrgencySummaries();
@@ -1988,9 +2044,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                          color: selected
-                              ? AppTheme.navy700
-                              : _surfaceLine,
+                          color: selected ? AppTheme.navy700 : _surfaceLine,
                           width: selected ? 2 : 1),
                     ),
                     child: Row(
@@ -2171,9 +2225,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                         color: selected ? AppTheme.navy700 : Colors.white,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                            color: selected
-                                ? AppTheme.navy700
-                                : _surfaceLine)),
+                            color: selected ? AppTheme.navy700 : _surfaceLine)),
                     child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -2217,9 +2269,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                          color: selected
-                              ? AppTheme.navy700
-                              : _surfaceLine,
+                          color: selected ? AppTheme.navy700 : _surfaceLine,
                           width: selected ? 1.8 : 1)),
                   child: Text(label,
                       style: TextStyle(
@@ -2420,9 +2470,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   Widget _buildReviewStep() {
     final pricing = _selectedPricingChoice;
-    final detail = _issueController.text.trim().isEmpty
-        ? _selectedService.subtitle
-        : _issueController.text.trim();
+    final detail = _issueController.text.trim();
     final address = _selectedAddressObj;
     final addressText = address == null
         ? ''
@@ -2447,12 +2495,12 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         ),
         const SizedBox(height: 12),
         _reviewPanel(Column(children: [
-          _reviewLine('Pro', _proName, onChange: () => _goToPage(0)),
+          _reviewLine('Pro', _proName, onChange: _changeContractor),
           _reviewLine('Service', _selectedService.title,
-              onChange: () => _goToPage(0)),
-          _reviewLine('When', when, onChange: () => _goToPage(3)),
+              onChange: () => _editFromReview(0)),
+          _reviewLine('When', when, onChange: () => _editFromReview(3)),
           _reviewLine('Urgency', _selectedUrgency.label,
-              onChange: () => _goToPage(2)),
+              onChange: () => _editFromReview(2)),
           if (fromPrice.isNotEmpty) _reviewLine('From', fromPrice),
           if (emergencySurcharge.isNotEmpty)
             _reviewLine('Emergency surcharge', emergencySurcharge),
@@ -2468,7 +2516,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                     fontWeight: FontWeight.w800)),
             const Spacer(),
             InkWell(
-                onTap: () => _goToPage(1),
+                onTap: () => _editFromReview(1),
                 child: const Text('Change',
                     style: TextStyle(
                         color: AppTheme.teal500,
@@ -2550,51 +2598,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           const SizedBox(height: 11),
           _serviceCreditsPanel(pricing.amount!),
         ],
-      ]),
-    );
-  }
-
-  Widget _buildGuestReviewStep() {
-    final pricing = _selectedPricingChoice;
-    final when = _selectedDate != null && _selectedTime != null
-        ? '$_selectedDate $_selectedTime'
-        : 'Select a time';
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 24),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _bookingStepHeader(
-          title: 'Review & confirm',
-          subtitle: 'Create an account or sign in to complete your booking.',
-        ),
-        const SizedBox(height: 12),
-        _reviewPanel(Column(children: [
-          _reviewLine('Pro', _proName, onChange: () => _goToPage(0)),
-          _reviewLine('Service', _selectedService.title,
-              onChange: () => _goToPage(0)),
-          _reviewLine('When', when, onChange: () => _goToPage(3)),
-          _reviewLine('Urgency', _selectedUrgency.label,
-              onChange: () => _goToPage(2)),
-        ])),
-        const SizedBox(height: 11),
-        _reviewPanel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('SERVICE ADDRESS', style: TextStyle(color: AppTheme.gray, fontSize: 12, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 5),
-          const Text('Add your service address after creating your account.', style: TextStyle(color: AppTheme.ink, fontSize: 14, fontWeight: FontWeight.w700)),
-        ])),
-        const SizedBox(height: 11),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: const Color(0xFFEAF4FF), borderRadius: BorderRadius.circular(12)),
-          child: Row(children: [
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('UPFRONT PRICE', style: TextStyle(color: AppTheme.teal500, fontSize: 12, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
-              Text('You pay $_proName directly · \$0 markup', style: const TextStyle(color: AppTheme.gray, fontSize: 12)),
-            ])),
-            Text(_priceText(pricing), style: const TextStyle(color: AppTheme.navy700, fontSize: 24, fontWeight: FontWeight.w900)),
-          ]),
-        ),
       ]),
     );
   }
@@ -2758,7 +2761,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           ),
           _summaryRow(
             'Details',
-            '${_issueController.text.trim().isEmpty ? _selectedService.subtitle : _issueController.text.trim()}${_selectedPhotos.isNotEmpty ? '\n${_selectedPhotos.length} photos' : ''}',
+            '${_issueController.text.trim()}${_selectedPhotos.isNotEmpty ? '\n${_selectedPhotos.length} photos' : ''}',
             multiline: true,
           ),
           if (_onsiteNotesController.text.trim().isNotEmpty)
@@ -2854,47 +2857,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   }
 
   Widget _buildFooter() {
-    if (_isLastPage && !AuthService.instance.isAuthenticated) {
-      return Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: _surfaceLine)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(_contentInset, 12, _contentInset, 8),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SignupPage()),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.orange500,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: const Text('Create account to book', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
-                ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginPage()),
-                ),
-                child: const Text('Already have an account? Sign in'),
-              ),
-            ]),
-          ),
-        ),
-      );
-    }
-    final label = _isLastPage ? 'Confirm booking' : 'Continue';
+    final label = _isLastPage
+        ? 'Confirm booking'
+        : (_returnToReviewAfterEdit ? 'Save changes' : 'Continue');
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -4482,8 +4447,7 @@ class _UrgencyDateParts {
     required this.offsetMinutes,
   });
 
-  String get key =>
-      '${year.toString().padLeft(4, '0')}-'
+  String get key => '${year.toString().padLeft(4, '0')}-'
       '${month.toString().padLeft(2, '0')}-'
       '${day.toString().padLeft(2, '0')}';
 

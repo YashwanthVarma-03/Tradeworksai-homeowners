@@ -47,7 +47,7 @@ class MyApp extends StatelessWidget {
             unawaited(PushNotificationService.instance.initialize());
           }
           return MaterialApp(
-            title: 'TradeWorksAI',
+            title: 'Tradeworks One',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,

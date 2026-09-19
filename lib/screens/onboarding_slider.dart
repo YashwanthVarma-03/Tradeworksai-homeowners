@@ -170,7 +170,7 @@ class _OnboardingSliderState extends State<OnboardingSlider> {
               ),
               const SizedBox(width: 10),
               Text(
-                'TradeWorksAI',
+                'Tradeworks One',
                 style: AppTheme.headingStyle.copyWith(
                   color: isDark ? Colors.white : AppTheme.navy700,
                   fontSize: 26,
@@ -534,7 +534,7 @@ class _OnboardingSliderState extends State<OnboardingSlider> {
           ),
           const SizedBox(height: 20),
           Text(
-            'TradeWorksAI',
+            'Tradeworks One',
             style: AppTheme.headingStyle.copyWith(
               color: isDark ? Colors.white : AppTheme.navy700,
               fontSize: 32,

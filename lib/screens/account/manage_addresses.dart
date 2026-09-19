@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
+import '../../widgets/transaction_guard.dart';
 
 class ManageAddressesScreen extends StatefulWidget {
   const ManageAddressesScreen({super.key});
@@ -21,6 +22,7 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
   bool _isLoading = true;
   bool _hasChanges = false;
   String? _busyAddressId;
+  bool _exitRequested = false;
 
   @override
   void initState() {
@@ -47,6 +49,7 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
   }
 
   Future<void> _deleteAddress(dynamic id) async {
+    if (_busyAddressId != null) return;
     final parsedId = int.tryParse(id?.toString() ?? '');
     if (parsedId == null) return;
     final confirm = await showDialog<bool>(
@@ -84,6 +87,7 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
   }
 
   Future<void> _setDefault(dynamic id) async {
+    if (_busyAddressId != null) return;
     final key = id?.toString();
     if (key == null || key.isEmpty) return;
     setState(() => _busyAddressId = key);
@@ -99,6 +103,7 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
   }
 
   Future<void> _addOrEditAddress([Map<String, dynamic>? address]) async {
+    if (_busyAddressId != null) return;
     final changed = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -111,12 +116,26 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
     }
   }
 
+  void _exit() {
+    if (_busyAddressId != null) {
+      AppNotification.showInfo(
+        context,
+        'Please wait while the address change is being saved.',
+      );
+      return;
+    }
+    setState(() => _exitRequested = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.pop(context, _hasChanges);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false,
+      canPop: _exitRequested,
       onPopInvoked: (didPop) {
-        if (!didPop) Navigator.pop(context, _hasChanges);
+        if (!didPop) _exit();
       },
       child: Scaffold(
         backgroundColor: _pageBackground,
@@ -168,7 +187,7 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded, size: 25),
         color: AppTheme.navy700,
-        onPressed: () => Navigator.pop(context, _hasChanges),
+        onPressed: _exit,
       ),
       titleSpacing: 0,
       title: Text(
@@ -423,7 +442,7 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_isLoading || !_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     final payload = {
       'label': _labelCtrl.text.trim(),
@@ -459,109 +478,113 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
   @override
   Widget build(BuildContext context) {
     final editing = widget.addressToEdit != null;
-    return Scaffold(
-      backgroundColor: _pageBackground,
-      appBar: AppBar(
-        toolbarHeight: 56,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leadingWidth: 54,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, size: 25),
-          color: AppTheme.navy700,
-          onPressed: () => Navigator.pop(context),
-        ),
-        titleSpacing: 0,
-        title: Text(
-          editing ? 'Edit address' : 'Add address',
-          style: const TextStyle(
+    return TransactionGuard(
+      isProcessing: _isLoading,
+      blockedMessage: 'Please wait while this address is being saved.',
+      child: Scaffold(
+        backgroundColor: _pageBackground,
+        appBar: AppBar(
+          toolbarHeight: 56,
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leadingWidth: 54,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, size: 25),
             color: AppTheme.navy700,
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
+            onPressed: () => Navigator.pop(context),
+          ),
+          titleSpacing: 0,
+          title: Text(
+            editing ? 'Edit address' : 'Add address',
+            style: const TextStyle(
+              color: AppTheme.navy700,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Divider(height: 1, color: _lineSoft),
           ),
         ),
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Divider(height: 1, color: _lineSoft),
-        ),
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
-          children: [
-            _field('Label', _labelCtrl, required: true),
-            const SizedBox(height: 14),
-            _field('Street address', _streetCtrl, required: true),
-            const SizedBox(height: 14),
-            _field('Unit', _unitCtrl),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(child: _field('City', _cityCtrl, required: true)),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 96,
-                  child: _field('State', _stateCtrl, required: true),
+        body: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
+            children: [
+              _field('Label', _labelCtrl, required: true),
+              const SizedBox(height: 14),
+              _field('Street address', _streetCtrl, required: true),
+              const SizedBox(height: 14),
+              _field('Unit', _unitCtrl),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(child: _field('City', _cityCtrl, required: true)),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 96,
+                    child: _field('State', _stateCtrl, required: true),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _field('ZIP code', _zipCtrl,
+                  required: true, keyboardType: TextInputType.number),
+              if (!editing) ...[
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _isDefault,
+                  activeColor: AppTheme.orange500,
+                  title: const Text(
+                    'Set as default address',
+                    style: TextStyle(
+                      color: _inkStrong,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  onChanged: (value) => setState(() => _isDefault = value),
                 ),
               ],
-            ),
-            const SizedBox(height: 16),
-            _field('ZIP code', _zipCtrl,
-                required: true, keyboardType: TextInputType.number),
-            if (!editing) ...[
-              const SizedBox(height: 16),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _isDefault,
-                activeColor: AppTheme.orange500,
-                title: const Text(
-                  'Set as default address',
-                  style: TextStyle(
-                    color: _inkStrong,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                onChanged: (value) => setState(() => _isDefault = value),
-              ),
             ],
-          ],
-        ),
-      ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: _lineSoft)),
-        ),
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _save,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.orange500,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
           ),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 19,
-                  height: 19,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
+        ),
+        bottomNavigationBar: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: _lineSoft)),
+          ),
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : _save,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.orange500,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: _isLoading
+                ? const SizedBox(
+                    width: 19,
+                    height: 19,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : Text(
+                    editing ? 'Save address' : 'Add address',
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                )
-              : Text(
-                  editing ? 'Save address' : 'Add address',
-                  style: const TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+          ),
         ),
       ),
     );

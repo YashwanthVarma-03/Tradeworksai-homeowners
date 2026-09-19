@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Brand Palette (Matching tradeworksai.com exactly)
+  // Brand Palette (Matching the Tradeworks One website exactly)
   static const Color navy900 = Color(0xFF0F2B46); // --bg-dark
   static const Color navy700 = Color(0xFF1B3C6E); // Home page blue
   static const Color navy500 = Color(0xFF132F4C); // --bg-dark-lighter

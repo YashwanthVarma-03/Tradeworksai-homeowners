@@ -80,45 +80,53 @@ class _SupportPageState extends State<SupportPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.white,
-      appBar: AppBar(
+    return PopScope(
+      canPop: _viewIndex != 1,
+      onPopInvoked: (didPop) {
+        if (!didPop && _viewIndex == 1) {
+          setState(() => _viewIndex = 0);
+        }
+      },
+      child: Scaffold(
         backgroundColor: AppTheme.white,
-        elevation: 0,
-        leading: _viewIndex > 0 && _viewIndex < 2
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
-                onPressed: () {
-                  setState(() {
-                    _viewIndex = 0;
-                  });
-                },
-              )
-            : IconButton(
-                icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
-                onPressed: () => Navigator.pop(context),
-              ),
-        title: Text(
-          _viewIndex == 0
-              ? 'Help & Support'
-              : (_viewIndex == 1 ? 'Contact support' : ''),
-          style: const TextStyle(
-              color: AppTheme.navy700,
-              fontWeight: FontWeight.bold,
-              fontSize: 16),
+        appBar: AppBar(
+          backgroundColor: AppTheme.white,
+          elevation: 0,
+          leading: _viewIndex > 0 && _viewIndex < 2
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
+                  onPressed: () {
+                    setState(() {
+                      _viewIndex = 0;
+                    });
+                  },
+                )
+              : IconButton(
+                  icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
+                  onPressed: () => Navigator.pop(context),
+                ),
+          title: Text(
+            _viewIndex == 0
+                ? 'Help & Support'
+                : (_viewIndex == 1 ? 'Contact support' : ''),
+            style: const TextStyle(
+                color: AppTheme.navy700,
+                fontWeight: FontWeight.bold,
+                fontSize: 16),
+          ),
+          centerTitle: true,
         ),
-        centerTitle: true,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                child: _buildBody(),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: _buildBody(),
+                ),
               ),
-            ),
-            if (_viewIndex < 2) _buildFooter(),
-          ],
+              if (_viewIndex < 2) _buildFooter(),
+            ],
+          ),
         ),
       ),
     );

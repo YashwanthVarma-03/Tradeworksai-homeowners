@@ -28,6 +28,11 @@ class _PasswordResetPageState extends State<PasswordResetPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_handleTabChanged);
+  }
+
+  void _handleTabChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -121,226 +126,242 @@ class _PasswordResetPageState extends State<PasswordResetPage>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Password Reset',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        backgroundColor: Colors.transparent,
-        iconTheme:
-            IconThemeData(color: isDark ? Colors.white : AppTheme.navy700),
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: AppTheme.orange500,
-          unselectedLabelColor: isDark ? Colors.white60 : AppTheme.gray,
-          indicatorColor: AppTheme.orange500,
-          tabs: const [
-            Tab(text: 'Request Link'),
-            Tab(text: 'Set Password'),
-          ],
-        ),
-      ),
-      extendBodyBehindAppBar: true,
-      body: SunriseBackground(
-        child: SafeArea(
-          child: TabBarView(
+    return PopScope(
+      canPop: !_isLoading && _tabController.index == 0,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        if (_isLoading) {
+          AppNotification.showInfo(
+            context,
+            'Please wait while your password request is being completed.',
+          );
+          return;
+        }
+        _tabController.animateTo(0);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Password Reset',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          backgroundColor: Colors.transparent,
+          iconTheme:
+              IconThemeData(color: isDark ? Colors.white : AppTheme.navy700),
+          bottom: TabBar(
             controller: _tabController,
-            children: [
-              // 1. Request tab
-              Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Form(
-                    key: _requestFormKey,
-                    child: GlassCard(
-                      padding: const EdgeInsets.all(24),
-                      borderRadius: 24,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Request Reset Link',
-                            style: AppTheme.textTheme.headlineMedium?.copyWith(
-                              fontSize: 18,
-                              color: isDark ? Colors.white : AppTheme.navy700,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Enter your email address and we\'ll send you a secure link carrying your reset token.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark ? Colors.white70 : AppTheme.gray,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          const Text(
-                            'Email Address',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12.5),
-                          ),
-                          const SizedBox(height: 8),
-                          TextFormField(
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            enabled: !_isLoading,
-                            decoration: InputDecoration(
-                              hintText: 'e.g. yashwanth@example.com',
-                              hintStyle: TextStyle(
-                                  color:
-                                      isDark ? Colors.white38 : AppTheme.gray,
-                                  fontSize: 13),
-                              filled: true,
-                              fillColor: isDark
-                                  ? const Color(0xFF1E2E4A)
-                                  : AppTheme.pageAlt,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide.none,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.trim().isEmpty) {
-                                return 'Please enter your email';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 28),
-                          if (_isLoading)
-                            const Center(
-                              child: CircularProgressIndicator(
-                                  color: AppTheme.orange500),
-                            )
-                          else
-                            HoverButton(
-                              text: 'Send Reset Link',
-                              onPressed: _submitRequest,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // 2. Perform reset tab
-              Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Form(
-                    key: _resetFormKey,
-                    child: GlassCard(
-                      padding: const EdgeInsets.all(24),
-                      borderRadius: 24,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Set New Password',
-                            style: AppTheme.textTheme.headlineMedium?.copyWith(
-                              fontSize: 18,
-                              color: isDark ? Colors.white : AppTheme.navy700,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Type the token received in your email and enter your new password.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark ? Colors.white70 : AppTheme.gray,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          const Text(
-                            'Reset Token',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12.5),
-                          ),
-                          const SizedBox(height: 8),
-                          TextFormField(
-                            controller: _tokenController,
-                            enabled: !_isLoading,
-                            decoration: InputDecoration(
-                              hintText: 'Paste token from email link',
-                              hintStyle: TextStyle(
-                                  color:
-                                      isDark ? Colors.white38 : AppTheme.gray,
-                                  fontSize: 13),
-                              filled: true,
-                              fillColor: isDark
-                                  ? const Color(0xFF1E2E4A)
-                                  : AppTheme.pageAlt,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide.none,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.trim().isEmpty) {
-                                return 'Please enter your reset token';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 18),
-                          const Text(
-                            'New Password',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12.5),
-                          ),
-                          const SizedBox(height: 8),
-                          TextFormField(
-                            controller: _passwordController,
-                            obscureText: true,
-                            enabled: !_isLoading,
-                            decoration: InputDecoration(
-                              hintText: 'Min 6 characters',
-                              hintStyle: TextStyle(
-                                  color:
-                                      isDark ? Colors.white38 : AppTheme.gray,
-                                  fontSize: 13),
-                              filled: true,
-                              fillColor: isDark
-                                  ? const Color(0xFF1E2E4A)
-                                  : AppTheme.pageAlt,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide.none,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.length < 6) {
-                                return 'Password must be at least 6 characters';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 28),
-                          if (_isLoading)
-                            const Center(
-                              child: CircularProgressIndicator(
-                                  color: AppTheme.orange500),
-                            )
-                          else
-                            HoverButton(
-                              text: 'Update Password',
-                              onPressed: _submitReset,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+            labelColor: AppTheme.orange500,
+            unselectedLabelColor: isDark ? Colors.white60 : AppTheme.gray,
+            indicatorColor: AppTheme.orange500,
+            tabs: const [
+              Tab(text: 'Request Link'),
+              Tab(text: 'Set Password'),
             ],
+          ),
+        ),
+        extendBodyBehindAppBar: true,
+        body: SunriseBackground(
+          child: SafeArea(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // 1. Request tab
+                Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Form(
+                      key: _requestFormKey,
+                      child: GlassCard(
+                        padding: const EdgeInsets.all(24),
+                        borderRadius: 24,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Request Reset Link',
+                              style:
+                                  AppTheme.textTheme.headlineMedium?.copyWith(
+                                fontSize: 18,
+                                color: isDark ? Colors.white : AppTheme.navy700,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Enter your email address and we\'ll send you a secure link carrying your reset token.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.white70 : AppTheme.gray,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            const Text(
+                              'Email Address',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12.5),
+                            ),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              enabled: !_isLoading,
+                              decoration: InputDecoration(
+                                hintText: 'e.g. yashwanth@example.com',
+                                hintStyle: TextStyle(
+                                    color:
+                                        isDark ? Colors.white38 : AppTheme.gray,
+                                    fontSize: 13),
+                                filled: true,
+                                fillColor: isDark
+                                    ? const Color(0xFF1E2E4A)
+                                    : AppTheme.pageAlt,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 12),
+                              ),
+                              validator: (val) {
+                                if (val == null || val.trim().isEmpty) {
+                                  return 'Please enter your email';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 28),
+                            if (_isLoading)
+                              const Center(
+                                child: CircularProgressIndicator(
+                                    color: AppTheme.orange500),
+                              )
+                            else
+                              HoverButton(
+                                text: 'Send Reset Link',
+                                onPressed: _submitRequest,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // 2. Perform reset tab
+                Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Form(
+                      key: _resetFormKey,
+                      child: GlassCard(
+                        padding: const EdgeInsets.all(24),
+                        borderRadius: 24,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Set New Password',
+                              style:
+                                  AppTheme.textTheme.headlineMedium?.copyWith(
+                                fontSize: 18,
+                                color: isDark ? Colors.white : AppTheme.navy700,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Type the token received in your email and enter your new password.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.white70 : AppTheme.gray,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            const Text(
+                              'Reset Token',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12.5),
+                            ),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _tokenController,
+                              enabled: !_isLoading,
+                              decoration: InputDecoration(
+                                hintText: 'Paste token from email link',
+                                hintStyle: TextStyle(
+                                    color:
+                                        isDark ? Colors.white38 : AppTheme.gray,
+                                    fontSize: 13),
+                                filled: true,
+                                fillColor: isDark
+                                    ? const Color(0xFF1E2E4A)
+                                    : AppTheme.pageAlt,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 12),
+                              ),
+                              validator: (val) {
+                                if (val == null || val.trim().isEmpty) {
+                                  return 'Please enter your reset token';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            const Text(
+                              'New Password',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12.5),
+                            ),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _passwordController,
+                              obscureText: true,
+                              enabled: !_isLoading,
+                              decoration: InputDecoration(
+                                hintText: 'Min 6 characters',
+                                hintStyle: TextStyle(
+                                    color:
+                                        isDark ? Colors.white38 : AppTheme.gray,
+                                    fontSize: 13),
+                                filled: true,
+                                fillColor: isDark
+                                    ? const Color(0xFF1E2E4A)
+                                    : AppTheme.pageAlt,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 12),
+                              ),
+                              validator: (val) {
+                                if (val == null || val.length < 6) {
+                                  return 'Password must be at least 6 characters';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 28),
+                            if (_isLoading)
+                              const Center(
+                                child: CircularProgressIndicator(
+                                    color: AppTheme.orange500),
+                              )
+                            else
+                              HoverButton(
+                                text: 'Update Password',
+                                onPressed: _submitReset,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

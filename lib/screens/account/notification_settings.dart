@@ -6,6 +6,7 @@ import '../../services/notification_preferences.dart';
 import '../../services/push_notification_service.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
+import '../../widgets/transaction_guard.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -47,6 +48,7 @@ class _NotificationSettingsScreenState
       );
 
   Future<void> _savePreferences(NotificationPreferences next) async {
+    if (_isSaving) return;
     final previous = _preferences;
     final userId = AuthService.instance.userId;
     if (userId == null || userId.isEmpty) {
@@ -168,130 +170,135 @@ class _NotificationSettingsScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _pageBackground,
-      appBar: _appBar('Notifications'),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppTheme.orange500),
-            )
-          : RefreshIndicator(
-              onRefresh: _loadSettings,
-              color: AppTheme.orange500,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-                children: [
-                  _sectionLabel('PUSH NOTIFICATIONS'),
-                  _toggleTile(
-                    title: 'Work-order status updates',
-                    subtitle: 'Booked, en route, arrived, completed',
-                    value: _pushStatus,
-                    onChanged: _isSaving
-                        ? null
-                        : (value) => _savePreferences(
-                              NotificationPreferences(
-                                pushStatus: value,
-                                pushMessages: _pushMessages,
-                                pushCredits: _pushCredits,
-                                pushPromos: _pushPromos,
-                                emailReceipts: _emailReceipts,
-                                emailPromos: _emailPromos,
+    return TransactionGuard(
+      isProcessing: _isSaving,
+      blockedMessage:
+          'Please wait while your notification settings are being saved.',
+      child: Scaffold(
+        backgroundColor: _pageBackground,
+        appBar: _appBar('Notifications'),
+        body: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(color: AppTheme.orange500),
+              )
+            : RefreshIndicator(
+                onRefresh: _loadSettings,
+                color: AppTheme.orange500,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                  children: [
+                    _sectionLabel('PUSH NOTIFICATIONS'),
+                    _toggleTile(
+                      title: 'Work-order status updates',
+                      subtitle: 'Booked, en route, arrived, completed',
+                      value: _pushStatus,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => _savePreferences(
+                                NotificationPreferences(
+                                  pushStatus: value,
+                                  pushMessages: _pushMessages,
+                                  pushCredits: _pushCredits,
+                                  pushPromos: _pushPromos,
+                                  emailReceipts: _emailReceipts,
+                                  emailPromos: _emailPromos,
+                                ),
                               ),
-                            ),
-                  ),
-                  _toggleTile(
-                    title: 'Messages from your pro',
-                    subtitle: 'New messages on a work order',
-                    value: _pushMessages,
-                    onChanged: _isSaving
-                        ? null
-                        : (value) => _savePreferences(
-                              NotificationPreferences(
-                                pushStatus: _pushStatus,
-                                pushMessages: value,
-                                pushCredits: _pushCredits,
-                                pushPromos: _pushPromos,
-                                emailReceipts: _emailReceipts,
-                                emailPromos: _emailPromos,
+                    ),
+                    _toggleTile(
+                      title: 'Messages from your pro',
+                      subtitle: 'New messages on a work order',
+                      value: _pushMessages,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => _savePreferences(
+                                NotificationPreferences(
+                                  pushStatus: _pushStatus,
+                                  pushMessages: value,
+                                  pushCredits: _pushCredits,
+                                  pushPromos: _pushPromos,
+                                  emailReceipts: _emailReceipts,
+                                  emailPromos: _emailPromos,
+                                ),
                               ),
-                            ),
-                  ),
-                  _toggleTile(
-                    title: 'Service credits & rewards',
-                    subtitle: 'When credits are earned',
-                    value: _pushCredits,
-                    onChanged: _isSaving
-                        ? null
-                        : (value) => _savePreferences(
-                              NotificationPreferences(
-                                pushStatus: _pushStatus,
-                                pushMessages: _pushMessages,
-                                pushCredits: value,
-                                pushPromos: _pushPromos,
-                                emailReceipts: _emailReceipts,
-                                emailPromos: _emailPromos,
+                    ),
+                    _toggleTile(
+                      title: 'Service credits & rewards',
+                      subtitle: 'When credits are earned',
+                      value: _pushCredits,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => _savePreferences(
+                                NotificationPreferences(
+                                  pushStatus: _pushStatus,
+                                  pushMessages: _pushMessages,
+                                  pushCredits: value,
+                                  pushPromos: _pushPromos,
+                                  emailReceipts: _emailReceipts,
+                                  emailPromos: _emailPromos,
+                                ),
                               ),
-                            ),
-                  ),
-                  _toggleTile(
-                    title: 'Promotions & offers',
-                    subtitle: 'Occasional offers',
-                    value: _pushPromos,
-                    onChanged: _isSaving
-                        ? null
-                        : (value) => _savePreferences(
-                              NotificationPreferences(
-                                pushStatus: _pushStatus,
-                                pushMessages: _pushMessages,
-                                pushCredits: _pushCredits,
-                                pushPromos: value,
-                                emailReceipts: _emailReceipts,
-                                emailPromos: _emailPromos,
+                    ),
+                    _toggleTile(
+                      title: 'Promotions & offers',
+                      subtitle: 'Occasional offers',
+                      value: _pushPromos,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => _savePreferences(
+                                NotificationPreferences(
+                                  pushStatus: _pushStatus,
+                                  pushMessages: _pushMessages,
+                                  pushCredits: _pushCredits,
+                                  pushPromos: value,
+                                  emailReceipts: _emailReceipts,
+                                  emailPromos: _emailPromos,
+                                ),
                               ),
-                            ),
-                  ),
-                  const SizedBox(height: 18),
-                  _sectionLabel('EMAIL'),
-                  _toggleTile(
-                    title: 'Booking receipts',
-                    subtitle: 'A receipt after each completed job',
-                    value: _emailReceipts,
-                    onChanged: _isSaving
-                        ? null
-                        : (value) => _savePreferences(
-                              NotificationPreferences(
-                                pushStatus: _pushStatus,
-                                pushMessages: _pushMessages,
-                                pushCredits: _pushCredits,
-                                pushPromos: _pushPromos,
-                                emailReceipts: value,
-                                emailPromos: _emailPromos,
+                    ),
+                    const SizedBox(height: 18),
+                    _sectionLabel('EMAIL'),
+                    _toggleTile(
+                      title: 'Booking receipts',
+                      subtitle: 'A receipt after each completed job',
+                      value: _emailReceipts,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => _savePreferences(
+                                NotificationPreferences(
+                                  pushStatus: _pushStatus,
+                                  pushMessages: _pushMessages,
+                                  pushCredits: _pushCredits,
+                                  pushPromos: _pushPromos,
+                                  emailReceipts: value,
+                                  emailPromos: _emailPromos,
+                                ),
                               ),
-                            ),
-                  ),
-                  _toggleTile(
-                    title: 'Promotions & offers',
-                    subtitle: 'Occasional offers',
-                    value: _emailPromos,
-                    onChanged: _isSaving
-                        ? null
-                        : (value) => _savePreferences(
-                              NotificationPreferences(
-                                pushStatus: _pushStatus,
-                                pushMessages: _pushMessages,
-                                pushCredits: _pushCredits,
-                                pushPromos: _pushPromos,
-                                emailReceipts: _emailReceipts,
-                                emailPromos: value,
+                    ),
+                    _toggleTile(
+                      title: 'Promotions & offers',
+                      subtitle: 'Occasional offers',
+                      value: _emailPromos,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => _savePreferences(
+                                NotificationPreferences(
+                                  pushStatus: _pushStatus,
+                                  pushMessages: _pushMessages,
+                                  pushCredits: _pushCredits,
+                                  pushPromos: _pushPromos,
+                                  emailReceipts: _emailReceipts,
+                                  emailPromos: value,
+                                ),
                               ),
-                            ),
-                  ),
-                  const SizedBox(height: 18),
-                  _infoCallout(),
-                ],
+                    ),
+                    const SizedBox(height: 18),
+                    _infoCallout(),
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 

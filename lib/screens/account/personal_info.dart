@@ -5,6 +5,7 @@ import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../utils/app_error_utils.dart';
 import '../../widgets/offline_state.dart';
+import '../../widgets/transaction_guard.dart';
 import '../../widgets/app_notification.dart';
 
 class PersonalInfoScreen extends StatefulWidget {
@@ -102,7 +103,9 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
   }
 
   Future<void> _saveProfile() async {
-    if (!_hasChanges || !_formKey.currentState!.validate()) return;
+    if (_isSaving || !_hasChanges || !_formKey.currentState!.validate()) {
+      return;
+    }
     setState(() => _isSaving = true);
     try {
       final parts = _nameController.text.trim().split(RegExp(r'\s+'));
@@ -203,11 +206,16 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
   }
 
   Widget _shell({required Widget child, Widget? bottom}) {
-    return Scaffold(
-      backgroundColor: _pageBackground,
-      appBar: _appBar('Personal info'),
-      body: child,
-      bottomNavigationBar: bottom,
+    return TransactionGuard(
+      isProcessing: _isSaving,
+      blockedMessage:
+          'Please wait while your personal information is being saved.',
+      child: Scaffold(
+        backgroundColor: _pageBackground,
+        appBar: _appBar('Personal info'),
+        body: child,
+        bottomNavigationBar: bottom,
+      ),
     );
   }
 

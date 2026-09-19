@@ -167,7 +167,7 @@ class PushNotificationService {
     if (notification == null) return;
     await _localNotifications.show(
       message.hashCode,
-      notification.title ?? 'TradeWorksAI',
+      notification.title ?? 'Tradeworks One',
       notification.body,
       const NotificationDetails(
         android: AndroidNotificationDetails(
