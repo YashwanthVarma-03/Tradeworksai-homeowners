@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/app_error_utils.dart';
 import 'api_config.dart';
 import 'auth_service.dart';
@@ -70,6 +71,12 @@ class HomeownerService {
   final Map<int, Map<String, dynamic>> _reviewEligibilityCache = {};
   final Map<int, DateTime> _reviewEligibilityCacheAt = {};
   final Map<int, Future<Map<String, dynamic>>> _reviewEligibilityInFlight = {};
+  final Map<int, Map<String, dynamic>> _reviewsByWorkOrder = {};
+  Future<void>? _reviewsHydrationInFlight;
+
+  /// Notifies booking surfaces when review history has been hydrated or
+  /// changed, including immediately after an authenticated session starts.
+  final ValueNotifier<int> reviewVersion = ValueNotifier<int>(0);
   final Map<String, Map<String, dynamic>> _contractorProfileCache = {};
   final Map<String, DateTime> _contractorProfileCacheAt = {};
   final Map<String, Future<Map<String, dynamic>>> _contractorProfileInFlight =
@@ -566,6 +573,8 @@ class HomeownerService {
     _reviewEligibilityCache.clear();
     _reviewEligibilityCacheAt.clear();
     _reviewEligibilityInFlight.clear();
+    _reviewsByWorkOrder.clear();
+    _reviewsHydrationInFlight = null;
     _bookingCommitsInFlight.clear();
     _completedBookingCommits.clear();
   }
@@ -734,11 +743,18 @@ class HomeownerService {
 
   Future<void> _refreshAuthenticatedCache() async {
     try {
+      Map<String, dynamic>? workOrders;
       final refreshed = await Future.wait([
         _refreshResource(() => fetchProfile(forceRefresh: true)),
-        _refreshResource(() => fetchWorkOrders(forceRefresh: true)),
+        _refreshResource(() async {
+          workOrders = await fetchWorkOrders(forceRefresh: true);
+          return workOrders!;
+        }),
         _refreshResource(() => fetchRewards(forceRefresh: true)),
       ]);
+      if (workOrders != null) {
+        await hydrateReviewsFromWorkOrders(workOrders!);
+      }
       if (refreshed.any((didRefresh) => didRefresh)) {
         syncVersion.value++;
       }
@@ -1220,11 +1236,14 @@ class HomeownerService {
   }) async {
     if (_isDemo) {
       await Future.delayed(const Duration(milliseconds: 200));
-      _mockReviews[workOrderId] = {
+      final review = <String, dynamic>{
         'rating': rating,
         'reviewText': text,
         'displayName': displayName ?? 'Demo Homeowner',
+        'reviewed': true,
       };
+      _mockReviews[workOrderId] = review;
+      _cacheReview(workOrderId, review);
       notifyLocalDataChanged();
       return {'success': true, 'ok': true};
     }
@@ -1235,6 +1254,8 @@ class HomeownerService {
     final body = {
       'action': 'submit_review',
       'workOrderId': workOrderId,
+      'requesterUserId': _userId,
+      'requester_user_id': _userId,
       'rating': ratingInt,
       'text': text,
       if (displayName != null) 'displayName': displayName,
@@ -1244,6 +1265,14 @@ class HomeownerService {
       body,
       fallbackEndpoint: _legacyReviewActionPath,
     );
+    _cacheReview(workOrderId, {
+      'rating': ratingInt.toDouble(),
+      'reviewText': text,
+      'displayName': displayName,
+      'reviewed': true,
+      'reviewId': result['reviewId'],
+      'published': result['published'],
+    });
     await _invalidateWorkOrderCache();
     _invalidateReviewEligibilityCache(workOrderId);
     await _invalidateContractorProfileCache();
@@ -1252,6 +1281,208 @@ class HomeownerService {
     _notifyContractorCatalogChanged();
     unawaited(syncInBackground());
     return result;
+  }
+
+  Map<String, dynamic>? cachedReviewForWorkOrder(int workOrderId) {
+    final review = _reviewsByWorkOrder[workOrderId];
+    return review == null ? null : Map<String, dynamic>.from(review);
+  }
+
+  Map<int, Map<String, dynamic>> get cachedReviewsByWorkOrder => {
+        for (final entry in _reviewsByWorkOrder.entries)
+          entry.key: Map<String, dynamic>.from(entry.value),
+      };
+
+  void rememberReviewedWorkOrder(int workOrderId) {
+    _cacheReview(workOrderId, const {
+      'rating': 0.0,
+      'reviewText': '',
+      'reviewed': true,
+      'detailsAvailable': false,
+    });
+  }
+
+  void _cacheReview(int workOrderId, Map<String, dynamic> review) {
+    if (workOrderId <= 0) return;
+    final normalized = Map<String, dynamic>.from(review)..['reviewed'] = true;
+    final previous = _reviewsByWorkOrder[workOrderId];
+    if (mapEquals(previous, normalized)) return;
+    _reviewsByWorkOrder[workOrderId] = normalized;
+    reviewVersion.value++;
+  }
+
+  /// Hydrates the homeowner's submitted reviews as part of login/session
+  /// priming. Embedded work-order reviews are used first, followed by one
+  /// authenticated Supabase batch read. Eligibility is the final fallback so
+  /// already-reviewed work orders never render an invalid review action.
+  Future<void> hydrateReviewsFromWorkOrders(
+    Map<String, dynamic> workOrdersResponse,
+  ) {
+    final pending = _reviewsHydrationInFlight;
+    if (pending != null) return pending;
+
+    final hydration = _hydrateReviewsFromWorkOrders(workOrdersResponse);
+    _reviewsHydrationInFlight = hydration;
+    return hydration.whenComplete(() {
+      if (identical(_reviewsHydrationInFlight, hydration)) {
+        _reviewsHydrationInFlight = null;
+      }
+    });
+  }
+
+  Future<void> _hydrateReviewsFromWorkOrders(
+    Map<String, dynamic> workOrdersResponse,
+  ) async {
+    if (_userId == null) return;
+    final tabs = workOrdersResponse['tabs'];
+    if (tabs is! Map) return;
+
+    final completed = <int, Map<String, dynamic>>{};
+    for (final section in const ['active', 'scheduled', 'history']) {
+      for (final raw in tabs[section] as List? ?? const []) {
+        if (raw is! Map) continue;
+        final job = Map<String, dynamic>.from(raw);
+        final status = _normalizeWorkOrderStatus(job['status']);
+        final timeline = job['timeline'];
+        final isCompleted = status == 'completed' ||
+            status == 'complete' ||
+            (timeline is Map && timeline['completedAt'] != null);
+        final id = _workOrderId(job);
+        if (isCompleted && id > 0) completed[id] = job;
+      }
+    }
+    if (completed.isEmpty) return;
+
+    for (final entry in completed.entries) {
+      final embedded = _reviewFromWorkOrder(entry.value);
+      if (embedded != null) _cacheReview(entry.key, embedded);
+    }
+
+    var unresolved = completed.keys
+        .where((id) => !_reviewsByWorkOrder.containsKey(id))
+        .toList(growable: false);
+    if (unresolved.isEmpty) return;
+
+    try {
+      final rows = await Supabase.instance.client
+          .from('contractor_reviews')
+          .select(
+            'id,work_order_id,rating,review_text,reviewer_name,review_date,is_active',
+          )
+          .inFilter('work_order_id', unresolved);
+      for (final raw in rows) {
+        final row = Map<String, dynamic>.from(raw);
+        final workOrderId =
+            int.tryParse(row['work_order_id']?.toString() ?? '');
+        if (workOrderId == null) continue;
+        _cacheReview(workOrderId, _normalizeReview(row));
+      }
+    } catch (_) {
+      // Some environments intentionally restrict direct review-table reads.
+      // Eligibility still gives us a reliable reviewed/not-reviewed state.
+    }
+
+    unresolved = completed.keys
+        .where((id) => !_reviewsByWorkOrder.containsKey(id))
+        .toList(growable: false);
+    const batchSize = 6;
+    for (var start = 0; start < unresolved.length; start += batchSize) {
+      final end = (start + batchSize).clamp(0, unresolved.length).toInt();
+      await Future.wait(unresolved.sublist(start, end).map((workOrderId) async {
+        try {
+          final eligibility =
+              await getReviewEligibility(workOrderId: workOrderId);
+          if (eligibility['eligible'] == false &&
+              eligibility['reason']?.toString() == 'already_reviewed') {
+            _cacheReview(workOrderId, const {
+              'rating': 0.0,
+              'reviewText': '',
+              'reviewed': true,
+              'detailsAvailable': false,
+            });
+          }
+        } catch (_) {
+          // Leave the review action available when status cannot be verified.
+        }
+      }));
+    }
+  }
+
+  int _workOrderId(Map<String, dynamic> job) {
+    for (final key in const ['workOrderId', 'work_order_id', 'id']) {
+      final parsed = int.tryParse(job[key]?.toString() ?? '');
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return 0;
+  }
+
+  Map<String, dynamic>? _reviewFromWorkOrder(Map<String, dynamic> job) {
+    Map<String, dynamic>? nested(dynamic value) {
+      if (value is Map) return Map<String, dynamic>.from(value);
+      if (value is List) {
+        for (final item in value) {
+          if (item is Map) return Map<String, dynamic>.from(item);
+        }
+      }
+      return null;
+    }
+
+    final review = nested(job['review']) ??
+        nested(job['homeownerReview']) ??
+        nested(job['homeowner_review']) ??
+        nested(job['reviews']);
+    final rating = job['rating'] ?? review?['rating'] ?? review?['score'];
+    final text = job['reviewText'] ??
+        job['review_text'] ??
+        review?['text'] ??
+        review?['reviewText'] ??
+        review?['review_text'] ??
+        review?['comment'] ??
+        review?['content'] ??
+        review?['message'];
+    final reviewed = job['reviewed'] == true || review != null;
+    if (!reviewed && rating == null && text == null) return null;
+
+    return _normalizeReview({
+      ...?review,
+      'rating': rating,
+      'review_text': text,
+      'reviewed': true,
+    });
+  }
+
+  Map<String, dynamic> _normalizeReview(Map<String, dynamic> source) {
+    final rawRating = source['rating'] ?? source['score'];
+    final rating = rawRating is num
+        ? rawRating.toDouble()
+        : double.tryParse(rawRating?.toString() ?? '') ?? 0.0;
+    return {
+      'reviewed': true,
+      'rating': rating,
+      'reviewText': (source['reviewText'] ??
+              source['review_text'] ??
+              source['text'] ??
+              source['comment'] ??
+              '')
+          .toString(),
+      'displayName': source['displayName'] ??
+          source['display_name'] ??
+          source['reviewer_name'],
+      'reviewDate':
+          source['reviewDate'] ?? source['review_date'] ?? source['created_at'],
+      'reviewId': source['reviewId'] ?? source['review_id'] ?? source['id'],
+      if (source.containsKey('is_active'))
+        'published': source['is_active'] == true,
+      'detailsAvailable': rating > 0 ||
+          (source['reviewText'] ??
+                  source['review_text'] ??
+                  source['text'] ??
+                  source['comment'] ??
+                  '')
+              .toString()
+              .trim()
+              .isNotEmpty,
+    };
   }
 
   Future<Map<String, dynamic>> getReviewEligibility({
@@ -1284,6 +1515,8 @@ class HomeownerService {
       {
         'action': 'get_review_eligibility',
         'workOrderId': workOrderId,
+        'requesterUserId': _userId,
+        'requester_user_id': _userId,
       },
       fallbackEndpoint: _legacyReviewActionPath,
     );
@@ -2190,7 +2423,13 @@ class HomeownerService {
       return _mockReviews[workOrderId];
     }
 
+    final cached = cachedReviewForWorkOrder(workOrderId);
+    if (cached != null) return cached;
+
     final jobsResp = await fetchWorkOrders();
+    await hydrateReviewsFromWorkOrders(jobsResp);
+    final hydrated = cachedReviewForWorkOrder(workOrderId);
+    if (hydrated != null) return hydrated;
     final tabs = jobsResp['tabs'] as Map<String, dynamic>? ?? const {};
     final allJobs = <dynamic>[
       ...(tabs['active'] as List? ?? const []),
@@ -2213,45 +2452,9 @@ class HomeownerService {
       return null;
     }
 
-    Map? nestedReview(dynamic value) {
-      if (value is Map) return value;
-      if (value is List) {
-        for (final entry in value) {
-          if (entry is Map) return entry;
-        }
-      }
-      return null;
-    }
-
-    final review = nestedReview(match['review']) ??
-        nestedReview(match['homeownerReview']) ??
-        nestedReview(match['homeowner_review']) ??
-        nestedReview(match['reviews']);
-    final reviewText = match['reviewText'] ??
-        match['comment'] ??
-        review?['text'] ??
-        review?['reviewText'] ??
-        review?['comment'] ??
-        review?['content'] ??
-        review?['message'];
-    final rating = match['rating'] ?? review?['rating'] ?? review?['score'];
-    final displayName = match['displayName'] ??
-        review?['displayName'] ??
-        review?['display_name'] ??
-        review?['authorName'];
-
-    if (reviewText == null && rating == null) {
-      return null;
-    }
-
-    final normalizedRating = rating is num
-        ? rating.toDouble()
-        : double.tryParse(rating?.toString() ?? '') ?? 0;
-    return {
-      'rating': normalizedRating,
-      'reviewText': reviewText?.toString() ?? '',
-      'displayName': displayName?.toString(),
-    };
+    final review = _reviewFromWorkOrder(match);
+    if (review != null) _cacheReview(workOrderId, review);
+    return review;
   }
 
   String bookingErrorMessage(Object error) {

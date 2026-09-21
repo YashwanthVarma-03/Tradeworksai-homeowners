@@ -42,6 +42,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     _activeSegment = _normalizeSegment(widget.initialSegment);
     WidgetsBinding.instance.addObserver(this);
     HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
+    HomeownerService.instance.reviewVersion.addListener(_syncCachedReviews);
+    _localReviews.addAll(HomeownerService.instance.cachedReviewsByWorkOrder);
     _restoreCachedJobsThenRefresh();
   }
 
@@ -49,8 +51,19 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   void dispose() {
     HomeownerService.instance.syncVersion
         .removeListener(_refreshFromSharedSync);
+    HomeownerService.instance.reviewVersion.removeListener(_syncCachedReviews);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _syncCachedReviews() {
+    if (!mounted) return;
+    final reviews = HomeownerService.instance.cachedReviewsByWorkOrder;
+    setState(() {
+      _localReviews
+        ..clear()
+        ..addAll(reviews);
+    });
   }
 
   void _refreshFromSharedSync() {
@@ -132,29 +145,19 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   /// correctly reports that one already exists. Load those completed reviews
   /// before rendering history so the homeowner sees what they submitted.
   Future<void> _hydrateExistingReviews() async {
-    final jobs = <dynamic>[..._historyJobs, ..._activeJobs, ..._scheduledJobs];
-    final pending = jobs.whereType<Map>().map((raw) async {
-      final job = Map<String, dynamic>.from(raw);
-      final jobId = _resolveWorkOrderId(job);
-      if (jobId == 0 || _localReviews.containsKey(jobId) || !_isCompleted(job)) {
-        return;
-      }
-      try {
-        final review = await HomeownerService.instance.getReview(jobId);
-        if (review == null || !mounted) return;
-        setState(() => _localReviews[jobId] = review);
-      } catch (_) {
-        // The booking itself remains usable if a historical review is offline.
-      }
-    });
-    await Future.wait(pending);
-  }
-
-  bool _isCompleted(Map<String, dynamic> job) {
-    final status = _string(job['status'])?.toLowerCase() ?? '';
-    return status == 'completed' ||
-        status == 'complete' ||
-        (job['timeline'] is Map && job['timeline']['completedAt'] != null);
+    try {
+      await HomeownerService.instance.hydrateReviewsFromWorkOrders({
+        'tabs': {
+          'active': _activeJobs,
+          'scheduled': _scheduledJobs,
+          'history': _historyJobs,
+        },
+      });
+      _syncCachedReviews();
+    } catch (_) {
+      // The booking list remains usable if review history is temporarily
+      // unavailable; pull-to-refresh or the next session sync retries it.
+    }
   }
 
   Future<void> _fetchJobs({
@@ -852,19 +855,17 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             job['homeowner_review']?['rating'] ??
             job['reviews']?['rating'] ??
             5);
-    final bool isEdit = job['reviewed'] == true ||
-        localReview != null ||
-        existingReviewText.toString().trim().isNotEmpty;
-
+    final initialRating = existingRating is num
+        ? existingRating.toDouble()
+        : double.tryParse(existingRating.toString()) ?? 5.0;
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
         builder: (_) => LeaveReviewScreen(
           job: job,
           jobId: jobId,
-          initialRating: (existingRating as num).toDouble(),
+          initialRating: initialRating,
           initialReviewText: isPlaceholder ? '' : existingReviewText.toString(),
-          isEdit: isEdit,
         ),
       ),
     );
@@ -882,10 +883,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       job['reviewText'] = reviewText;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(isEdit
-            ? 'Review updated successfully.'
-            : 'Review submitted successfully.'),
+      const SnackBar(
+        content: Text('Review submitted successfully.'),
         backgroundColor: AppTheme.success,
       ),
     );
@@ -1796,25 +1795,35 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         children: [
           Row(
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(
-                  5,
-                  (index) => Icon(
-                    index < reviewRating
-                        ? Icons.star_rounded
-                        : Icons.star_border_rounded,
-                    color: index < reviewRating
-                        ? AppTheme.orange500
-                        : const Color(0xFFB9C4D3),
-                    size: 18,
+              if (reviewRating > 0)
+                Semantics(
+                  label: '$reviewRating out of 5 stars',
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(
+                      5,
+                      (index) => Icon(
+                        index < reviewRating
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: index < reviewRating
+                            ? AppTheme.orange500
+                            : const Color(0xFFB9C4D3),
+                        size: 18,
+                      ),
+                    ),
                   ),
+                )
+              else
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: AppTheme.success,
+                  size: 19,
                 ),
-              ),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
-                  'Reviewed',
+                  'Review submitted',
                   style: TextStyle(
                     color: AppTheme.success,
                     fontSize: 14,
@@ -1835,7 +1844,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           if (reviewText.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              reviewText,
+              '“$reviewText”',
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Color(0xFF52627A),
                 fontSize: 12.5,
@@ -1853,7 +1864,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         Expanded(
           child: _buildPrimaryAction(
             label: 'Leave a review',
-            onPressed: () => _openReviewWhenEligible(job, reviewed: reviewed),
+            onPressed: () => _openReviewWhenEligible(job),
           ),
         ),
         const SizedBox(width: 12),
@@ -1933,10 +1944,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _openReviewWhenEligible(
-    Map<String, dynamic> job, {
-    required bool reviewed,
-  }) async {
+  Future<void> _openReviewWhenEligible(Map<String, dynamic> job) async {
     var isLoadingDialogOpen = true;
     showDialog(
       context: context,
@@ -1959,24 +1967,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         final reason = eligibility['reason']?.toString();
         if (!mounted) return;
         if (reason == 'already_reviewed') {
-          if (reviewed) {
-            _leaveReviewDialog(job);
-            return;
-          }
-          // The eligibility endpoint knows a review exists even when the list
-          // response omitted it. Fetch it before deciding what to show.
-          final existingReview =
-              await HomeownerService.instance.getReview(jobId);
-          if (!mounted) return;
-          if (existingReview != null) {
-            setState(() => _localReviews[jobId] = existingReview);
-            _leaveReviewDialog(job);
-            return;
-          }
-          AppNotification.showInfo(
-            context,
-            'Your existing review is syncing. Pull down to refresh and try again.',
-          );
+          HomeownerService.instance.rememberReviewedWorkOrder(jobId);
+          _syncCachedReviews();
         } else if (reason == 'not_completed') {
           AppNotification.showInfo(
             context,

@@ -11,7 +11,6 @@ class LeaveReviewScreen extends StatefulWidget {
   final int jobId;
   final double initialRating;
   final String initialReviewText;
-  final bool isEdit;
 
   const LeaveReviewScreen({
     super.key,
@@ -19,7 +18,6 @@ class LeaveReviewScreen extends StatefulWidget {
     required this.jobId,
     this.initialRating = 5,
     this.initialReviewText = '',
-    this.isEdit = false,
   });
 
   @override
@@ -65,14 +63,17 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
       }
 
       setState(() => _isSubmitting = true);
-      if (!widget.isEdit) {
-        final eligibility =
-            await HomeownerService.instance.getReviewEligibility(
-          workOrderId: widget.jobId,
-        );
-        if (eligibility['eligible'] == false) {
-          throw Exception(eligibility['reason']?.toString() ?? 'not_eligible');
+      final eligibility = await HomeownerService.instance.getReviewEligibility(
+        workOrderId: widget.jobId,
+      );
+      if (eligibility['eligible'] == false) {
+        final reason = eligibility['reason']?.toString();
+        if (reason == 'already_reviewed') {
+          HomeownerService.instance.rememberReviewedWorkOrder(widget.jobId);
+          if (mounted) Navigator.pop(context);
+          return;
         }
+        throw Exception(reason ?? 'not_eligible');
       }
 
       await HomeownerService.instance.submitReview(

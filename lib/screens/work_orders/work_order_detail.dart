@@ -22,6 +22,7 @@ class WorkOrderDetailScreen extends StatefulWidget {
 
 class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   Map<String, dynamic>? _review;
+  bool _isReviewLoading = true;
   bool _isCancelling = false;
 
   @override
@@ -35,47 +36,33 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     final isCompleted = status == 'completed' ||
         status == 'complete' ||
         widget.job['timeline']?['completedAt'] != null;
-    if (!isCompleted) return;
+    if (!isCompleted) {
+      if (mounted) setState(() => _isReviewLoading = false);
+      return;
+    }
 
     try {
       final woId = int.tryParse(widget.job['id']?.toString() ??
               widget.job['workOrderId']?.toString() ??
               '0') ??
           0;
-      final rev = await HomeownerService.instance.getReview(woId);
-      if (mounted) {
-        setState(() {
-          _review = rev;
-        });
-      }
-      // If no review found in work order data, check eligibility
-      // to determine if one exists in the DB (already_reviewed means it exists)
-      if (rev == null && mounted) {
+      var review = await HomeownerService.instance.getReview(woId);
+      if (review == null && woId > 0) {
         try {
           final eligibility = await HomeownerService.instance
               .getReviewEligibility(workOrderId: woId);
           if (eligibility['eligible'] == false &&
               eligibility['reason'] == 'already_reviewed') {
-            if (mounted) {
-              setState(() {
-                // Create a placeholder so the "Edit Review" button shows
-                _review = {
-                  'rating': 5.0,
-                  'reviewText': '',
-                  'displayName': null,
-                  '_needsLoad': true
-                };
-              });
-            }
+            HomeownerService.instance.rememberReviewedWorkOrder(woId);
+            review = HomeownerService.instance.cachedReviewForWorkOrder(woId);
           }
         } catch (_) {}
       }
+      if (mounted) setState(() => _review = review);
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _review = null;
-        });
-      }
+      // Keep the work-order details available when review history is offline.
+    } finally {
+      if (mounted) setState(() => _isReviewLoading = false);
     }
   }
 
@@ -739,10 +726,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _outlineButton(
-                  _review != null ? 'Edit review' : 'Leave review',
-                  onPressed: _openReviewPage,
-                ),
+                child: _reviewAction(),
               ),
             ],
           ),
@@ -765,6 +749,64 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
         ),
       ],
     );
+  }
+
+  Widget _reviewAction() {
+    if (_isReviewLoading) {
+      return Container(
+        height: 42,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF6F8FB),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFE1E6ED)),
+        ),
+        child: const SizedBox(
+          width: 17,
+          height: 17,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: AppTheme.navy700,
+          ),
+        ),
+      );
+    }
+
+    if (_review != null) {
+      return Semantics(
+        label: 'Review submitted for this service',
+        child: Container(
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF7F0),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppTheme.success.withOpacity(0.35)),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.check_circle_rounded,
+                  size: 18, color: AppTheme.success),
+              SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  'Review submitted',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppTheme.success,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _outlineButton('Leave review', onPressed: _openReviewPage);
   }
 
   Widget _proActions() {
@@ -900,6 +942,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   Future<void> _openReviewPage() async {
+    if (_isReviewLoading || _review != null) return;
     final woId = int.tryParse(widget.job['id']?.toString() ??
             widget.job['workOrderId']?.toString() ??
             '0') ??
@@ -914,7 +957,6 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           initialReviewText: _review?['reviewText']?.toString() ??
               _review?['comment']?.toString() ??
               '',
-          isEdit: _review != null,
         ),
       ),
     );
@@ -922,6 +964,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       setState(() {
         _review = result;
       });
+    } else if (mounted) {
+      final cached = HomeownerService.instance.cachedReviewForWorkOrder(woId);
+      if (cached != null) setState(() => _review = cached);
     }
   }
 
