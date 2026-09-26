@@ -50,19 +50,19 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
   @override
   Widget build(BuildContext context) {
     const categories = <_GuestCategory>[
-      _GuestCategory('HVAC', Icons.air, Color(0xFFE3F2FD)),
-      _GuestCategory('Plumbing', Icons.water_drop_outlined, Color(0xFFE0F7FA)),
-      _GuestCategory('Electrical', Icons.bolt_outlined, Color(0xFFFFF8E1)),
+      _GuestCategory('HVAC', Icons.air, AppTheme.blueTint),
+      _GuestCategory('Plumbing', Icons.water_drop_outlined, AppTheme.blueTint),
+      _GuestCategory('Electrical', Icons.bolt_outlined, AppTheme.amberTint),
       _GuestCategory(
-          'Cleaning', Icons.auto_awesome_outlined, Color(0xFFE8F5E9)),
+          'Cleaning', Icons.auto_awesome_outlined, AppTheme.greenTint),
       _GuestCategory('Roofing', Icons.roofing_outlined, Color(0xFFFFEBEE)),
-      _GuestCategory('Lawn', Icons.content_cut_outlined, Color(0xFFF1F8E9)),
+      _GuestCategory('Lawn', Icons.content_cut_outlined, AppTheme.greenTint),
       _GuestCategory('Handyman', Icons.handyman_outlined, Color(0xFFF3E5F5)),
       _GuestCategory('All 31', Icons.grid_view_rounded, AppTheme.orange500,
           isAccent: true),
     ];
     return ColoredBox(
-      color: const Color(0xFFF5F7FA),
+      color: AppTheme.pageBackground,
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
@@ -126,7 +126,8 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12)),
                 child: Row(children: [
-                  const Icon(Icons.search, color: Color(0xFF94A3B8), size: 20),
+                  const Icon(Icons.search,
+                      color: AppTheme.textTertiary, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: TextField(
@@ -140,7 +141,7 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
                     ),
                   ),
                   const Icon(Icons.camera_alt_outlined,
-                      color: Color(0xFF94A3B8), size: 19),
+                      color: AppTheme.textTertiary, size: 19),
                   const SizedBox(width: 10),
                   InkWell(
                     onTap: _search,
@@ -163,7 +164,7 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
               Row(children: [
                 const Text('Browse by category',
                     style: TextStyle(
-                        color: Color(0xFF1E293B),
+                        color: AppTheme.navy,
                         fontWeight: FontWeight.w800,
                         fontSize: 16)),
                 const Spacer(),
@@ -193,7 +194,7 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
                           borderRadius: BorderRadius.circular(12),
                           border: item.isAccent
                               ? null
-                              : Border.all(color: const Color(0xFFE6E8EC))),
+                              : Border.all(color: AppTheme.cardBorder)),
                       child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -248,7 +249,7 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
                       const SizedBox(height: 8),
                       const Text('It only takes a minute to get started',
                           style: TextStyle(
-                              color: Color(0xFF64748B), fontSize: 11)),
+                              color: AppTheme.textSecondary, fontSize: 11)),
                       const SizedBox(height: 10),
                       SizedBox(
                           width: double.infinity,
@@ -286,7 +287,7 @@ class GuestGateTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ColoredBox(
-        color: const Color(0xFFF5F7FA),
+        color: AppTheme.pageBackground,
         child: Center(
             child: Padding(
           padding: const EdgeInsets.all(20),
@@ -297,7 +298,7 @@ class GuestGateTab extends StatelessWidget {
                 decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFFE6E8EC))),
+                    border: Border.all(color: AppTheme.cardBorder)),
                 child: Icon(icon, color: AppTheme.teal500, size: 38)),
             const SizedBox(height: 24),
             Text(title,
@@ -310,7 +311,7 @@ class GuestGateTab extends StatelessWidget {
             Text(message,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                    color: Color(0xFF64748B), fontSize: 14, height: 1.35)),
+                    color: AppTheme.textSecondary, fontSize: 14, height: 1.35)),
             const SizedBox(height: 22),
             ElevatedButton(
                 onPressed: onCreateAccount,
@@ -375,13 +376,13 @@ class _ZipEntryDialogState extends State<_ZipEntryDialog> {
                           errorText: error,
                           border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide:
-                                  const BorderSide(color: Color(0xFFE6E8EC))))),
+                              borderSide: const BorderSide(
+                                  color: AppTheme.cardBorder)))),
                   const SizedBox(height: 10),
                   const Text(
                       'This only changes the ZIP used in your local browser test session.',
                       style: TextStyle(
-                          color: Color(0xFF64748B),
+                          color: AppTheme.textSecondary,
                           fontSize: 12,
                           height: 1.35)),
                   const SizedBox(height: 16),

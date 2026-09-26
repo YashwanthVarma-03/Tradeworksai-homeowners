@@ -10,8 +10,6 @@ import 'services/supabase_config.dart';
 import 'services/push_notification_service.dart';
 import 'theme.dart';
 
-final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   FirebaseMessaging.onBackgroundMessage(firebasePushBackgroundHandler);
@@ -38,26 +36,21 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: AuthService.instance,
-      builder: (context, _) => ValueListenableBuilder<ThemeMode>(
-        valueListenable: themeNotifier,
-        builder: (context, currentMode, _) {
-          if (AuthService.instance.isAuthenticated) {
-            // This sets up foreground handling but deliberately does not show a
-            // system permission prompt. Consent is requested from Settings.
-            unawaited(PushNotificationService.instance.initialize());
-          }
-          return MaterialApp(
-            title: 'Tradeworks One',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
-            themeMode: currentMode,
-            // The marketplace is intentionally public. Authentication unlocks
-            // account data and booking submission, not the initial app shell.
-            home: const DashboardShell(),
-          );
-        },
-      ),
+      builder: (context, _) {
+        if (AuthService.instance.isAuthenticated) {
+          // This sets up foreground handling but deliberately does not show a
+          // system permission prompt. Consent is requested from Settings.
+          unawaited(PushNotificationService.instance.initialize());
+        }
+        return MaterialApp(
+          title: 'Tradeworks One',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          // The marketplace is intentionally public. Authentication unlocks
+          // account data and booking submission, not the initial app shell.
+          home: const DashboardShell(),
+        );
+      },
     );
   }
 }

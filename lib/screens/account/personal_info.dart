@@ -16,10 +16,10 @@ class PersonalInfoScreen extends StatefulWidget {
 }
 
 class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
-  static const Color _pageBackground = Color(0xFFF5F7FA);
-  static const Color _inkStrong = Color(0xFF1E293B);
-  static const Color _mutedText = Color(0xFF64748B);
-  static const Color _lineSoft = Color(0xFFE1E7EF);
+  static const Color _pageBackground = AppTheme.pageBackground;
+  static const Color _inkStrong = AppTheme.navy;
+  static const Color _mutedText = AppTheme.textSecondary;
+  static const Color _lineSoft = AppTheme.cardBorder;
 
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -197,7 +197,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
             const SizedBox(height: 20),
             _infoCallout(
               text:
-                  'Changing your email will require re-verification before your next booking.',
+                  'Contact support to change your sign-in email. Email-change verification is not available here yet.',
             ),
           ],
         ),

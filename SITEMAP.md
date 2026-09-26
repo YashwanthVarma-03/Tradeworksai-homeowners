@@ -1,112 +1,50 @@
 # Homeowners App Sitemap
 
-This sitemap reflects the current Flutter app navigation in this repository.
+`main.dart` opens `DashboardShell` for both visitors and signed-in homeowners.
+Authentication unlocks account data and booking submission.
 
-## Entry
+## Authentication
 
-- `main.dart`
-  - If authenticated: `DashboardShell`
-  - If not authenticated: `OnboardingSlider`
+- `LoginPage`: email/password, Google, Apple, password reset, signup.
+- `SignupPage`: email/password, Google, Apple, published Privacy Policy.
+- `PasswordResetPage`: request a code, set a new password.
+- Authentication opened during booking returns to the originating feature.
 
-## Onboarding and Auth
+## Main shell
 
-- `OnboardingSlider`
-  - `LoginPage`
-  - `SignupPage`
-- `LoginPage`
-  - `PasswordResetPage`
-  - `DashboardShell` on success
-- `SignupPage`
-  - `DashboardShell` on success
-- `PasswordResetPage`
-  - returns to `LoginPage`
+- Home: `HomeTab`
+- Browse: `SearchTab`
+- Messages: `InboxTab` → `ChatScreen`
+- Bookings: `BookingsTab`
+- Rewards: `RewardTab`
+- Profile: `ProfileTab`
 
-## Main App Shell
+## Browse and booking
 
-- `DashboardShell`
-  - Bottom tabs
-    - `HomeTab`
-    - `InboxTab`
-    - `BookingsTab`
-    - `RewardTab`
-    - `ProfileTab`
+`HomeTab` / `SearchTab` → `ProProfileScreen` → `BookFlowScreen`
+(`lib/screens/book_flow.dart`) → `BookingSuccessScreen` → Browse.
 
-## Home Flow
+Category guides open `CategoryGuidesScreen`. Guest entry points request
+authentication before a booking can be submitted.
 
-- `HomeTab`
-  - Browse services
-    - `BrowseScreen`
-      - `SearchTab`
-      - `BookingStepper`
-      - returns to `DashboardShell`
-  - Pro/job action
-    - `BookingStepper` in modal bottom sheet
-  - Inbox shortcut
-    - `InboxTab`
+## Work orders
 
-## Inbox Flow
+- Bookings → `WorkOrderDetailScreen`
+- Bookings or work-order details → `CapApprovalScreen`
+- Cap approval can open the shared availability selector when the backend
+  requires a time that is missing from the work order.
+- Rescheduling → `openRescheduleWorkOrder` → `RescheduleWorkOrderScreen`
+- Completed work → receipt modal within work-order details / `LeaveReviewScreen`
 
-- `InboxTab`
-  - Conversation thread
-    - `ChatScreen`
-  - Work-order context from related booking
+## Profile and account
 
-## Bookings Flow
+- `PersonalInfoScreen`
+- `ManageAddressesScreen`
+- `HomeProfileScreen`
+- `PaymentMethodsScreen`
+- `NotificationSettingsScreen`
+- `SupportPage`
+- Sign out → public app shell
 
-- `BookingsTab`
-  - Work-order details
-    - `WorkOrderDetail`
-      - `Receipt`
-      - `NTEApproval`
-      - `QuoteReview`
-  - Book now
-    - `BrowseScreen`
-    - `BookingStepper`
-
-## Rewards Flow
-
-- `RewardTab`
-  - Book services shortcut
-    - `BrowseScreen`
-
-## Profile and Account
-
-- `ProfileTab`
-  - `PersonalInfo`
-  - `ManageAddresses`
-  - `PaymentMethods`
-  - `HomeProfile`
-  - `NotificationSettings`
-  - `SupportPage`
-  - logout
-    - returns to `OnboardingSlider`
-
-## Secondary Screens
-
-- Browse and booking
-  - `BrowseScreen`
-  - `SearchTab`
-  - `ProProfile`
-  - `BookingStepper`
-  - `BookingSuccessScreen`
-- Work orders
-  - `WorkOrderDetail`
-  - `NTEApproval`
-  - `QuoteReview`
-  - `Receipt`
-- Messaging
-  - `ChatScreen`
-- Account
-  - `PersonalInfo`
-  - `ManageAddresses`
-  - `PaymentMethods`
-  - `HomeProfile`
-  - `NotificationSettings`
-- Support
-  - `SupportPage`
-
-## Route Relationships
-
-- Browse, pro detail, booking, work orders, and chat are all secondary flows pushed above the main tab shell.
-- Booking completion returns the user to `BookingsTab`.
-- Logout resets the stack and returns the user to onboarding.
+Account deletion and verified email changes remain pending backend support.
+See `docs/batches-1-4-implementation.md` for implementation details and exceptions.

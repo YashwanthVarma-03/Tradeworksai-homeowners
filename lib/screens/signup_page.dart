@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/auth_service.dart';
 import '../theme.dart';
@@ -25,30 +26,30 @@ class _SignupPageState extends State<SignupPage> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _loading = false, _obscure = true;
-  bool _googleOAuthPending = false;
+  bool _socialOAuthPending = false;
 
   @override
   void initState() {
     super.initState();
-    AuthService.instance.addListener(_completeGoogleOAuthIfReady);
+    AuthService.instance.addListener(_completeSocialOAuthIfReady);
   }
 
   @override
   void dispose() {
-    AuthService.instance.removeListener(_completeGoogleOAuthIfReady);
+    AuthService.instance.removeListener(_completeSocialOAuthIfReady);
     _name.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
   }
 
-  void _completeGoogleOAuthIfReady() {
+  void _completeSocialOAuthIfReady() {
     if (!mounted ||
-        !_googleOAuthPending ||
+        !_socialOAuthPending ||
         !AuthService.instance.isAuthenticated) {
       return;
     }
-    _googleOAuthPending = false;
+    _socialOAuthPending = false;
     if (_loading) setState(() => _loading = false);
     _completeSignupNavigation();
   }
@@ -75,6 +76,18 @@ class _SignupPageState extends State<SignupPage> {
       context,
       MaterialPageRoute(builder: (_) => const LoginPage()),
     );
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    try {
+      final opened = await launchUrl(
+        Uri.parse('https://www.tradeworksai.com/privacy-policy/'),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) throw Exception('Could not open the Privacy Policy.');
+    } catch (error) {
+      if (mounted) AppNotification.showError(context, error);
+    }
   }
 
   Future<void> _submit() async {
@@ -104,12 +117,29 @@ class _SignupPageState extends State<SignupPage> {
   Future<void> _google() async {
     if (_loading) return;
     setState(() => _loading = true);
-    _googleOAuthPending = true;
+    _socialOAuthPending = true;
     try {
       await AuthService.instance.signInWithGoogleInteractive();
-      _completeGoogleOAuthIfReady();
+      _completeSocialOAuthIfReady();
     } catch (e) {
-      _googleOAuthPending = false;
+      _socialOAuthPending = false;
+      if (mounted) _error(e);
+    } finally {
+      if (mounted && !AuthService.instance.isAuthenticated) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _apple() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    _socialOAuthPending = true;
+    try {
+      await AuthService.instance.signInWithAppleInteractive();
+      _completeSocialOAuthIfReady();
+    } catch (e) {
+      _socialOAuthPending = false;
       if (mounted) _error(e);
     } finally {
       if (mounted && !AuthService.instance.isAuthenticated) {
@@ -127,20 +157,20 @@ class _SignupPageState extends State<SignupPage> {
       hintText: hint,
       suffixIcon: suffix,
       filled: true,
-      fillColor: const Color(0xFFF1F5F9),
+      fillColor: AppTheme.pageBackground,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
       border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFD9E2EC))),
+          borderSide: const BorderSide(color: AppTheme.cardBorder)),
       enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFD9E2EC))));
+          borderSide: const BorderSide(color: AppTheme.cardBorder)));
   @override
   Widget build(BuildContext context) => TransactionGuard(
       isProcessing: _loading,
       blockedMessage: 'Please wait while your account is being created.',
       child: Scaffold(
-          backgroundColor: const Color(0xFFF5F7FA),
+          backgroundColor: AppTheme.pageBackground,
           appBar: AppBar(backgroundColor: Colors.transparent),
           body: SafeArea(
               child: Center(
@@ -162,7 +192,7 @@ class _SignupPageState extends State<SignupPage> {
                                     'Book trusted local pros and keep every job in one place.',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                        color: Color(0xFF64748B),
+                                        color: AppTheme.textSecondary,
                                         fontSize: 15)),
                                 const SizedBox(height: 24),
                                 const Text('Full name',
@@ -203,20 +233,30 @@ class _SignupPageState extends State<SignupPage> {
                                     controller: _password,
                                     enabled: !_loading,
                                     obscureText: _obscure,
-                                    decoration: _field('6+ characters',
+                                    decoration: _field('8+ characters',
                                         suffix: IconButton(
                                             icon: Icon(
                                                 _obscure
                                                     ? Icons
                                                         .visibility_off_outlined
                                                     : Icons.visibility_outlined,
-                                                color: const Color(0xFF64748B)),
+                                                color: AppTheme.textSecondary),
                                             onPressed: () => setState(
                                                 () => _obscure = !_obscure))),
-                                    validator: (v) => v == null || v.length < 6
-                                        ? 'Password must be at least 6 characters'
+                                    validator: (v) => v == null || v.length < 8
+                                        ? 'Password must be at least 8 characters'
                                         : null),
                                 const SizedBox(height: 16),
+                                TextButton(
+                                  onPressed:
+                                      _loading ? null : _openPrivacyPolicy,
+                                  child: const Text('Read our Privacy Policy',
+                                      style: TextStyle(
+                                          color: AppTheme.navy700,
+                                          decoration:
+                                              TextDecoration.underline)),
+                                ),
+                                const SizedBox(height: 8),
                                 SizedBox(
                                     height: 54,
                                     child: ElevatedButton(
@@ -242,10 +282,27 @@ class _SignupPageState extends State<SignupPage> {
                                           EdgeInsets.symmetric(horizontal: 16),
                                       child: Text('or',
                                           style: TextStyle(
-                                              color: Color(0xFF64748B)))),
+                                              color: AppTheme.textSecondary))),
                                   Expanded(child: Divider())
                                 ]),
                                 const SizedBox(height: 20),
+                                SizedBox(
+                                    height: 54,
+                                    child: OutlinedButton.icon(
+                                        onPressed: _loading ? null : _apple,
+                                        icon: const Icon(Icons.apple,
+                                            color: AppTheme.navy700, size: 22),
+                                        label: const Text('Continue with Apple',
+                                            style: TextStyle(
+                                                color: AppTheme.navy700,
+                                                fontWeight: FontWeight.w800)),
+                                        style: OutlinedButton.styleFrom(
+                                            shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(14)),
+                                            side: const BorderSide(
+                                                color: AppTheme.cardBorder)))),
+                                const SizedBox(height: 12),
                                 SizedBox(
                                     height: 54,
                                     child: OutlinedButton.icon(
@@ -265,14 +322,14 @@ class _SignupPageState extends State<SignupPage> {
                                                 borderRadius:
                                                     BorderRadius.circular(14)),
                                             side: const BorderSide(
-                                                color: Color(0xFFD9E2EC))))),
+                                                color: AppTheme.cardBorder)))),
                                 const SizedBox(height: 30),
                                 Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       const Text('Already have an account? ',
                                           style: TextStyle(
-                                              color: Color(0xFF64748B))),
+                                              color: AppTheme.textSecondary)),
                                       InkWell(
                                           onTap: _loading ? null : _openLogin,
                                           child: const Text('Log in',

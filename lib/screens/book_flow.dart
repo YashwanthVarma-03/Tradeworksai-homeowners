@@ -39,9 +39,9 @@ class BookFlowScreen extends StatefulWidget {
 class _BookFlowScreenState extends State<BookFlowScreen> {
   static const double _contentInset = 16;
   static const double _headerInset = 8;
-  static const Color _surfaceLine = Color(0xFFE6E8EC);
-  static const Color _mutedText = Color(0xFF64748B);
-  static const Color _inkText = Color(0xFF1E293B);
+  static const Color _surfaceLine = AppTheme.cardBorder;
+  static const Color _mutedText = AppTheme.textSecondary;
+  static const Color _inkText = AppTheme.navy;
 
   late final PageController _pageController;
   final _issueController = TextEditingController();
@@ -148,8 +148,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       _readInt(_mergedPro['upfront_price']);
 
   bool get _hasBookableService => _selectedService.title.trim().isNotEmpty;
-
-  bool get _isDetailsPage => _currentPage == _BookingPage.details;
 
   void _changeContractor() {
     Navigator.of(context).pop(BookFlowExit.changeContractor);
@@ -474,13 +472,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     ];
   }
 
-  _BookingPage get _currentPage => _pages[_pageIndex];
-
   bool get _isLastPage => _pageIndex == _pages.length - 1;
 
   int get _currentStepNumber => _pageIndex + 1;
-
-  int get _totalSteps => _pages.length;
 
   List<String> get _searchPhotoUrls {
     final urls = <String>[];
@@ -1339,7 +1333,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   Widget build(BuildContext context) {
     if (!AuthService.instance.isAuthenticated) {
       return const Scaffold(
-        backgroundColor: Color(0xFFF5F7FA),
+        backgroundColor: AppTheme.pageBackground,
         body: SizedBox.shrink(),
       );
     }
@@ -1350,7 +1344,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         _goBack();
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF5F7FA),
+        backgroundColor: AppTheme.pageBackground,
         body: SafeArea(
           child: Column(
             children: [
@@ -1591,7 +1585,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12 * scale),
-        border: Border.all(color: const Color(0xFFE6E8EC)),
+        border: Border.all(color: AppTheme.cardBorder),
       ),
       child: Text(
         'No bookable service was returned by the backend for this contractor.',
@@ -1637,7 +1631,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: selected ? AppTheme.navy700 : const Color(0xFFE6E8EC),
+              color: selected ? AppTheme.navy700 : AppTheme.cardBorder,
               width: selected ? 2.2 : 1,
             ),
           ),
@@ -1651,8 +1645,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                   shape: BoxShape.circle,
                   color: selected ? AppTheme.navy700 : Colors.transparent,
                   border: Border.all(
-                    color:
-                        selected ? AppTheme.navy700 : const Color(0xFF718198),
+                    color: selected ? AppTheme.navy700 : AppTheme.textSecondary,
                     width: 1.5,
                   ),
                 ),
@@ -1746,7 +1739,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               maxLines: null,
               expands: true,
               style: const TextStyle(
-                color: Color(0xFF1E293B),
+                color: AppTheme.navy,
                 fontSize: 13,
                 height: 1.4,
               ),
@@ -1770,7 +1763,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE6E8EC)),
+                border: Border.all(color: AppTheme.cardBorder),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1781,7 +1774,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                         child: Text(
                           'Photos from your search',
                           style: TextStyle(
-                            color: Color(0xFF1E293B),
+                            color: AppTheme.navy,
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1917,7 +1910,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             const Text(
               'Common issues',
               style: TextStyle(
-                color: Color(0xFF1E293B),
+                color: AppTheme.navy,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
@@ -1946,18 +1939,15 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(100),
                       border: Border.all(
-                        color: selected
-                            ? AppTheme.teal500
-                            : const Color(0xFFE6E8EC),
+                        color:
+                            selected ? AppTheme.teal500 : AppTheme.cardBorder,
                         width: selected ? 2 : 1,
                       ),
                     ),
                     child: Text(
                       label,
                       style: TextStyle(
-                        color: selected
-                            ? AppTheme.teal500
-                            : const Color(0xFF1E293B),
+                        color: selected ? AppTheme.teal500 : AppTheme.navy,
                         fontSize: 12,
                         fontWeight:
                             selected ? FontWeight.w600 : FontWeight.w400,
@@ -2058,7 +2048,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                             border: Border.all(
                               color: selected
                                   ? AppTheme.navy700
-                                  : const Color(0xFF718198),
+                                  : AppTheme.textSecondary,
                               width: selected ? 5 : 1.5,
                             ),
                           ),
@@ -2142,7 +2132,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(13, 13, 13, 14),
             decoration: BoxDecoration(
-                color: const Color(0xFFEAF4FF),
+                color: AppTheme.pageBackground,
                 borderRadius: BorderRadius.circular(10)),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Icon(Icons.info_outline_rounded,
@@ -2571,7 +2561,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-                color: const Color(0xFFEAF4FF),
+                color: AppTheme.pageBackground,
                 borderRadius: BorderRadius.circular(12)),
             child: Row(children: [
               Expanded(
@@ -2730,101 +2720,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         ]),
       );
 
-  Widget _buildLegacyReviewStep() {
-    final pricing = _selectedPricingChoice;
-    final estimatedCredits =
-        ((pricing.amount ?? _selectedService.amount ?? 149) * 0.05).round();
-
-    return _stepShell(
-      title: 'Review & confirm',
-      subtitle: 'Confirm the details below to book.',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _summaryRow('Pro', _proName, action: 'Change'),
-          _summaryRow('Service', _selectedService.title, action: 'Change'),
-          _summaryRow('Pricing', pricing.label),
-          _summaryRow('Urgency', _selectedUrgency.label, action: 'Change'),
-          _summaryRow(
-            'When',
-            _asap
-                ? 'As soon as possible'
-                : (_selectedDate != null && _selectedTime != null)
-                    ? '$_selectedDate, $_selectedTime'
-                    : 'Anytime',
-            action: 'Change',
-          ),
-          _summaryRow(
-            'Where',
-            '${_selectedAddressObj?['label'] ?? 'Home'} · ${_selectedAddressObj?['street'] ?? 'Address'}',
-            action: 'Change',
-          ),
-          _summaryRow(
-            'Details',
-            '${_issueController.text.trim()}${_selectedPhotos.isNotEmpty ? '\n${_selectedPhotos.length} photos' : ''}',
-            multiline: true,
-          ),
-          if (_onsiteNotesController.text.trim().isNotEmpty)
-            _summaryRow(
-              'Access',
-              _onsiteNotesController.text.trim(),
-              multiline: true,
-            ),
-          const SizedBox(height: 14),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.navyTint,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppTheme.line),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  pricing.priceText,
-                  style: const TextStyle(
-                    color: AppTheme.gray,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  pricing.priceHeadline,
-                  style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'You pay $_proName directly · \$0 markup, no platform fee.',
-                  style: const TextStyle(color: AppTheme.ink, height: 1.4),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'You\'ll earn about \$$estimatedCredits in service credits when this job is completed.',
-                  style: const TextStyle(
-                    color: AppTheme.teal700,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'We will quickly verify your email to finish.',
-            style: TextStyle(color: AppTheme.gray, height: 1.4),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _stepShell({
     required String title,
     required String subtitle,
@@ -2916,175 +2811,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildLegacyFooter() {
-    if (_currentPage == _BookingPage.service) {
-      return Container(
-        color: Colors.white,
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 45,
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting || !_hasBookableService
-                        ? null
-                        : _goToNext,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.orange500,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      disabledForegroundColor: AppTheme.gray,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                    ),
-                    child: const Text(
-                      'Continue',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              _buildBottomNavBar(),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_isDetailsPage) {
-      return Container(
-        color: const Color(0xFFF5F7FA),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting ? null : _goToNext,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.orange500,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      disabledForegroundColor: AppTheme.gray,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: const Text(
-                      'Continue',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              _buildBottomNavBar(),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final label = _isLastPage
-        ? 'Confirm booking'
-        : (_currentPage == _BookingPage.location
-            ? 'Review booking'
-            : 'Continue');
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: AppTheme.line)),
-      ),
-      child: Row(
-        children: [
-          if (_pageIndex > 0)
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _goBack,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: AppTheme.line),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'Back',
-                  style: TextStyle(
-                    color: AppTheme.navy700,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          if (_pageIndex > 0) const SizedBox(width: 12),
-          Expanded(
-            flex: 2,
-            child: ElevatedButton(
-              onPressed: _isSubmitting
-                  ? null
-                  : () {
-                      if (_isLastPage) {
-                        _submitBooking();
-                      } else {
-                        _goToNext();
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.orange500,
-                foregroundColor: AppTheme.navy700,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: _isSubmitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppTheme.navy700,
-                      ),
-                    )
-                  : Text(
-                      label,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBottomNavBar() {
-    return const SizedBox.shrink();
   }
 
   Widget _selectionCard({
@@ -3239,61 +2965,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppTheme.teal500),
         ),
-      ),
-    );
-  }
-
-  Widget _summaryRow(
-    String label,
-    String value, {
-    String? action,
-    bool multiline = false,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE8EDF3))),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 86,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppTheme.gray,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              maxLines: multiline ? 3 : 1,
-              overflow:
-                  multiline ? TextOverflow.ellipsis : TextOverflow.visible,
-              style: const TextStyle(
-                color: AppTheme.navy700,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-                height: 1.35,
-              ),
-            ),
-          ),
-          if (action != null) ...[
-            const SizedBox(width: 8),
-            Text(
-              action,
-              style: const TextStyle(
-                color: AppTheme.teal700,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }

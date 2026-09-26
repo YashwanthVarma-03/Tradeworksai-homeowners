@@ -83,14 +83,14 @@ extension on _ReviewSort {
 
 class _FigmaProfileSurface extends StatelessWidget {
   // Values taken from the supplied ProProfile_Top Figma frame.
-  static const Color _ink = Color(0xFF1E293B);
-  static const Color _muted = Color(0xFF64748B);
-  static const Color _panelColor = Color(0xFFF5F7FA);
-  static const Color _line = Color(0xFFE6E8EC);
-  static const Color _blue = Color(0xFF1B3C6E);
-  static const Color _teal = Color(0xFF2E86AB);
-  static const Color _orange = Color(0xFFE8751A);
-  static const Color _green = Color(0xFF10B981);
+  static const Color _ink = AppTheme.navy;
+  static const Color _muted = AppTheme.textSecondary;
+  static const Color _panelColor = AppTheme.pageBackground;
+  static const Color _line = AppTheme.cardBorder;
+  static const Color _blue = AppTheme.navy;
+  static const Color _teal = AppTheme.blue;
+  static const Color _orange = AppTheme.orange;
+  static const Color _green = AppTheme.green;
 
   final String businessName;
   final String category;
@@ -314,7 +314,7 @@ class _FigmaProfileSurface extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 5, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFDDEEFF),
+                        color: AppTheme.pageBackground,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: const Text(
@@ -513,7 +513,7 @@ class _FigmaProfileSurface extends StatelessWidget {
             const SizedBox(height: 11),
             Text(responseSummary,
                 style: const TextStyle(
-                    color: Color(0xFF9AA8B8),
+                    color: AppTheme.textTertiary,
                     fontSize: 11,
                     fontWeight: FontWeight.w500)),
           ],
@@ -628,11 +628,11 @@ class _FigmaProfileSurface extends StatelessWidget {
                     errorBuilder: (_, __, ___) => Container(color: _panelColor),
                   ),
                   if (videoCount > 0 && index == 1)
-                    const Center(
+                    Center(
                       child: CircleAvatar(
                         radius: 16,
-                        backgroundColor: Color(0x66000000),
-                        child: Icon(
+                        backgroundColor: Colors.black.withOpacity(0.4),
+                        child: const Icon(
                           Icons.play_arrow,
                           color: Colors.white,
                           size: 20,
@@ -675,7 +675,7 @@ class _FigmaProfileSurface extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: Text('Times in $timeZone',
                   style: const TextStyle(
-                      color: Color(0xFF9AA8B8),
+                      color: AppTheme.textTertiary,
                       fontSize: 10,
                       fontWeight: FontWeight.w500))),
       ]));
@@ -1009,7 +1009,7 @@ class _FigmaProfileSurface extends StatelessWidget {
                         value: (percent / 100).clamp(0, 1),
                         minHeight: 5,
                         color: _orange,
-                        backgroundColor: const Color(0xFFDDE4EE))),
+                        backgroundColor: AppTheme.cardBorder)),
                 const SizedBox(width: 7),
                 SizedBox(
                     width: 25,
@@ -1042,7 +1042,7 @@ class _FigmaProfileSurface extends StatelessWidget {
             Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                    color: const Color(0xFFE1F8EE),
+                    color: AppTheme.greenTint,
                     borderRadius: BorderRadius.circular(4)),
                 child: const Text('✓ Completed job',
                     style: TextStyle(
@@ -1061,9 +1061,8 @@ class _FigmaProfileSurface extends StatelessWidget {
                       5,
                       (index) => Icon(Icons.star_rounded,
                           size: 13,
-                          color: index < stars
-                              ? _orange
-                              : const Color(0xFFDDE4EE))))),
+                          color:
+                              index < stars ? _orange : AppTheme.cardBorder)))),
         if (text.isNotEmpty)
           Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -1088,7 +1087,7 @@ class _FigmaProfileSurface extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: const BoxDecoration(
               color: Colors.white,
-              border: Border(top: BorderSide(color: Color(0xFFE6EAF0)))),
+              border: Border(top: BorderSide(color: AppTheme.cardBorder))),
           child: Row(children: [
             Expanded(
                 child: Column(
@@ -1102,7 +1101,7 @@ class _FigmaProfileSurface extends StatelessWidget {
                           height: 1,
                           fontWeight: FontWeight.w900)),
                   const SizedBox(height: 3),
-                  const Text('Upfront price estimate',
+                  const Text('Upfront price',
                       style: TextStyle(color: _muted, fontSize: 11))
                 ])),
             const SizedBox(width: 12),
@@ -1129,8 +1128,8 @@ class _FigmaProfileSurface extends StatelessWidget {
                 ),
               )
             : Text(bookActionLabel,
-                style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w800)),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
       );
 
   Widget _panel(Widget child) => Container(
@@ -1148,10 +1147,10 @@ class _FigmaProfileSurface extends StatelessWidget {
 }
 
 class _AllReviewsScreen extends StatelessWidget {
-  static const Color _ink = Color(0xFF243047);
-  static const Color _muted = Color(0xFF63758E);
-  static const Color _line = Color(0xFFDFE5EE);
-  static const Color _orange = Color(0xFFF47712);
+  static const Color _ink = AppTheme.navy;
+  static const Color _muted = AppTheme.textSecondary;
+  static const Color _line = AppTheme.cardBorder;
+  static const Color _orange = AppTheme.orange;
 
   final String businessName;
   final String rating;
@@ -1205,7 +1204,7 @@ class _AllReviewsScreen extends StatelessWidget {
               margin: const EdgeInsets.fromLTRB(20, 4, 20, 14),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF4F7FB),
+                color: AppTheme.pageBackground,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
@@ -1307,7 +1306,7 @@ class _AllReviewsScreen extends StatelessWidget {
                 5,
                 (index) => Icon(
                   Icons.star_rounded,
-                  color: index < stars ? _orange : const Color(0xFFDDE3EC),
+                  color: index < stars ? _orange : AppTheme.cardBorder,
                   size: 15,
                 ),
               ),
@@ -1330,7 +1329,7 @@ class _AllReviewsScreen extends StatelessWidget {
             Text(
               tags,
               style: const TextStyle(
-                color: Color(0xFF1C87BB),
+                color: AppTheme.blue,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -1343,14 +1342,10 @@ class _AllReviewsScreen extends StatelessWidget {
 }
 
 class _ProProfileScreenState extends State<ProProfileScreen> {
-  static const Color _softPanel = Color(0xFFF5F7FA);
-  static const Color _softLine = Color(0xFFE0E7F0);
-  static const Color _success = Color(0xFF00A86B);
-  static const double _contentInset = 20;
+  static const Color _success = AppTheme.green;
 
   bool _isLoading = true;
   bool _isStartingBooking = false;
-  String? _errorMessage;
   Map<String, dynamic>? _profile;
   String _reviewQuery = '';
   _ReviewSort _reviewSort = _ReviewSort.mostRelevant;
@@ -1392,7 +1387,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString();
         _isLoading = false;
       });
     }
@@ -1771,9 +1765,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         .where((part) => part.isNotEmpty)
         .join(' · ');
   }
-
-  bool get _hasRatingSummary =>
-      (_number(_rating) ?? 0) > 0 && (_number(_reviewCount) ?? 0) > 0;
 
   String get _aboutText {
     return _text(
@@ -2860,1222 +2851,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         setState(() => _reviewSort = sort);
       },
       scrollController: _profileScrollController,
-    );
-  }
-
-  Widget _buildLegacyProfile(BuildContext context) {
-    final displayPro = _displayPro;
-    final messageUserId =
-        StreamService.instance.resolveMessagingUserId(displayPro);
-    final completed = _text(
-      displayPro['completedWorkOrders'],
-      _text(displayPro['completed_work_orders'], _text(displayPro['orders'])),
-    );
-    final similarJobs = _text(
-      displayPro['similarJobsNearby'],
-      _text(displayPro['similar_jobs_nearby']),
-    );
-    final hasRenderableProfile = _businessName.isNotEmpty || _price.isNotEmpty;
-    final hasOverviewData = _hasOverviewData(completed, similarJobs);
-    final responseTimes = _responseTimes();
-    final pricingItems = _pricingItems();
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: _centeredFrame(
-                child: Column(
-                  children: [
-                    _buildProfileAppBar(),
-                    if (_isLoading)
-                      const LinearProgressIndicator(
-                        minHeight: 2,
-                        color: AppTheme.orange500,
-                      ),
-                    if (_errorMessage != null && _profile == null)
-                      _buildProfileFallbackNote(),
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(
-                          _contentInset,
-                          0,
-                          _contentInset,
-                          22,
-                        ),
-                        children: [
-                          if (!hasRenderableProfile)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 120),
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  color: AppTheme.orange500,
-                                ),
-                              ),
-                            )
-                          else ...[
-                            _buildHeader(),
-                            const SizedBox(height: 20),
-                            _buildPriceCard(),
-                            const SizedBox(height: 16),
-                            _buildProjectRequestCard(messageUserId),
-                          ],
-                          if (_aboutText.isNotEmpty) ...[
-                            const SizedBox(height: 18),
-                            _buildAboutSection(),
-                          ],
-                          if (_mediaUrls.isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            _buildMediaSection(),
-                          ],
-                          if (hasOverviewData) ...[
-                            const SizedBox(height: 16),
-                            _buildOverviewSection(completed, similarJobs),
-                          ],
-                          if (_businessHours().isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            _buildBusinessHoursSection(),
-                          ],
-                          if (responseTimes.isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            _buildResponseTimesSection(),
-                          ],
-                          if (pricingItems.isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            _buildPricingSection(),
-                          ],
-                          if (_hasReviewData) ...[
-                            const SizedBox(height: 16),
-                            _buildReviewsSection(),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            _buildStickyFooterBar(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _centeredFrame({
-    required Widget child,
-  }) {
-    return SizedBox(width: double.infinity, child: child);
-  }
-
-  bool _hasOverviewData(String completed, String similarJobs) {
-    final completedCount = int.tryParse(completed) ?? 0;
-    return completedCount > 0 ||
-        similarJobs.isNotEmpty ||
-        _backgroundInsuranceLine.isNotEmpty ||
-        _employeeLine.isNotEmpty ||
-        _yearsLine.isNotEmpty;
-  }
-
-  bool get _hasReviewData {
-    final reviewCount = int.tryParse(_reviewCount) ?? 0;
-    return reviewCount > 0 || _reviewsList().isNotEmpty;
-  }
-
-  Widget _buildProfileAppBar() {
-    return SizedBox(
-      height: 44,
-      child: Row(
-        children: [
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(
-              Icons.arrow_back_rounded,
-              color: AppTheme.navy700,
-              size: 22,
-            ),
-          ),
-          const Spacer(),
-          IconButton(
-            tooltip: 'Share contractor',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
-            onPressed: () {},
-            icon: const Icon(
-              Icons.share_outlined,
-              color: AppTheme.navy700,
-              size: 21,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileFallbackNote() {
-    return Container(
-      width: double.infinity,
-      color: AppTheme.orangeTint,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: const Text(
-        'Showing available contractor details while live profile data loads.',
-        style: TextStyle(
-          color: AppTheme.navy700,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        _buildLogo(),
-        const SizedBox(width: 17),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      _businessName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.navy700,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        height: 1.05,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  if (_isSelectCertified) _miniChip('Select-certified'),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      _distanceLine,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  if (_hasRatingSummary) ...[
-                    const SizedBox(width: 5),
-                    const Icon(
-                      Icons.star_rounded,
-                      color: AppTheme.orange500,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 1),
-                    Text(
-                      '$_reviewCount reviews ($_rating)',
-                      style: const TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLogo() {
-    final imageUrl = _profileImageUrl;
-    return Container(
-      width: 54,
-      height: 54,
-      decoration: BoxDecoration(
-        color: AppTheme.navy700,
-        borderRadius: BorderRadius.circular(11),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: imageUrl != null
-          ? Image.network(
-              imageUrl,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, progress) {
-                if (progress == null) return child;
-                return _logoFallback();
-              },
-              errorBuilder: (_, __, ___) => _logoFallback(),
-            )
-          : _logoFallback(),
-    );
-  }
-
-  Widget _logoFallback() {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        const Icon(Icons.ac_unit_rounded, color: Colors.white, size: 30),
-        Positioned(
-          bottom: 4,
-          child: Text(
-            _category.toUpperCase().split(' ').first,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPriceCard() {
-    return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 113),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(
-        color: _softPanel,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _softLine),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _price,
-                  style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    height: 1.0,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  _priceDetail,
-                  style: const TextStyle(
-                    color: AppTheme.gray,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'View price details',
-                  style: TextStyle(
-                    color: AppTheme.teal700,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Padding(
-            padding: const EdgeInsets.only(top: 5),
-            child: Text(
-              _nextSlot.isEmpty ? '' : 'Next: $_nextSlot',
-              style: const TextStyle(
-                color: _success,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProjectRequestCard(String? messageUserId) {
-    final responseText = _responseSummary;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 210),
-      padding: const EdgeInsets.fromLTRB(13, 16, 13, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _softLine),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Your Project Request',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  _serviceLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    color: AppTheme.gray,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 13),
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: ElevatedButton(
-              onPressed: _isStartingBooking ? null : _openBooking,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.orange500,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: _isStartingBooking
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      AuthService.instance.isAuthenticated
-                          ? 'Book this pro'
-                          : 'Log in to book',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(height: 13),
-          Text(
-            "Books directly on $_businessName's calendar",
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppTheme.gray,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 13),
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: OutlinedButton.icon(
-              onPressed: () => _openMessage(messageUserId),
-              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 12),
-              label: Text('Message $_businessName'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.teal700,
-                side: const BorderSide(color: AppTheme.teal500),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-          if (responseText.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              responseText,
-              style: const TextStyle(
-                color: Color(0xFF9AA8B8),
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAboutSection() {
-    return _section(
-      title: 'About this pro',
-      child: Text(
-        _aboutText,
-        style: const TextStyle(
-          color: AppTheme.ink,
-          fontSize: 14,
-          height: 1.45,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMediaSection() {
-    final urls = _mediaUrls;
-    final count = _mediaCount;
-    final videoCount = _videoCount;
-    final trailingParts = <String>[
-      if (count > 0) '$count photos',
-      if (videoCount > 0) '$videoCount videos',
-    ];
-    return _section(
-      title: 'Project photos & videos',
-      trailing: trailingParts.isEmpty ? null : trailingParts.join(' · '),
-      child: SizedBox(
-        height: 120,
-        child: Row(
-          children: List.generate(3, (index) {
-            return Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(right: index == 2 ? 0 : 10),
-                child: _mediaTile(
-                  index: index,
-                  url: index < urls.length ? urls[index] : null,
-                  showPlay: videoCount > 0 && index == 1,
-                ),
-              ),
-            );
-          }),
-        ),
-      ),
-    );
-  }
-
-  Widget _mediaTile({
-    required int index,
-    required String? url,
-    required bool showPlay,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(7),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (url != null)
-            Image.network(
-              url,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, progress) {
-                if (progress == null) return child;
-                return _mediaPlaceholder(index);
-              },
-              errorBuilder: (_, __, ___) => _mediaPlaceholder(index),
-            )
-          else
-            _mediaPlaceholder(index),
-          if (showPlay)
-            Center(
-              child: Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.45),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _mediaPlaceholder(int index) {
-    const fills = [
-      Color(0xFFDCEAF6),
-      Color(0xFFE9E0D3),
-      Color(0xFFD9E9DE),
-    ];
-    const icons = [
-      Icons.roofing_rounded,
-      Icons.home_repair_service_rounded,
-      Icons.construction_rounded,
-    ];
-    return Container(
-      color: fills[index % fills.length],
-      child: Icon(
-        icons[index % icons.length],
-        color: AppTheme.navy700,
-        size: 28,
-      ),
-    );
-  }
-
-  Widget _buildOverviewSection(String completed, String similarJobs) {
-    final employeeAndYears = [
-      if (_employeeLine.isNotEmpty) _employeeLine,
-      if (_yearsLine.isNotEmpty) _yearsLine,
-    ].join(' · ');
-    return _section(
-      title: 'Overview',
-      boxed: true,
-      child: Column(
-        children: [
-          if ((int.tryParse(completed) ?? 0) > 0)
-            _overviewRow(
-              Icons.check_circle_outline,
-              '$completed completed work orders',
-              color: _success,
-            ),
-          if (similarJobs.isNotEmpty)
-            _overviewRow(
-              Icons.location_on_outlined,
-              similarJobs,
-              color: AppTheme.teal700,
-            ),
-          if (_backgroundInsuranceLine.isNotEmpty)
-            _overviewRow(
-              Icons.shield_outlined,
-              _backgroundInsuranceLine,
-              color: AppTheme.teal700,
-            ),
-          if (employeeAndYears.isNotEmpty)
-            _overviewRow(
-              Icons.groups_outlined,
-              employeeAndYears,
-              color: AppTheme.teal700,
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBusinessHoursSection() {
-    return _section(
-      title: 'Business Hours',
-      boxed: true,
-      child: Column(
-        children: [
-          ..._businessHours().map(_twoColumnRow),
-          if (_timeZoneLabel.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Times in $_timeZoneLabel',
-                style: const TextStyle(
-                  color: Color(0xFF9AA8B8),
-                  fontSize: 8.5,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResponseTimesSection() {
-    return _section(
-      title: 'Response Times',
-      trailing: 'Set by $_businessName',
-      boxed: true,
-      child: Column(
-        children: _responseTimes().map(_twoColumnRow).toList(),
-      ),
-    );
-  }
-
-  Widget _buildPricingSection() {
-    final items = _pricingItems();
-    return _section(
-      title: 'Upfront Pricing',
-      child: Column(
-        children: List.generate(items.length, (index) {
-          final entry = items[index];
-          final isLast = index == items.length - 1;
-          return Container(
-            padding: const EdgeInsets.symmetric(vertical: 7),
-            decoration: BoxDecoration(
-              border: isLast
-                  ? null
-                  : const Border(
-                      bottom: BorderSide(color: Color(0xFFE1E7EF), width: 1),
-                    ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    entry.key,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppTheme.ink,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  entry.value,
-                  style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }),
-      ),
-    );
-  }
-
-  Widget _buildRatingSummaryCard() {
-    final breakdown = _ratingBreakdown();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(30, 18, 18, 18),
-      decoration: BoxDecoration(
-        color: _softPanel,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _rating,
-                style: const TextStyle(
-                  color: AppTheme.navy700,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  height: 1.0,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(
-                  5,
-                  (_) => const Icon(
-                    Icons.star_rounded,
-                    color: AppTheme.orange500,
-                    size: 14,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                '$_reviewCount ratings',
-                style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 22),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [5, 4, 3, 2, 1].map((star) {
-                final pct = breakdown[star] ?? 0;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    children: [
-                      Text(
-                        '$star',
-                        style: const TextStyle(
-                          color: AppTheme.ink,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const Icon(
-                        Icons.star_rounded,
-                        color: Color(0xFF65758C),
-                        size: 9,
-                      ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: (pct / 100).clamp(0.0, 1.0),
-                            minHeight: 5,
-                            backgroundColor: const Color(0xFFDDE3EC),
-                            valueColor: const AlwaysStoppedAnimation(
-                              AppTheme.orange500,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        width: 26,
-                        child: Text(
-                          '${pct.toStringAsFixed(0)}%',
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                            color: AppTheme.gray,
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReviewsSection() {
-    final reviews = _reviewsList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildRatingSummaryCard(),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            SizedBox(
-              width: 199,
-              child: Container(
-                height: 35,
-                padding: const EdgeInsets.symmetric(horizontal: 11),
-                decoration: BoxDecoration(
-                  color: _softPanel,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _softLine),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.search, color: AppTheme.gray, size: 13),
-                    SizedBox(width: 6),
-                    Text(
-                      'Search reviews',
-                      style: TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const Spacer(),
-            const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Most relevant',
-                  style: TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  color: AppTheme.navy700,
-                  size: 15,
-                ),
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (reviews.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Center(
-              child: Text(
-                'No written reviews yet',
-                style: TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          )
-        else ...[
-          ...reviews.map(_buildReviewCard),
-          const SizedBox(height: 4),
-          Center(
-            child: InkWell(
-              onTap: _openAllReviews,
-              child: Text(
-                'See all $_reviewCount reviews',
-                style: const TextStyle(
-                  color: AppTheme.teal700,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildReviewCard(Map<String, dynamic> review) {
-    final rating = (_number(review['rating']) ?? 0).toInt().clamp(0, 5);
-    final tags = _text(review['tags']);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _softLine),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Flexible(
-                child: Text(
-                  _text(review['name']),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              if (review['completed'] == true)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDDF5E7),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.check, color: Color(0xFF17A868), size: 9),
-                      SizedBox(width: 2),
-                      Text(
-                        'Completed job',
-                        style: TextStyle(
-                          color: Color(0xFF17A868),
-                          fontSize: 8,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const Spacer(),
-              Text(
-                _text(review['daysAgo']),
-                style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          if (rating > 0) ...[
-            const SizedBox(height: 4),
-            Row(
-              children: List.generate(
-                5,
-                (i) => Icon(
-                  Icons.star_rounded,
-                  color:
-                      i < rating ? AppTheme.orange500 : const Color(0xFFDDE3EC),
-                  size: 12,
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 6),
-          Text(
-            _text(review['text']),
-            style: const TextStyle(
-              color: AppTheme.ink,
-              fontSize: 10,
-              height: 1.35,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          if (tags.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              tags,
-              style: const TextStyle(
-                color: AppTheme.teal700,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStickyFooterBar() {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFEDEFF2), width: 1)),
-      ),
-      child: _centeredFrame(
-        child: Padding(
-          padding:
-              const EdgeInsets.fromLTRB(_contentInset, 10, _contentInset, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _price,
-                      style: const TextStyle(
-                        color: AppTheme.navy700,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const Text(
-                      'Upfront price estimate',
-                      style: TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 146,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isStartingBooking ? null : _openBooking,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.orange500,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: _isStartingBooking
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          AuthService.instance.isAuthenticated
-                              ? 'Book this pro'
-                              : 'Log in to book',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _section({
-    required String title,
-    String? trailing,
-    bool boxed = false,
-    required Widget child,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  color: AppTheme.navy700,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            if (trailing != null)
-              Text(
-                trailing,
-                style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        boxed
-            ? Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                decoration: BoxDecoration(
-                  color: _softPanel,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: child,
-              )
-            : child,
-      ],
-    );
-  }
-
-  Widget _overviewRow(
-    IconData icon,
-    String text, {
-    required Color color,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                color: AppTheme.ink,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                height: 1.15,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _twoColumnRow(MapEntry<String, String> row) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 7),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 122,
-            child: Text(
-              row.key,
-              style: const TextStyle(
-                color: AppTheme.gray,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              row.value,
-              style: const TextStyle(
-                color: AppTheme.navy700,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-                height: 1.25,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _miniChip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: AppTheme.tealTint,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: AppTheme.teal700,
-          fontSize: 6.2,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
     );
   }
 }

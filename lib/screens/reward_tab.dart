@@ -18,9 +18,9 @@ class RewardTab extends StatefulWidget {
 }
 
 class _RewardTabState extends State<RewardTab> {
-  static const Color _cardLine = Color(0xFFE6E8EC);
-  static const Color _mutedText = Color(0xFF64748B);
-  static const Color _progressTrack = Color(0xFFE2E8F0);
+  static const Color _cardLine = AppTheme.cardBorder;
+  static const Color _mutedText = AppTheme.textSecondary;
+  static const Color _progressTrack = AppTheme.cardBorder;
 
   bool _isLoading = true;
   bool _isRefreshing = false;
@@ -41,7 +41,8 @@ class _RewardTabState extends State<RewardTab> {
 
   @override
   void dispose() {
-    HomeownerService.instance.syncVersion.removeListener(_refreshFromSharedSync);
+    HomeownerService.instance.syncVersion
+        .removeListener(_refreshFromSharedSync);
     super.dispose();
   }
 
@@ -98,7 +99,8 @@ class _RewardTabState extends State<RewardTab> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = _hasRewardsContent ? null : AppErrorUtils.friendlyMessage(e);
+        _errorMessage =
+            _hasRewardsContent ? null : AppErrorUtils.friendlyMessage(e);
         _isLoading = false;
       });
     } finally {
@@ -241,7 +243,7 @@ class _RewardTabState extends State<RewardTab> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [AppTheme.navy700, Color(0xFF2E4E80)],
+          colors: [AppTheme.navy700, AppTheme.navy],
         ),
         borderRadius: BorderRadius.circular(16),
       ),
@@ -743,7 +745,8 @@ class _RewardTabState extends State<RewardTab> {
         tier['range']?.toString() ??
         tier['name']?.toString() ??
         '';
-    final earned = tier['earned'] == null ? '' : _money(_amount(tier['earned']));
+    final earned =
+        tier['earned'] == null ? '' : _money(_amount(tier['earned']));
 
     return Row(
       children: [

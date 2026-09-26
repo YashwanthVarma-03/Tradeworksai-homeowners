@@ -28,12 +28,12 @@ class _LoginPageState extends State<LoginPage> {
   final _password = TextEditingController();
   bool _loading = false, _obscure = true;
   bool _rememberMe = true;
-  bool _googleOAuthPending = false;
+  bool _socialOAuthPending = false;
 
   @override
   void initState() {
     super.initState();
-    AuthService.instance.addListener(_completeGoogleOAuthIfReady);
+    AuthService.instance.addListener(_completeSocialOAuthIfReady);
     unawaited(_loadRememberedLogin());
   }
 
@@ -51,19 +51,19 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    AuthService.instance.removeListener(_completeGoogleOAuthIfReady);
+    AuthService.instance.removeListener(_completeSocialOAuthIfReady);
     _email.dispose();
     _password.dispose();
     super.dispose();
   }
 
-  void _completeGoogleOAuthIfReady() {
+  void _completeSocialOAuthIfReady() {
     if (!mounted ||
-        !_googleOAuthPending ||
+        !_socialOAuthPending ||
         !AuthService.instance.isAuthenticated) {
       return;
     }
-    _googleOAuthPending = false;
+    _socialOAuthPending = false;
     if (_loading) setState(() => _loading = false);
     _completeLoginNavigation();
   }
@@ -96,9 +96,7 @@ class _LoginPageState extends State<LoginPage> {
         builder: (_) => const SignupPage(returnToPreviousPage: true),
       ),
     );
-    if (signedUp == true &&
-        mounted &&
-        AuthService.instance.isAuthenticated) {
+    if (signedUp == true && mounted && AuthService.instance.isAuthenticated) {
       _completeLoginNavigation();
     }
   }
@@ -123,15 +121,35 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _google() async {
     if (_loading) return;
     setState(() => _loading = true);
-    _googleOAuthPending = true;
+    _socialOAuthPending = true;
     try {
       await AuthService.instance
           .signInWithGoogleInteractive(rememberMe: _rememberMe);
       // On mobile, the OAuth callback arrives after the external browser
       // redirects to the app. Navigate only after Supabase creates a session.
-      _completeGoogleOAuthIfReady();
+      _completeSocialOAuthIfReady();
     } catch (e) {
-      _googleOAuthPending = false;
+      _socialOAuthPending = false;
+      if (mounted) _showError(e);
+    } finally {
+      if (mounted && !AuthService.instance.isAuthenticated) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _apple() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    _socialOAuthPending = true;
+    try {
+      await AuthService.instance
+          .signInWithAppleInteractive(rememberMe: _rememberMe);
+      // On mobile, the OAuth callback arrives after the external browser
+      // redirects to the app. Navigate only after Supabase creates a session.
+      _completeSocialOAuthIfReady();
+    } catch (e) {
+      _socialOAuthPending = false;
       if (mounted) _showError(e);
     } finally {
       if (mounted && !AuthService.instance.isAuthenticated) {
@@ -150,15 +168,15 @@ class _LoginPageState extends State<LoginPage> {
         hintText: hint,
         suffixIcon: suffix,
         filled: true,
-        fillColor: const Color(0xFFF1F5F9),
+        fillColor: AppTheme.pageBackground,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
         border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFD9E2EC))),
+            borderSide: const BorderSide(color: AppTheme.cardBorder)),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFD9E2EC))),
+            borderSide: const BorderSide(color: AppTheme.cardBorder)),
       );
 
   @override
@@ -166,7 +184,7 @@ class _LoginPageState extends State<LoginPage> {
         isProcessing: _loading,
         blockedMessage: 'Please wait while sign-in is being completed.',
         child: Scaffold(
-          backgroundColor: const Color(0xFFF5F7FA),
+          backgroundColor: AppTheme.pageBackground,
           appBar: AppBar(backgroundColor: Colors.transparent),
           body: SafeArea(
               child: Center(
@@ -187,7 +205,7 @@ class _LoginPageState extends State<LoginPage> {
                       const Text('Log in to manage your home and bookings.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                              color: Color(0xFF64748B), fontSize: 15)),
+                              color: AppTheme.textSecondary, fontSize: 15)),
                       const SizedBox(height: 34),
                       const Text('Email address',
                           style: TextStyle(color: AppTheme.ink, fontSize: 13)),
@@ -219,7 +237,7 @@ class _LoginPageState extends State<LoginPage> {
                                       _obscure
                                           ? Icons.visibility_off_outlined
                                           : Icons.visibility_outlined,
-                                      color: const Color(0xFF64748B)),
+                                      color: AppTheme.textSecondary),
                                   onPressed: () =>
                                       setState(() => _obscure = !_obscure))),
                           validator: (v) => v == null || v.isEmpty
@@ -275,10 +293,27 @@ class _LoginPageState extends State<LoginPage> {
                         Padding(
                             padding: EdgeInsets.symmetric(horizontal: 16),
                             child: Text('or',
-                                style: TextStyle(color: Color(0xFF64748B)))),
+                                style:
+                                    TextStyle(color: AppTheme.textSecondary))),
                         Expanded(child: Divider())
                       ]),
                       const SizedBox(height: 22),
+                      SizedBox(
+                          height: 54,
+                          child: OutlinedButton.icon(
+                              onPressed: _loading ? null : _apple,
+                              icon: const Icon(Icons.apple,
+                                  color: AppTheme.navy700, size: 22),
+                              label: const Text('Continue with Apple',
+                                  style: TextStyle(
+                                      color: AppTheme.navy700,
+                                      fontWeight: FontWeight.w800)),
+                              style: OutlinedButton.styleFrom(
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                  side: const BorderSide(
+                                      color: AppTheme.cardBorder)))),
+                      const SizedBox(height: 12),
                       SizedBox(
                           height: 54,
                           child: OutlinedButton.icon(
@@ -296,13 +331,14 @@ class _LoginPageState extends State<LoginPage> {
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14)),
                                   side: const BorderSide(
-                                      color: Color(0xFFD9E2EC))))),
+                                      color: AppTheme.cardBorder)))),
                       const SizedBox(height: 80),
                       Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const Text('Don’t have an account? ',
-                                style: TextStyle(color: Color(0xFF64748B))),
+                                style:
+                                    TextStyle(color: AppTheme.textSecondary)),
                             InkWell(
                                 onTap: _loading ? null : _openSignup,
                                 child: const Text('Sign up',

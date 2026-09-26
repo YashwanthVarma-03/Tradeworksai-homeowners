@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../theme.dart';
 import 'package:intl/intl.dart';
-import 'nte_approval.dart';
+import 'cap_approval.dart';
 import 'leave_review.dart';
 import 'reschedule_work_order.dart';
-import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 import '../../services/stream_service.dart';
 import '../../widgets/app_notification.dart';
@@ -106,7 +105,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       case 'in_progress':
         return 'In Progress';
       case 'quote_provided':
-        return 'Action Required';
+        return 'Waiting on you';
       case 'completed':
         return 'Completed';
       case 'cancelled':
@@ -230,7 +229,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     final dateStr = _timeWindowText();
     final woId = _workOrderId();
     final proName = _proName();
-    final displayPro = proName.isEmpty ? 'Gulf Coast Air' : proName;
+    final displayPro = proName.isEmpty ? 'Pro details pending' : proName;
 
     return TransactionGuard(
       isProcessing: _isCancelling,
@@ -640,7 +639,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   Color _urgencyColor(String value) {
     final lower = value.toLowerCase();
     if (lower.contains('urgent') || lower.contains('emergency')) {
-      return const Color(0xFFC83B3B);
+      return AppTheme.red;
     }
     return AppTheme.ink;
   }
@@ -692,24 +691,25 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   Widget _detailActions(String currentStatus) {
-    final isQuote = currentStatus == 'quote_provided' ||
+    final isCapPending = currentStatus == 'quote_provided' ||
         currentStatus.contains('quote') ||
         currentStatus.contains('review');
     final isCompleted =
         currentStatus == 'completed' || currentStatus == 'complete';
 
-    if (isQuote) {
+    if (isCapPending) {
       return _fullButton(
-        'Review quote',
+        'Review the cap',
         background: AppTheme.orange500,
         foreground: Colors.white,
-        onPressed: () {
-          Navigator.push(
+        onPressed: () async {
+          final changed = await Navigator.push<bool>(
             context,
             MaterialPageRoute(
-              builder: (context) => NteApprovalScreen(job: widget.job),
+              builder: (context) => CapApprovalScreen(job: widget.job),
             ),
           );
+          if (changed == true && mounted) Navigator.pop(context, true);
         },
       );
     }
@@ -743,7 +743,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
         Expanded(
           child: _outlineButton(
             'Cancel booking',
-            color: const Color(0xFFC83B3B),
+            color: AppTheme.red,
             onPressed: _cancelJob,
           ),
         ),
@@ -757,9 +757,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
         height: 42,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: const Color(0xFFF6F8FB),
+          color: AppTheme.pageBackground,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE1E6ED)),
+          border: Border.all(color: AppTheme.cardBorder),
         ),
         child: const SizedBox(
           width: 17,
@@ -779,7 +779,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           height: 42,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: const Color(0xFFEAF7F0),
+            color: AppTheme.greenTint,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: AppTheme.success.withOpacity(0.35)),
           ),
@@ -998,356 +998,6 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       }
     } finally {
       if (mounted && !didCancel) setState(() => _isCancelling = false);
-    }
-  }
-
-  Future<void> _legacyRescheduleSheet() async {
-    String? readValue(dynamic value) {
-      final text = value?.toString().trim();
-      if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
-        return null;
-      }
-      return text;
-    }
-
-    final workOrderId = int.tryParse(widget.job['id']?.toString() ??
-            widget.job['workOrderId']?.toString() ??
-            '0') ??
-        0;
-    var contractorId = readValue(widget.job['contractorId']) ??
-        readValue(widget.job['contractor_id']) ??
-        readValue(widget.job['pro']?['contractorId']) ??
-        readValue(widget.job['pro']?['contractor_id']) ??
-        readValue(widget.job['pro']?['id']) ??
-        readValue(widget.job['contractor']?['id']) ??
-        readValue(widget.job['contractor']?['contractorId']) ??
-        readValue(widget.job['contractor']?['contractor_id']);
-    contractorId ??= await HomeownerService.instance
-        .resolveContractorIdForWorkOrder(workOrderId);
-    final woId = int.tryParse(widget.job['id']?.toString() ??
-            widget.job['workOrderId']?.toString() ??
-            '0') ??
-        0;
-    if (contractorId == null || woId == 0) {
-      if (mounted) {
-        AppNotification.showInfo(
-          context,
-          'Rescheduling is not available for this booking.',
-        );
-      }
-      return;
-    }
-
-    try {
-      final now = DateTime.now();
-      final avail = await HomeownerService.instance.getContractorAvailability(
-        contractorId: contractorId,
-        fromDate: now.toIso8601String().split('T').first,
-        toDate:
-            now.add(const Duration(days: 7)).toIso8601String().split('T').first,
-      );
-      final slots = avail['slots'] as List? ?? const [];
-      if (!mounted) return;
-      if (slots.isEmpty) {
-        AppNotification.showInfo(
-          context,
-          'No alternate times are currently available.',
-        );
-        return;
-      }
-
-      // Group slots by date key (YYYY-MM-DD)
-      final Map<String, List<Map<String, dynamic>>> slotsByDate = {};
-      for (final slot in slots) {
-        if (slot is Map<String, dynamic>) {
-          final startStr = slot['start']?.toString() ?? '';
-          if (startStr.isNotEmpty) {
-            final dateKey = startStr.split('T').first;
-            slotsByDate.putIfAbsent(dateKey, () => []);
-            slotsByDate[dateKey]!.add(slot);
-          }
-        }
-      }
-
-      final sortedDates = slotsByDate.keys.toList()..sort();
-      if (sortedDates.isEmpty) return;
-
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-        ),
-        builder: (sheetContext) {
-          String selectedDate = sortedDates.first;
-          Map<String, dynamic>? selectedSlot = slotsByDate[selectedDate]?.first;
-          final reasonController =
-              TextEditingController(text: 'Homeowner requested reschedule');
-
-          return StatefulBuilder(
-            builder: (BuildContext context, StateSetter setModalState) {
-              final activeSlots = slotsByDate[selectedDate] ?? [];
-
-              return SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16,
-                      MediaQuery.of(context).viewInsets.bottom + 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: AppTheme.line,
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Propose Reschedule',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: AppTheme.navy700,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Select Date:',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.navy700),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 44,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: sortedDates.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 8),
-                          itemBuilder: (context, idx) {
-                            final dateKey = sortedDates[idx];
-                            final isSelected = dateKey == selectedDate;
-                            final parsedDate =
-                                DateTime.tryParse(dateKey) ?? DateTime.now();
-                            final weekDayStr = const [
-                              'Mon',
-                              'Tue',
-                              'Wed',
-                              'Thu',
-                              'Fri',
-                              'Sat',
-                              'Sun'
-                            ][parsedDate.weekday - 1];
-                            final monthStr = const [
-                              'Jan',
-                              'Feb',
-                              'Mar',
-                              'Apr',
-                              'May',
-                              'Jun',
-                              'Jul',
-                              'Aug',
-                              'Sep',
-                              'Oct',
-                              'Nov',
-                              'Dec'
-                            ][parsedDate.month - 1];
-                            final label =
-                                '$weekDayStr, $monthStr ${parsedDate.day}';
-
-                            return ChoiceChip(
-                              label: Text(label),
-                              selected: isSelected,
-                              selectedColor: AppTheme.orange500,
-                              backgroundColor: AppTheme.pageAlt,
-                              labelStyle: TextStyle(
-                                color: isSelected
-                                    ? Colors.white
-                                    : AppTheme.navy700,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              onSelected: (val) {
-                                if (val) {
-                                  setModalState(() {
-                                    selectedDate = dateKey;
-                                    selectedSlot = slotsByDate[dateKey]?.first;
-                                  });
-                                }
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Select Time:',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.navy700),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: activeSlots.map((slot) {
-                          final startStr = slot['start']?.toString() ?? '';
-                          final parsedTime =
-                              DateTime.tryParse(startStr) ?? DateTime.now();
-                          final hour = parsedTime.hour > 12
-                              ? parsedTime.hour - 12
-                              : (parsedTime.hour == 0 ? 12 : parsedTime.hour);
-                          final min =
-                              parsedTime.minute.toString().padLeft(2, '0');
-                          final period = parsedTime.hour >= 12 ? 'PM' : 'AM';
-                          final timeLabel = '$hour:$min $period';
-                          final isSelected = selectedSlot == slot;
-
-                          return ChoiceChip(
-                            label: Text(timeLabel),
-                            selected: isSelected,
-                            selectedColor: AppTheme.orange500,
-                            backgroundColor: AppTheme.pageAlt,
-                            labelStyle: TextStyle(
-                              color:
-                                  isSelected ? Colors.white : AppTheme.navy700,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            onSelected: (val) {
-                              if (val) {
-                                setModalState(() {
-                                  selectedSlot = slot;
-                                });
-                              }
-                            },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Reason for Rescheduling:',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.navy700),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: reasonController,
-                        maxLines: 2,
-                        decoration: InputDecoration(
-                          hintText: 'Enter reason here...',
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.all(12),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(sheetContext),
-                              child: const Text('Cancel',
-                                  style: TextStyle(color: AppTheme.navy700)),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.orange500),
-                              onPressed: selectedSlot == null
-                                  ? null
-                                  : () async {
-                                      final start =
-                                          selectedSlot!['start']?.toString() ??
-                                              '';
-                                      final end =
-                                          selectedSlot!['end']?.toString() ??
-                                              '';
-                                      final reason = reasonController.text
-                                              .trim()
-                                              .isNotEmpty
-                                          ? reasonController.text.trim()
-                                          : 'Homeowner requested reschedule';
-                                      Navigator.pop(sheetContext);
-
-                                      try {
-                                        showDialog(
-                                          context: this.context,
-                                          barrierDismissible: false,
-                                          builder: (context) => const Center(
-                                            child: CircularProgressIndicator(
-                                                color: AppTheme.orange500),
-                                          ),
-                                        );
-                                        await HomeownerService.instance
-                                            .performWorkOrderAction(
-                                          workOrderId: woId,
-                                          action: 'propose_reschedule',
-                                          extra: {
-                                            'proposedStart': start,
-                                            'proposedEnd': end,
-                                            'reason': reason,
-                                            'contractorId': contractorId,
-                                            'requester_user_id':
-                                                AuthService.instance.userId,
-                                          },
-                                        );
-                                        if (mounted)
-                                          Navigator.pop(this.context);
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(this.context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                  'Reschedule request sent successfully'),
-                                              backgroundColor: AppTheme.success,
-                                            ),
-                                          );
-                                          Navigator.pop(this.context, true);
-                                        }
-                                      } catch (e) {
-                                        if (mounted)
-                                          Navigator.pop(this.context);
-                                        if (mounted) {
-                                          AppNotification.showError(
-                                            this.context,
-                                            e,
-                                            fallback:
-                                                'We couldn\'t send the reschedule request. Please try again.',
-                                          );
-                                        }
-                                      }
-                                    },
-                              child: const Text('Propose Reschedule',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        AppNotification.showError(
-          context,
-          e,
-          fallback: 'We couldn\'t load alternate times. Please try again.',
-        );
-      }
     }
   }
 

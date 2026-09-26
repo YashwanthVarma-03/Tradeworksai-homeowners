@@ -78,7 +78,7 @@ class _ServiceZipEntryDialogState extends State<_ServiceZipEntryDialog> {
                 counterText: '',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE6E8EC)),
+                  borderSide: const BorderSide(color: AppTheme.cardBorder),
                 ),
               ),
               onChanged: (_) {

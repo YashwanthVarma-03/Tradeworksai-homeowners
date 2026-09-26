@@ -266,7 +266,8 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                                   ),
                               ],
                             ),
-                            const Divider(height: 25, color: Color(0xFFE6E8EC)),
+                            const Divider(
+                                height: 25, color: AppTheme.cardBorder),
                             _detailBlock('SERVICE', _serviceName),
                             const SizedBox(height: 12),
                             _detailBlock(
@@ -275,7 +276,8 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                               const SizedBox(height: 12),
                               _detailBlock('LOCATION', _address),
                             ],
-                            const Divider(height: 25, color: Color(0xFFE6E8EC)),
+                            const Divider(
+                                height: 25, color: AppTheme.cardBorder),
                             Row(
                               children: [
                                 const Expanded(
@@ -392,7 +394,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
         Text(
           label,
           style: const TextStyle(
-            color: Color(0xFF64748B),
+            color: AppTheme.textSecondary,
             fontSize: 11,
             fontWeight: FontWeight.w800,
           ),

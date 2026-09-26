@@ -103,7 +103,8 @@ class BookingConversationScreen extends StatelessWidget {
               child: Text(
                 'Live messaging becomes available once the provider connects to this booking.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.gray, fontSize: 12, height: 1.35),
+                style:
+                    TextStyle(color: AppTheme.gray, fontSize: 12, height: 1.35),
               ),
             );
           }
@@ -115,7 +116,8 @@ class BookingConversationScreen extends StatelessWidget {
           if (isSystem) {
             return Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(999),
@@ -137,11 +139,13 @@ class BookingConversationScreen extends StatelessWidget {
           final color = isHomeowner ? AppTheme.navy700 : Colors.white;
           final foreground = isHomeowner ? Colors.white : AppTheme.ink;
           return Align(
-            alignment: isHomeowner ? Alignment.centerRight : Alignment.centerLeft,
+            alignment:
+                isHomeowner ? Alignment.centerRight : Alignment.centerLeft,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 300),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                 decoration: BoxDecoration(
                   color: color,
                   borderRadius: BorderRadius.only(
@@ -157,9 +161,11 @@ class BookingConversationScreen extends StatelessWidget {
                   children: [
                     Text(
                       message['text']?.toString() ?? '',
-                      style: TextStyle(color: foreground, fontSize: 14, height: 1.35),
+                      style: TextStyle(
+                          color: foreground, fontSize: 14, height: 1.35),
                     ),
-                    if ((message['time']?.toString().trim() ?? '').isNotEmpty) ...[
+                    if ((message['time']?.toString().trim() ?? '')
+                        .isNotEmpty) ...[
                       const SizedBox(height: 5),
                       Text(
                         message['time'].toString(),
@@ -199,7 +205,8 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    HomeownerService.instance.syncVersion.removeListener(_refreshFromSharedSync);
+    HomeownerService.instance.syncVersion
+        .removeListener(_refreshFromSharedSync);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -576,7 +583,7 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
       color: Colors.white,
       child: SlidingSegmentControl(
         currentIndex: _activeSegment,
-        activeColor: const Color(0xFF1B3C6E),
+        activeColor: AppTheme.navy,
         items: const [
           SegmentItem(label: 'Messages'),
           SegmentItem(label: 'Activity'),
@@ -716,12 +723,14 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
     if (slug.isEmpty) return '';
 
     try {
-      final response = await HomeownerService.instance.getContractorProfile(slug);
+      final response =
+          await HomeownerService.instance.getContractorProfile(slug);
       return StreamService.instance.resolveMessagingUserId(response) ?? '';
     } catch (_) {
       return '';
     }
   }
+
   Widget _buildActivityList() {
     if (_activityFeed.isEmpty) {
       return Center(
@@ -733,7 +742,8 @@ class _InboxTabState extends State<InboxTab> with WidgetsBindingObserver {
             const SizedBox(height: 12),
             const Text(
               'No activity yet',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.gray),
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: AppTheme.gray),
             ),
             const SizedBox(height: 4),
             const Text(

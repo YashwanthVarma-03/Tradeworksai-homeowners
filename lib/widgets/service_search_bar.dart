@@ -21,7 +21,7 @@ class ServiceSearchBar extends StatelessWidget {
     this.onTapOutside,
     this.hint,
     this.emptyOverlay,
-    this.borderColor = const Color(0xFFD9E2EC),
+    this.borderColor = AppTheme.cardBorder,
     this.showShadow = false,
     this.textColor = AppTheme.navy700,
   }) : assert(hint == null || emptyOverlay == null);
@@ -65,7 +65,7 @@ class ServiceSearchBar extends StatelessWidget {
             boxShadow: showShadow
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF0F172A).withOpacity(0.08),
+                      color: AppTheme.navy.withOpacity(0.08),
                       blurRadius: 16,
                       offset: const Offset(0, 6),
                     ),
@@ -107,7 +107,7 @@ class ServiceSearchBar extends StatelessWidget {
                           padding: EdgeInsets.only(left: 14),
                           child: Icon(
                             Icons.search_rounded,
-                            color: Color(0xFF94A3B8),
+                            color: AppTheme.textTertiary,
                             size: 20,
                           ),
                         ),
@@ -132,7 +132,7 @@ class ServiceSearchBar extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.inter(
-                                    color: const Color(0xFF64748B),
+                                    color: AppTheme.textSecondary,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
                                     height: 1,
@@ -160,7 +160,7 @@ class ServiceSearchBar extends StatelessWidget {
                 height: 20,
                 width: 1,
                 margin: EdgeInsets.symmetric(horizontal: compact ? 3 : 5),
-                color: const Color(0xFFCBD5E1),
+                color: AppTheme.cardBorder,
               ),
               Padding(
                 padding: EdgeInsets.only(right: actionPadding),
@@ -216,7 +216,7 @@ class _ActionButton extends StatelessWidget {
         tooltip: tooltip,
         onPressed: onPressed,
         padding: EdgeInsets.zero,
-        icon: Icon(icon, color: const Color(0xFF94A3B8), size: 20),
+        icon: Icon(icon, color: AppTheme.textTertiary, size: 20),
       ),
     );
   }

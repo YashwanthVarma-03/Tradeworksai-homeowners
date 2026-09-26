@@ -33,9 +33,9 @@ class _CategoryGuidesScreenState extends State<CategoryGuidesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFDCE3EE),
+      backgroundColor: AppTheme.cardBorder,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFDCE3EE),
+        backgroundColor: AppTheme.cardBorder,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
@@ -148,7 +148,7 @@ class CategoryGuideDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final serviceCategory = article.serviceCategory;
     return Scaffold(
-      backgroundColor: const Color(0xFFDCE3EE),
+      backgroundColor: AppTheme.cardBorder,
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -228,10 +228,10 @@ class CategoryGuideDetailScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: const Color(0xFFEEF2F8)),
+                    border: Border.all(color: AppTheme.pageBackground),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF1B3C6E).withOpacity(0.10),
+                        color: AppTheme.navy.withOpacity(0.10),
                         blurRadius: 30,
                         offset: const Offset(0, 10),
                       ),
@@ -282,7 +282,8 @@ class CategoryGuideDetailScreen extends StatelessWidget {
 
 class CategoryGuideRepository {
   static Future<List<CategoryGuideArticle>> loadArticles() async {
-    final raw = await rootBundle.loadString('assets/data/homeowner_guides.json');
+    final raw =
+        await rootBundle.loadString('assets/data/homeowner_guides.json');
     final decoded = jsonDecode(raw) as Map<String, dynamic>;
     final articles = (decoded['articles'] as List<dynamic>)
         .cast<Map<String, dynamic>>()
@@ -360,7 +361,8 @@ class CategoryGuideArticle {
     final normalized = title
         .replaceAll(": A Homeowner's Guide", '')
         .replaceAll(' Services', '')
-        .replaceAll('The Year-Round Home Maintenance Checklist', 'Home Services')
+        .replaceAll(
+            'The Year-Round Home Maintenance Checklist', 'Home Services')
         .replaceAll('How Home Service Pricing Works', 'Home Services')
         .trim();
     const aliases = {
@@ -386,12 +388,15 @@ class CategoryGuideArticle {
     return aliases[normalized] ?? normalized;
   }
 
-  String get kindLabel => kind == 'general' ? 'General Guide' : 'Category Guide';
+  String get kindLabel =>
+      kind == 'general' ? 'General Guide' : 'Category Guide';
 
   bool get isGeneral => kind == 'general';
 
-  List<CategoryGuideSection> get tocSections =>
-      sections.where((section) => section.heading.trim().isNotEmpty).take(10).toList();
+  List<CategoryGuideSection> get tocSections => sections
+      .where((section) => section.heading.trim().isNotEmpty)
+      .take(10)
+      .toList();
 }
 
 class CategoryGuideSection {
@@ -474,9 +479,9 @@ class _GuidesHeroCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF1B3C6E),
-            Color(0xFF235C86),
-            Color(0xFF2E86AB),
+            AppTheme.navy,
+            AppTheme.navy,
+            AppTheme.blue,
           ],
         ),
         borderRadius: BorderRadius.circular(24),
@@ -514,7 +519,7 @@ class _GuidesHeroCard extends StatelessWidget {
           Text(
             'Browse $generalCount homeowner guides and $categoryCount service category guides with practical advice, FAQs, pricing context, safety notes, and quick ways to book vetted pros.',
             style: GoogleFonts.inter(
-              color: const Color(0xFFDCEAF4),
+              color: AppTheme.blueTint,
               fontSize: 13.5,
               height: 1.5,
             ),
@@ -719,7 +724,8 @@ class _GuideListCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Icon(Icons.arrow_forward_ios, color: AppTheme.gray, size: 16),
+                const Icon(Icons.arrow_forward_ios,
+                    color: AppTheme.gray, size: 16),
               ],
             ),
           ),
@@ -739,7 +745,7 @@ class _ArticleTopBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       decoration: const BoxDecoration(
-        color: Color(0xFF0E1B2E),
+        color: AppTheme.navy,
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       child: Wrap(
@@ -772,14 +778,14 @@ class _TagPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF17436F),
+        color: AppTheme.navy,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFF2E86AB)),
+        border: Border.all(color: AppTheme.blue),
       ),
       child: Text(
         label,
         style: const TextStyle(
-          color: Color(0xFFBFE2F0),
+          color: AppTheme.blueTint,
           fontSize: 11.5,
           fontWeight: FontWeight.w500,
         ),
@@ -795,7 +801,8 @@ class _ArticleHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final overview = article.sections.isNotEmpty ? article.sections.first : null;
+    final overview =
+        article.sections.isNotEmpty ? article.sections.first : null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
       child: Column(
@@ -851,11 +858,11 @@ class _ArticleHeader extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE4F1F7)),
+                border: Border.all(color: AppTheme.blueTint),
                 gradient: const LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0xFFE4F1F7), Colors.white],
+                  colors: [AppTheme.blueTint, Colors.white],
                 ),
               ),
               child: Column(
@@ -876,7 +883,7 @@ class _ArticleHeader extends StatelessWidget {
                     style: AppTheme.bodyStyle.copyWith(
                       fontSize: 15,
                       height: 1.55,
-                      color: const Color(0xFF1D2B3D),
+                      color: AppTheme.navy,
                     ),
                   ),
                 ],
@@ -945,7 +952,7 @@ class _TocCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F8FC),
+        color: AppTheme.pageBackground,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.line),
       ),
@@ -1040,7 +1047,7 @@ class _ArticleSectionCard extends StatelessWidget {
                 style: AppTheme.bodyStyle.copyWith(
                   fontSize: 15.3,
                   height: 1.62,
-                  color: const Color(0xFF233246),
+                  color: AppTheme.navy,
                 ),
               ),
             );
@@ -1053,8 +1060,10 @@ class _ArticleSectionCard extends StatelessWidget {
 
   List<Widget> _moduleForSection(CategoryGuideSection section) {
     final heading = section.heading.toLowerCase();
-    if (heading.contains('spring') || heading.contains('summer') ||
-        heading.contains('fall') || heading.contains('winter')) {
+    if (heading.contains('spring') ||
+        heading.contains('summer') ||
+        heading.contains('fall') ||
+        heading.contains('winter')) {
       return [_SeasonModule(heading: section.heading)];
     }
     if (heading.contains('frequency') || heading.contains('at a glance')) {
@@ -1063,11 +1072,13 @@ class _ArticleSectionCard extends StatelessWidget {
     if (heading.contains('diy') || heading.contains('call a pro')) {
       return const [_DiyVsProModule()];
     }
-    if (heading.contains('tradeworks') || heading.contains('helps') ||
+    if (heading.contains('tradeworks') ||
+        heading.contains('helps') ||
         heading.contains('keep track')) {
       return const [_AiExperienceModule()];
     }
-    if (heading.contains('cost') || heading.contains('pricing') ||
+    if (heading.contains('cost') ||
+        heading.contains('pricing') ||
         heading.contains('quote')) {
       return const [_PricingModule()];
     }
@@ -1132,7 +1143,9 @@ class _BulletRow extends StatelessWidget {
             height: 20,
             margin: const EdgeInsets.only(top: 2),
             decoration: const BoxDecoration(
-              color: Color(0xFFE7EDF6),
+              border:
+                  Border.fromBorderSide(BorderSide(color: AppTheme.cardBorder)),
+              color: AppTheme.pageBackground,
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -1169,24 +1182,24 @@ class _AlertCallout extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE7D3A6)),
+        border: Border.all(color: AppTheme.amberTint),
         gradient: const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFFF7ECD6), Colors.white],
+          colors: [AppTheme.amberTint, Colors.white],
         ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber_rounded, color: Color(0xFFB7791F)),
+          const Icon(Icons.warning_amber_rounded, color: AppTheme.gold),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               text,
               style: AppTheme.bodyStyle.copyWith(
                 fontSize: 14.2,
-                color: const Color(0xFF5C471F),
+                color: AppTheme.amber,
                 height: 1.55,
               ),
             ),
@@ -1209,31 +1222,33 @@ class _SeasonModule extends StatelessWidget {
         ? const [
             _SeasonData(
               title: 'Fall',
-              color: Color(0xFFD2622B),
+              color: AppTheme.amber,
               tasks: [
                 'Service the heating system before cold weather',
                 'Clean gutters again after leaf-fall',
                 'Winterize outdoor faucets and sprinklers',
                 'Inspect chimney, insulation, and weatherstripping',
               ],
-              proLine: 'Book a pro for furnace service, gutters, chimney, or insulation',
+              proLine:
+                  'Book a pro for furnace service, gutters, chimney, or insulation',
             ),
             _SeasonData(
               title: 'Winter',
-              color: Color(0xFF3E7CA4),
+              color: AppTheme.blue,
               tasks: [
                 'Protect exposed pipes from freezing',
                 'Watch gutters and rooflines after storms',
                 'Change HVAC filters and monitor humidity',
                 'Test sump pumps before heavy rain',
               ],
-              proLine: 'Book a pro for plumbing, heating, roofing, or insulation',
+              proLine:
+                  'Book a pro for plumbing, heating, roofing, or insulation',
             ),
           ]
         : const [
             _SeasonData(
               title: 'Spring',
-              color: Color(0xFF3EA46B),
+              color: AppTheme.green,
               tasks: [
                 'Inspect roof, flashing, siding, and exterior paint',
                 'Clean gutters and downspouts',
@@ -1244,14 +1259,15 @@ class _SeasonModule extends StatelessWidget {
             ),
             _SeasonData(
               title: 'Summer',
-              color: Color(0xFFE8A21A),
+              color: AppTheme.gold,
               tasks: [
                 'Replace HVAC filters during heavy-use months',
                 'Pressure wash walkways, driveway, and siding',
                 'Trim trees and shrubs back from the home',
                 'Check leaks, GFCI outlets, pests, and seals',
               ],
-              proLine: 'Book a pro for pressure washing, trees, or pest control',
+              proLine:
+                  'Book a pro for pressure washing, trees, or pest control',
             ),
           ];
     return _ResponsiveModuleGrid(
@@ -1295,7 +1311,8 @@ class _SeasonCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
             decoration: BoxDecoration(
               color: data.color,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(14)),
             ),
             child: Text(
               data.title,
@@ -1337,8 +1354,14 @@ class _FrequencyModule extends StatelessWidget {
     const rows = [
       ('Monthly', 'HVAC filter, detector test, range hood, leak scan'),
       ('Quarterly', 'GFCI outlets, unused drains, caulk, water heater area'),
-      ('Twice a year', 'AC and heat service, gutter cleaning, detector batteries'),
-      ('Annually', 'Roof inspection, chimney sweep, dryer vent, pressure washing'),
+      (
+        'Twice a year',
+        'AC and heat service, gutter cleaning, detector batteries'
+      ),
+      (
+        'Annually',
+        'Roof inspection, chimney sweep, dryer vent, pressure washing'
+      ),
       ('After a storm', 'Extra roof, exterior, tree, and drainage check'),
     ];
     return const _GuideTable(
@@ -1359,19 +1382,20 @@ class _PricingModule extends StatelessWidget {
           title: 'Upfront price',
           label: 'Rate Card',
           text: 'Routine, predictable jobs show a clear price before booking.',
-          color: Color(0xFF2F8F46),
+          color: AppTheme.green,
         ),
         _PricingCard(
           title: 'You approve the cap',
           label: 'Not-to-Exceed',
-          text: 'Repairs needing diagnosis use a cap you approve before work begins.',
-          color: Color(0xFF2E86AB),
+          text:
+              'Repairs needing diagnosis use a cap you approve before work begins.',
+          color: AppTheme.blue,
         ),
         _PricingCard(
           title: 'Free estimate',
           label: 'Free estimate',
           text: 'Bigger projects get an itemized estimate before you decide.',
-          color: Color(0xFF1B3C6E),
+          color: AppTheme.navy,
         ),
       ],
     );
@@ -1407,7 +1431,8 @@ class _PricingCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
             decoration: BoxDecoration(
               color: color,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(14)),
             ),
             child: Text(
               title,
@@ -1435,7 +1460,7 @@ class _PricingCard extends StatelessWidget {
                 Text(
                   text,
                   style: AppTheme.bodyStyle.copyWith(
-                    color: const Color(0xFF2B3A4D),
+                    color: AppTheme.navy,
                     fontSize: 12.5,
                     height: 1.45,
                   ),
@@ -1507,7 +1532,8 @@ class _ChecklistPanel extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
             decoration: BoxDecoration(
               color: color,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(14)),
             ),
             child: Text(
               title,
@@ -1538,7 +1564,7 @@ class _AiExperienceModule extends StatelessWidget {
       margin: const EdgeInsets.only(top: 4, bottom: 14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE7EDF6)),
+        border: Border.all(color: AppTheme.pageBackground),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1565,7 +1591,7 @@ class _AiExperienceModule extends StatelessWidget {
                 Text(
                   'The assistant points you to the right service, then you browse, choose, book, and track.',
                   style: AppTheme.bodyStyle.copyWith(
-                    color: const Color(0xFFC9D7EA),
+                    color: AppTheme.cardBorder,
                     fontSize: 13.5,
                   ),
                 ),
@@ -1579,22 +1605,26 @@ class _AiExperienceModule extends StatelessWidget {
                 _AiStepRow(
                   step: '1',
                   title: 'Describe the task',
-                  text: 'Use plain language, photos, or the problem you noticed.',
+                  text:
+                      'Use plain language, photos, or the problem you noticed.',
                 ),
                 _AiStepRow(
                   step: '2',
                   title: 'See the right service',
-                  text: 'AI-assisted routing turns the issue into a clear service path.',
+                  text:
+                      'AI-assisted routing turns the issue into a clear service path.',
                 ),
                 _AiStepRow(
                   step: '3',
                   title: 'Browse and choose',
-                  text: 'Compare vetted pros, pricing, ratings, and availability.',
+                  text:
+                      'Compare vetted pros, pricing, ratings, and availability.',
                 ),
                 _AiStepRow(
                   step: '4',
                   title: 'Book and track',
-                  text: 'Use the existing booking flow and follow status to completion.',
+                  text:
+                      'Use the existing booking flow and follow status to completion.',
                 ),
               ],
             ),
@@ -1628,7 +1658,7 @@ class _AiStepRow extends StatelessWidget {
             height: 32,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: const Color(0xFFE4F1F7),
+              color: AppTheme.blueTint,
               borderRadius: BorderRadius.circular(9),
               border: Border.all(color: AppTheme.teal700),
             ),
@@ -1799,7 +1829,8 @@ class _FaqCard extends StatelessWidget {
               border: Border.all(color: AppTheme.line),
             ),
             child: ExpansionTile(
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              tilePadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
               childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               collapsedIconColor: AppTheme.teal700,
               iconColor: AppTheme.teal700,
@@ -1820,7 +1851,7 @@ class _FaqCard extends StatelessWidget {
                   style: AppTheme.bodyStyle.copyWith(
                     fontSize: 13.8,
                     height: 1.58,
-                    color: const Color(0xFF33465E),
+                    color: AppTheme.navy,
                   ),
                 ),
               ],
@@ -1864,7 +1895,7 @@ class _ArticleCtaCard extends StatelessWidget {
           Text(
             article.ctaBody,
             style: AppTheme.bodyStyle.copyWith(
-              color: const Color(0xFFC9D7EA),
+              color: AppTheme.cardBorder,
               fontSize: 14,
               height: 1.55,
             ),
@@ -1879,7 +1910,8 @@ class _ArticleCtaCard extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.orange500,
                   foregroundColor: AppTheme.navy700,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -1894,7 +1926,8 @@ class _ArticleCtaCard extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: Colors.white.withOpacity(0.45)),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -1934,7 +1967,7 @@ class _ImagePlaceholder extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFF2F8FB), Color(0xFFE9F3F8)],
+          colors: [AppTheme.blueTint, AppTheme.blueTint],
         ),
       ),
       child: Column(

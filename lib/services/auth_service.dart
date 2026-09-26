@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -185,6 +189,56 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Native Apple authentication on Apple devices, hosted OAuth elsewhere.
+  Future<void> signInWithAppleInteractive({bool rememberMe = true}) async {
+    await setRememberLoginPreference(rememberMe: rememberMe);
+    if (kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.iOS &&
+            defaultTargetPlatform != TargetPlatform.macOS)) {
+      final launched = await _client.auth.signInWithOAuth(
+        OAuthProvider.apple,
+        redirectTo: kIsWeb ? Uri.base.origin : _nativeGoogleCallbackUrl,
+        authScreenLaunchMode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        throw Exception('Unable to open Apple sign-in. Please try again.');
+      }
+      return;
+    }
+
+    final rawNonce = _client.auth.generateRawNonce();
+    final credential = await SignInWithApple.getAppleIDCredential(
+      scopes: const [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName,
+      ],
+      nonce: sha256.convert(utf8.encode(rawNonce)).toString(),
+    );
+    final idToken = credential.identityToken;
+    if (idToken == null) {
+      throw Exception('Unable to complete Apple sign-in. Please try again.');
+    }
+    final response = await _client.auth.signInWithIdToken(
+      provider: OAuthProvider.apple,
+      idToken: idToken,
+      nonce: rawNonce,
+    );
+    // Apple only supplies names on the first authorization. Persist them in
+    // auth metadata without replacing existing names on subsequent sign-ins.
+    final given = _readString(credential.givenName);
+    final family = _readString(credential.familyName);
+    if (given != null || family != null) {
+      final fullName = [given, family].whereType<String>().join(' ');
+      await _client.auth.updateUser(UserAttributes(data: {
+        if (given != null) 'given_name': given,
+        if (family != null) 'family_name': family,
+        'name': fullName,
+        'full_name': fullName,
+      }));
+    }
+    await _syncFromSession(_client.auth.currentSession ?? response.session);
+  }
+
   Future<bool> loadRememberLoginPreference() async {
     _prefs = await SharedPreferences.getInstance();
     return _prefs!.getBool(_rememberLoginKey) ?? true;
@@ -219,12 +273,6 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<void> simulateGoogleSignInSuccess() async {
-    throw UnsupportedError(
-      'Demo sign-in is disabled. Use the real Supabase-backed sign-in flow.',
-    );
-  }
-
   Future<String> requestPasswordReset(String email) async {
     await storePendingPasswordResetEmail(email);
     await _client.auth.resetPasswordForEmail(email);
@@ -253,9 +301,17 @@ class AuthService extends ChangeNotifier {
     await _client.auth.updateUser(
       UserAttributes(password: password),
     );
+    var otherSessionsRevoked = true;
+    try {
+      await _client.auth.signOut(scope: SignOutScope.others);
+    } catch (_) {
+      otherSessionsRevoked = false;
+    }
     await _syncFromSession(_client.auth.currentSession);
     await _prefs?.remove('pendingPasswordResetEmail');
-    return 'Your password has been reset. You can now log in.';
+    return otherSessionsRevoked
+        ? 'Your password has been reset. Your other sessions have been revoked.'
+        : 'Your password has been reset, but we could not sign out your other devices. Please try signing out of those devices.';
   }
 
   Future<void> logout() async {

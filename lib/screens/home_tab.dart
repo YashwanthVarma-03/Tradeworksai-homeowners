@@ -63,19 +63,19 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   ];
 
   static const Map<String, Color> _categoryBackgrounds = {
-    'HVAC': Color(0xFFE3F2FD),
-    'Plumbing': Color(0xFFE0F7FA),
-    'Electrical': Color(0xFFFFF8E1),
-    'Cleaning': Color(0xFFE8F5E9),
+    'HVAC': AppTheme.blueTint,
+    'Plumbing': AppTheme.blueTint,
+    'Electrical': AppTheme.amberTint,
+    'Cleaning': AppTheme.greenTint,
     'Roofing': Color(0xFFFFEBEE),
-    'Lawn': Color(0xFFF1F8E9),
+    'Lawn': AppTheme.greenTint,
     'Handyman': Color(0xFFF3E5F5),
   };
 
-  static const Color _pageBackground = Color(0xFFF5F7FA);
-  static const Color _inkStrong = Color(0xFF1E293B);
-  static const Color _mutedText = Color(0xFF64748B);
-  static const Color _lineSoft = Color(0xFFE6E8EC);
+  static const Color _pageBackground = AppTheme.pageBackground;
+  static const Color _inkStrong = AppTheme.navy;
+  static const Color _mutedText = AppTheme.textSecondary;
+  static const Color _lineSoft = AppTheme.cardBorder;
   static const double _searchPlaceholderFontSize = 14;
   static const double _searchTickerHeight = 18;
 
@@ -543,7 +543,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     return candidates;
   }
 
-  List<Map<String, dynamic>> get _quoteReadyJobs {
+  List<Map<String, dynamic>> get _capPendingJobs {
     final jobs = _quoteSourceJobs.isEmpty
         ? <dynamic>[..._activeJobs, ..._upcomingJobs]
         : _quoteSourceJobs;
@@ -633,28 +633,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   String _text(dynamic value, [String fallback = '']) {
     final text = value?.toString().trim() ?? '';
     return text.isEmpty || text.toLowerCase() == 'null' ? fallback : text;
-  }
-
-  String _formatRelativeTimestamp(dynamic raw) {
-    final value = _text(raw);
-    if (value.isEmpty) return 'Just now';
-    try {
-      final date = DateTime.parse(value).toLocal();
-      final diff = DateTime.now().difference(date);
-      if (diff.inMinutes < 1) return 'Just now';
-      if (diff.inMinutes < 60) {
-        return diff.inMinutes == 1
-            ? '1 minute ago'
-            : '${diff.inMinutes} minutes ago';
-      }
-      if (diff.inHours < 24) {
-        return diff.inHours == 1 ? '1 hour ago' : '${diff.inHours} hours ago';
-      }
-      if (diff.inDays == 1) return 'Yesterday';
-      return '${diff.inDays} days ago';
-    } catch (_) {
-      return 'Just now';
-    }
   }
 
   String get _displayedService {
@@ -752,8 +730,8 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           begin: Alignment.bottomLeft,
           end: Alignment.topRight,
           colors: [
-            Color(0xFF1B3C6E),
-            Color(0xFF2E86AB),
+            AppTheme.navy,
+            AppTheme.blue,
           ],
         ),
       ),
@@ -878,14 +856,14 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       onSubmit: _openSearch,
       onPhotoTap: () => _openAiLayer('camera'),
       onVoiceTap: () => _openAiLayer('voice'),
-      borderColor: const Color(0xFFDCE5F0),
+      borderColor: AppTheme.cardBorder,
       showShadow: true,
       emptyOverlay: Row(
         children: [
           Text(
             'Search a service ',
             style: GoogleFonts.inter(
-              color: const Color(0xFF94A3B8),
+              color: AppTheme.textTertiary,
               fontSize: _searchPlaceholderFontSize,
               fontWeight: FontWeight.w400,
               letterSpacing: -0.1,
@@ -1023,7 +1001,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE6E8EC)),
+        border: Border.all(color: AppTheme.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1162,10 +1140,10 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   }
 
   Widget _buildTailoredSuggestionsCard() {
-    const cardFill = Color(0xFFF0F5FA);
-    const cardBorder = Color(0xFF37537F);
-    const eyebrowColor = Color(0xFF1B3C6E);
-    const bodyColor = Color(0xFF506A91);
+    const cardFill = AppTheme.pageBackground;
+    const cardBorder = AppTheme.navy;
+    const eyebrowColor = AppTheme.navy;
+    const bodyColor = AppTheme.navy;
 
     return Container(
       width: double.infinity,
@@ -1235,7 +1213,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildQuoteReadyStrip(Map<String, dynamic> job, int totalCount) {
+  Widget _buildCapPendingStrip(Map<String, dynamic> job, int totalCount) {
     final service = _text(
       job['serviceCategory'] ??
           job['service_category'] ??
@@ -1260,7 +1238,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     final moreCount = totalCount - 1;
 
     return Material(
-      color: const Color(0xFFFFF7ED),
+      color: AppTheme.amberTint,
       child: InkWell(
         onTap: () => widget.onJobTap(job),
         child: Container(
@@ -1293,7 +1271,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'QUOTE READY - REVIEW NOW',
+                      'YOUR PRO SENT A CAP — REVIEW IT',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1352,188 +1330,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 
-  List<Map<String, dynamic>> get _communityActivityCards {
-    final jobs = <Map<String, dynamic>>[];
-    for (final dynamic item in [
-      ..._activeJobs,
-      ..._upcomingJobs,
-    ]) {
-      if (item is Map) {
-        jobs.add(Map<String, dynamic>.from(item));
-      }
-    }
-
-    if (jobs.isEmpty) return const [];
-
-    final cards = <Map<String, dynamic>>[];
-    int neighborIndex = 0;
-    for (final job in jobs) {
-      final service = _text(job['serviceCategory'], 'Home service');
-      final proName = _text(job['pro']?['businessName'], 'TradeWorks pro');
-      final status = _statusOf(job);
-      final city = _text(_defaultAddress?['city'], 'your area');
-      final time = _formatRelativeTimestamp(
-        job['timeline']?['enRouteAt'] ??
-            job['timeline']?['acceptedAt'] ??
-            job['createdAt'] ??
-            job['scheduledStart'],
-      );
-
-      if (status == 'en_route') {
-        cards.add({
-          'type': 'trend',
-          'primary': proName,
-          'secondary': 'completed 4 jobs in your area this week.',
-          'meta': 'Local demand is high for $service',
-        });
-      } else {
-        final neighbor = neighborIndex == 0 ? 'Maria' : 'Lisa M.';
-        final avatar = neighborIndex == 0 ? '🧑' : 'LM';
-        cards.add({
-          'type': 'neighbor',
-          'neighbor': neighbor,
-          'primary': proName,
-          'avatar': avatar,
-          'meta': '$time · $city',
-        });
-        neighborIndex += 1;
-      }
-
-      if (cards.length >= 3) break;
-    }
-    return cards;
-  }
-
-  Widget _buildCommunityActivitySection() {
-    final cards = _communityActivityCards;
-    if (cards.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Community Activity',
-          style: TextStyle(
-            color: _inkStrong,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ...cards.map(
-          (card) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _buildCommunityActivityCard(card),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCommunityActivityCard(Map<String, dynamic> card) {
-    final type = card['type'] as String? ?? 'neighbor';
-    final iconBackground =
-        type == 'trend' ? const Color(0xFFEFF6FF) : const Color(0xFFE2E8F0);
-    final iconColor = AppTheme.navy700;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _lineSoft),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: iconBackground,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Center(
-              child: type == 'trend'
-                  ? Icon(Icons.trending_up_rounded, color: iconColor, size: 20)
-                  : Text(
-                      _text(card['avatar'], 'LM'),
-                      style: const TextStyle(
-                        color: _inkStrong,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    style: const TextStyle(
-                      color: _inkStrong,
-                      fontSize: 14,
-                      height: 1.43,
-                    ),
-                    children: _communityTextSpans(card),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  card['meta'] as String,
-                  style: const TextStyle(
-                    color: _mutedText,
-                    fontSize: 12,
-                    height: 1.25,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<InlineSpan> _communityTextSpans(Map<String, dynamic> card) {
-    final type = card['type'] as String? ?? 'neighbor';
-    if (type == 'trend') {
-      return [
-        TextSpan(
-          text: _text(card['primary'], 'Gulf Coast Air'),
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        TextSpan(
-            text:
-                ' ${_text(card['secondary'], 'completed 4 jobs in your area this week.')}'),
-      ];
-    }
-
-    return [
-      const TextSpan(text: 'Your neighbor '),
-      TextSpan(
-        text: _text(card['neighbor'], 'Lisa M.'),
-        style: const TextStyle(fontWeight: FontWeight.w700),
-      ),
-      TextSpan(text: ' booked '),
-      TextSpan(
-        text: _text(card['primary'], 'Sunshine Cleaning'),
-        style: const TextStyle(fontWeight: FontWeight.w700),
-      ),
-      const TextSpan(text: ' — rated '),
-      const TextSpan(
-        text: '5★',
-        style: TextStyle(
-          color: AppTheme.orange500,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    ];
-  }
-
   Widget _buildLoading() {
     return Scaffold(
       backgroundColor: _pageBackground,
@@ -1581,7 +1377,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     if (_isLoading) return _buildLoading();
     if (_errorMessage != null) return _buildError();
 
-    final quoteReadyJobs = _quoteReadyJobs;
+    final quoteReadyJobs = _capPendingJobs;
     final quoteReadyJob = quoteReadyJobs.isEmpty ? null : quoteReadyJobs.first;
 
     return ColoredBox(
@@ -1598,7 +1394,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             _buildHomeHero(),
             if (!widget.isGuest && quoteReadyJob != null) ...[
               const SizedBox(height: 14),
-              _buildQuoteReadyStrip(quoteReadyJob, quoteReadyJobs.length),
+              _buildCapPendingStrip(quoteReadyJob, quoteReadyJobs.length),
             ],
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),

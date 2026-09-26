@@ -20,10 +20,10 @@ class HomeProfileScreen extends StatefulWidget {
 }
 
 class _HomeProfileScreenState extends State<HomeProfileScreen> {
-  static const Color _pageBackground = Color(0xFFF5F7FA);
-  static const Color _inkStrong = Color(0xFF1E293B);
-  static const Color _mutedText = Color(0xFF64748B);
-  static const Color _lineSoft = Color(0xFFE1E7EF);
+  static const Color _pageBackground = AppTheme.pageBackground;
+  static const Color _inkStrong = AppTheme.navy;
+  static const Color _mutedText = AppTheme.textSecondary;
+  static const Color _lineSoft = AppTheme.cardBorder;
 
   final Map<String, Map<String, TextEditingController>> _controllers = {};
   final Map<String, List<Map<String, dynamic>>> _systemsByAddress = {};
@@ -348,7 +348,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
             width: 36,
             height: 36,
             decoration: const BoxDecoration(
-              color: Color(0xFFE7F7F8),
+              color: AppTheme.blueTint,
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -450,7 +450,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAFBFF),
+        color: AppTheme.blueTint,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.teal500),
       ),

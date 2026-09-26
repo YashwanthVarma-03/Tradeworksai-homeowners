@@ -2,11 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../theme.dart';
-import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
 import '../widgets/app_notification.dart';
 import 'work_orders/work_order_detail.dart';
-import 'work_orders/quote_review.dart';
+import 'work_orders/cap_approval.dart';
 import 'work_orders/leave_review.dart';
 import 'work_orders/reschedule_work_order.dart';
 
@@ -322,52 +321,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         _jobRating(job) > 0;
   }
 
-  String? _resolveContractorId(Map<String, dynamic> job) {
-    String? readValue(dynamic value) {
-      final text = value?.toString().trim();
-      if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
-        return null;
-      }
-      return text;
-    }
-
-    final topLevel = [
-      job['contractorId'],
-      job['contractor_id'],
-      job['assignedContractorId'],
-      job['assigned_contractor_id'],
-      job['proId'],
-      job['pro_id'],
-    ];
-    for (final candidate in topLevel) {
-      final value = readValue(candidate);
-      if (value != null) return value;
-    }
-
-    final nestedMaps = [
-      job['pro'],
-      job['contractor'],
-      job['assignedContractor'],
-      job['professional'],
-    ];
-    for (final nested in nestedMaps) {
-      if (nested is! Map) continue;
-      final map = Map<String, dynamic>.from(nested);
-      for (final key in const [
-        'contractorId',
-        'contractor_id',
-        'id',
-        'proId',
-        'pro_id',
-      ]) {
-        final value = readValue(map[key]);
-        if (value != null) return value;
-      }
-    }
-
-    return null;
-  }
-
   int _resolveWorkOrderId(Map<String, dynamic> job) {
     for (final key in const ['workOrderId', 'id']) {
       final value = job[key]?.toString().trim();
@@ -384,13 +337,13 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return DateTime.tryParse(isoString);
   }
 
-  void _reviewQuoteDialog(Map<String, dynamic> job) async {
+  void _openCapApproval(Map<String, dynamic> job) async {
     final changed = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => QuoteReviewScreen(job: job)),
+      MaterialPageRoute(builder: (context) => CapApprovalScreen(job: job)),
     );
-    if (changed == true) {
-      _fetchJobs(showLoading: false);
+    if (changed == true && mounted) {
+      _fetchJobs(showLoading: false, forceRefresh: true);
     }
   }
 
@@ -404,373 +357,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         ),
       );
       _fetchJobs(showLoading: false, forceRefresh: true);
-    }
-  }
-
-  void _rescheduleDialog(Map<String, dynamic> job) async {
-    final woId = _resolveWorkOrderId(job);
-    var contractorId = _resolveContractorId(job);
-    if (contractorId == null && woId > 0) {
-      contractorId =
-          await HomeownerService.instance.resolveContractorIdForWorkOrder(woId);
-    }
-    if (!mounted) return;
-    if (contractorId == null) {
-      AppNotification.showInfo(
-        context,
-        'Rescheduling is not available for this booking yet.',
-      );
-      return;
-    }
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-          child: CircularProgressIndicator(color: AppTheme.orange500)),
-    );
-
-    try {
-      final now = DateTime.now();
-      final fromDate = now.toIso8601String().split('T').first;
-      final toDate =
-          now.add(const Duration(days: 7)).toIso8601String().split('T').first;
-
-      final avail = await HomeownerService.instance.getContractorAvailability(
-        contractorId: contractorId,
-        fromDate: fromDate,
-        toDate: toDate,
-      );
-
-      if (mounted) Navigator.pop(context); // Remove loader
-
-      final slots = avail['slots'] as List? ?? [];
-
-      if (!mounted) return;
-
-      if (slots.isEmpty) {
-        if (mounted) {
-          AppNotification.showInfo(
-            context,
-            'No alternate times are available in the next 7 days. Please check again later.',
-          );
-        }
-        return;
-      }
-
-      // Group slots by date key (YYYY-MM-DD)
-      final Map<String, List<Map<String, dynamic>>> slotsByDate = {};
-      for (final slot in slots) {
-        if (slot is Map<String, dynamic>) {
-          final startStr = slot['start']?.toString() ?? '';
-          if (startStr.isNotEmpty) {
-            final dateKey = startStr.split('T').first;
-            slotsByDate.putIfAbsent(dateKey, () => []);
-            slotsByDate[dateKey]!.add(slot);
-          }
-        }
-      }
-
-      final sortedDates = slotsByDate.keys.toList()..sort();
-      if (sortedDates.isEmpty) return;
-
-      if (!mounted) return;
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        builder: (sheetContext) {
-          String selectedDate = sortedDates.first;
-          Map<String, dynamic>? selectedSlot = slotsByDate[selectedDate]?.first;
-          final reasonController =
-              TextEditingController(text: 'Homeowner requested reschedule');
-
-          return StatefulBuilder(
-            builder: (BuildContext context, StateSetter setModalState) {
-              final activeSlots = slotsByDate[selectedDate] ?? [];
-
-              return SafeArea(
-                child: Container(
-                  color: Colors.white,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(16, 12, 16,
-                        MediaQuery.of(context).viewInsets.bottom + 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Center(
-                          child: Container(
-                            width: 42,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: AppTheme.line,
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(children: [
-                          const Expanded(
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Propose Reschedule',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 22,
-                                          color: AppTheme.navy700)),
-                                  SizedBox(height: 3),
-                                  Text('Choose a new time for this booking',
-                                      style: TextStyle(
-                                          fontSize: 12, color: AppTheme.gray)),
-                                ]),
-                          ),
-                          IconButton(
-                              onPressed: () => Navigator.pop(sheetContext),
-                              icon: const Icon(Icons.close,
-                                  color: AppTheme.navy700)),
-                        ]),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Select Date:',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.navy700),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          height: 44,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: sortedDates.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 8),
-                            itemBuilder: (context, idx) {
-                              final dateKey = sortedDates[idx];
-                              final isSelected = dateKey == selectedDate;
-                              final parsedDate =
-                                  DateTime.tryParse(dateKey) ?? DateTime.now();
-                              final weekDayStr = const [
-                                'Mon',
-                                'Tue',
-                                'Wed',
-                                'Thu',
-                                'Fri',
-                                'Sat',
-                                'Sun'
-                              ][parsedDate.weekday - 1];
-                              final monthStr = const [
-                                'Jan',
-                                'Feb',
-                                'Mar',
-                                'Apr',
-                                'May',
-                                'Jun',
-                                'Jul',
-                                'Aug',
-                                'Sep',
-                                'Oct',
-                                'Nov',
-                                'Dec'
-                              ][parsedDate.month - 1];
-                              final label =
-                                  '$weekDayStr, $monthStr ${parsedDate.day}';
-
-                              return ChoiceChip(
-                                label: Text(label),
-                                selected: isSelected,
-                                selectedColor: AppTheme.orange500,
-                                backgroundColor: AppTheme.pageAlt,
-                                labelStyle: TextStyle(
-                                  color: isSelected
-                                      ? Colors.white
-                                      : AppTheme.navy700,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                onSelected: (val) {
-                                  if (val) {
-                                    setModalState(() {
-                                      selectedDate = dateKey;
-                                      selectedSlot =
-                                          slotsByDate[dateKey]?.first;
-                                    });
-                                  }
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Select Time:',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.navy700),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: activeSlots.map((slot) {
-                            final startStr = slot['start']?.toString() ?? '';
-                            final parsedTime =
-                                DateTime.tryParse(startStr) ?? DateTime.now();
-                            final hour = parsedTime.hour > 12
-                                ? parsedTime.hour - 12
-                                : (parsedTime.hour == 0 ? 12 : parsedTime.hour);
-                            final min =
-                                parsedTime.minute.toString().padLeft(2, '0');
-                            final period = parsedTime.hour >= 12 ? 'PM' : 'AM';
-                            final timeLabel = '$hour:$min $period';
-                            final isSelected = selectedSlot == slot;
-
-                            return ChoiceChip(
-                              label: Text(timeLabel),
-                              selected: isSelected,
-                              selectedColor: AppTheme.orange500,
-                              backgroundColor: AppTheme.pageAlt,
-                              labelStyle: TextStyle(
-                                color: isSelected
-                                    ? Colors.white
-                                    : AppTheme.navy700,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              onSelected: (val) {
-                                if (val) {
-                                  setModalState(() {
-                                    selectedSlot = slot;
-                                  });
-                                }
-                              },
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Reason for Rescheduling:',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.navy700),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: reasonController,
-                          maxLines: 2,
-                          decoration: InputDecoration(
-                            hintText: 'Enter reason here...',
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                            contentPadding: const EdgeInsets.all(12),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(sheetContext),
-                            style: OutlinedButton.styleFrom(
-                                minimumSize: const Size(0, 48)),
-                            child: const Text('Cancel',
-                                style: TextStyle(
-                                    color: AppTheme.navy700,
-                                    fontWeight: FontWeight.w800)),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              minimumSize: const Size(0, 48),
-                              backgroundColor: AppTheme.orange500,
-                            ),
-                            onPressed: selectedSlot == null
-                                ? null
-                                : () async {
-                                    final start =
-                                        selectedSlot!['start']?.toString() ??
-                                            '';
-                                    final end =
-                                        selectedSlot!['end']?.toString() ?? '';
-                                    final reason =
-                                        reasonController.text.trim().isNotEmpty
-                                            ? reasonController.text.trim()
-                                            : 'Homeowner requested reschedule';
-                                    Navigator.pop(sheetContext);
-
-                                    try {
-                                      showDialog(
-                                        context: this.context,
-                                        barrierDismissible: false,
-                                        builder: (context) => const Center(
-                                          child: CircularProgressIndicator(
-                                              color: AppTheme.orange500),
-                                        ),
-                                      );
-                                      await HomeownerService.instance
-                                          .performWorkOrderAction(
-                                        workOrderId: woId,
-                                        action: 'propose_reschedule',
-                                        extra: {
-                                          'proposedStart': start,
-                                          'proposedEnd': end,
-                                          'reason': reason,
-                                          'contractorId': contractorId,
-                                          'requester_user_id':
-                                              AuthService.instance.userId,
-                                        },
-                                      );
-                                      if (mounted) Navigator.pop(this.context);
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(this.context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                                'Reschedule request sent successfully'),
-                                            backgroundColor: AppTheme.success,
-                                          ),
-                                        );
-                                        _fetchJobs(showLoading: false);
-                                      }
-                                    } catch (e) {
-                                      if (mounted) Navigator.pop(this.context);
-                                      if (mounted) {
-                                        AppNotification.showError(
-                                          this.context,
-                                          e,
-                                          fallback:
-                                              'We couldn\'t send the reschedule request. Please try again.',
-                                        );
-                                      }
-                                    }
-                                  },
-                            child: const Text('Propose Reschedule',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Remove loader
-        AppNotification.showError(
-          context,
-          e,
-          fallback: 'We couldn\'t load available times. Please try again.',
-        );
-      }
     }
   }
 
@@ -901,9 +487,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           Expanded(
             child: Container(
               decoration: const BoxDecoration(
-                color: Color(0xFFF4F6FA),
+                color: AppTheme.pageBackground,
                 border: Border(
-                  top: BorderSide(color: Color(0xFFE0E5EC), width: 1),
+                  top: BorderSide(color: AppTheme.cardBorder, width: 1),
                 ),
               ),
               child: RefreshIndicator(
@@ -924,7 +510,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE6E8EC))),
+        border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
       ),
       child: _buildHeaderControls(),
     );
@@ -935,7 +521,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       height: 44,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F4F8),
+        color: AppTheme.pageBackground,
         borderRadius: BorderRadius.circular(100),
       ),
       child: LayoutBuilder(
@@ -1002,7 +588,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
               AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 160),
                 style: TextStyle(
-                  color: selected ? Colors.white : const Color(0xFF66758C),
+                  color: selected ? Colors.white : AppTheme.textSecondary,
                   fontSize: 13,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                   height: 1,
@@ -1213,7 +799,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE6E8EC)),
+          border: Border.all(color: AppTheme.cardBorder),
         ),
         child: Stack(
           children: [
@@ -1241,7 +827,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Color(0xFF202B3D),
+                            color: AppTheme.navy,
                             fontSize: 15,
                             height: 1.15,
                             fontWeight: FontWeight.w900,
@@ -1270,15 +856,15 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   ),
                   if (isLive) ...[
                     const SizedBox(height: 12),
-                    const Divider(height: 1, color: Color(0xFFE1E6ED)),
+                    const Divider(height: 1, color: AppTheme.cardBorder),
                     const SizedBox(height: 12),
                     _buildProgressTracker(statusLower),
                   ],
                   const SizedBox(height: 12),
                   if (isAlert)
                     _buildPrimaryAction(
-                      label: 'Review & approve',
-                      onPressed: () => _reviewQuoteDialog(job),
+                      label: 'Review the cap',
+                      onPressed: () => _openCapApproval(job),
                     )
                   else if (isLive)
                     _buildLiveActions(job)
@@ -1330,7 +916,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF202B3D),
+                    color: AppTheme.navy,
                     fontSize: 14,
                     height: 1.1,
                     fontWeight: FontWeight.w900,
@@ -1351,13 +937,13 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: urgent ? const Color(0xFFE2F7F8) : const Color(0xFFF0F3F7),
+        color: urgent ? AppTheme.blueTint : AppTheme.pageBackground,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         urgent ? 'URGENT' : 'STANDARD',
         style: TextStyle(
-          color: urgent ? AppTheme.teal500 : const Color(0xFF66758C),
+          color: urgent ? AppTheme.teal500 : AppTheme.textSecondary,
           fontSize: 9,
           fontWeight: FontWeight.w900,
           height: 1,
@@ -1369,23 +955,23 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   Widget _buildStatusBadge(String status) {
     final label = _getStatusText(status);
     final lower = status.toLowerCase();
-    final isQuote = lower.contains('quote') || lower.contains('review');
+    final isCapPending = lower.contains('quote') || lower.contains('review');
     final isCompleted = lower == 'completed' || lower == 'complete';
     final isCancelled = lower == 'cancelled' ||
         lower == 'canceled' ||
         lower == 'cancel' ||
         lower == 'declined';
-    final color = isQuote
+    final color = isCapPending
         ? AppTheme.orange500
         : isCompleted
             ? AppTheme.success
             : isCancelled
-                ? const Color(0xFFC83A3F)
+                ? AppTheme.red
                 : AppTheme.teal500;
-    final fill = isQuote
+    final fill = isCapPending
         ? AppTheme.orangeTint
         : isCompleted
-            ? const Color(0xFFEAFBF4)
+            ? AppTheme.greenTint
             : isCancelled
                 ? const Color(0xFFFFF1F2)
                 : AppTheme.tealTint;
@@ -1430,7 +1016,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(icon, color: const Color(0xFF66758C), size: 14),
+        Icon(icon, color: AppTheme.textSecondary, size: 14),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
@@ -1438,7 +1024,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xFF66758C),
+              color: AppTheme.textSecondary,
               fontSize: 13,
               height: 1,
               fontWeight: FontWeight.w400,
@@ -1467,7 +1053,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   height: 3,
                   color: lineStep < currentStep
                       ? AppTheme.teal500
-                      : const Color(0xFFE1E6ED),
+                      : AppTheme.cardBorder,
                 ),
               );
             }
@@ -1482,7 +1068,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                     ? Colors.white
                     : done
                         ? AppTheme.teal500
-                        : const Color(0xFFE1E6ED),
+                        : AppTheme.cardBorder,
                 shape: BoxShape.circle,
                 border: active
                     ? Border.all(color: AppTheme.teal500, width: 3)
@@ -1514,7 +1100,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             Text(
               'Arrived',
               style: TextStyle(
-                color: Color(0xFF66758C),
+                color: AppTheme.textSecondary,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -1556,7 +1142,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           child: Text(
             'Live · updated just now',
             style: TextStyle(
-              color: Color(0xFF66758C),
+              color: AppTheme.textSecondary,
               fontSize: 12,
               height: 1,
               fontWeight: FontWeight.w500,
@@ -1618,7 +1204,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             subtitle,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: Color(0xFF66758C),
+              color: AppTheme.textSecondary,
               fontSize: 14,
               height: 1.28,
               fontWeight: FontWeight.w400,
@@ -1651,7 +1237,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFFE1E6ED)),
+              border: Border.all(color: AppTheme.cardBorder),
               boxShadow: [
                 BoxShadow(
                   color: AppTheme.navy900.withOpacity(0.04),
@@ -1666,7 +1252,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             height: 48,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: const Color(0xFFDDF0FC),
+              color: AppTheme.blueTint,
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(
@@ -1721,7 +1307,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE6E8EC)),
+        border: Border.all(color: AppTheme.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1735,7 +1321,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF202B3D),
+                    color: AppTheme.navy,
                     fontSize: 15,
                     height: 1.15,
                     fontWeight: FontWeight.w900,
@@ -1808,7 +1394,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                             : Icons.star_border_rounded,
                         color: index < reviewRating
                             ? AppTheme.orange500
-                            : const Color(0xFFB9C4D3),
+                            : AppTheme.textTertiary,
                         size: 18,
                       ),
                     ),
@@ -1848,7 +1434,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Color(0xFF52627A),
+                color: AppTheme.navy,
                 fontSize: 12.5,
                 height: 1.35,
                 fontStyle: FontStyle.italic,
@@ -1922,7 +1508,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           backgroundColor: Colors.white,
           side: BorderSide(
             color: color == AppTheme.navy700
-                ? const Color(0xFFE6E8EC)
+                ? AppTheme.cardBorder
                 : color.withOpacity(0.52),
           ),
           shape: RoundedRectangleBorder(
@@ -1998,7 +1584,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
 
   Color _avatarColor(String initials) {
     if (initials == 'CA') return AppTheme.teal500;
-    if (initials == 'SE') return const Color(0xFFE3E9F1);
+    if (initials == 'SE') return AppTheme.pageBackground;
     return AppTheme.navy700;
   }
 
@@ -2024,7 +1610,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     Map<String, dynamic> job, {
     required bool isAlert,
   }) {
-    if (isAlert) return 'Quoted today · you approve the cap';
+    if (isAlert) return 'Your pro sent a cap · you approve it';
 
     final start = _parseDateTime(job['scheduledStart']?.toString());
     final end = _parseDateTime(job['scheduledEnd']?.toString());
@@ -2122,7 +1708,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   String _getStatusText(String status) {
     status = status.toLowerCase();
     if (status.contains('quote') || status.contains('review')) {
-      return 'Quote ready';
+      return 'Waiting on you';
     }
     if (status == 'en_route') return 'En route';
     if (status == 'in_progress') return 'In progress';
@@ -2146,7 +1732,7 @@ class _BookingSectionLabel extends StatelessWidget {
       child: Text(
         label,
         style: const TextStyle(
-          color: Color(0xFF66758C),
+          color: AppTheme.textSecondary,
           fontSize: 12,
           height: 1,
           fontWeight: FontWeight.w900,

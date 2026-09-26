@@ -106,60 +106,6 @@ class _DashboardShellState extends State<DashboardShell>
     }
   }
 
-  Future<void> _openBookingFlow(
-    Map<String, dynamic> pro, {
-    bool popCurrentRouteOnSuccess = false,
-  }) async {
-    final result = await Navigator.push<Object?>(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            BookFlowScreen(pro: Map<String, dynamic>.from(pro)),
-      ),
-    );
-
-    if (result == BookFlowExit.changeContractor) return;
-    final booked = result == true;
-    if (!booked || !mounted) return;
-    if (popCurrentRouteOnSuccess && Navigator.canPop(context)) {
-      Navigator.pop(context, true);
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.white),
-            SizedBox(width: 8),
-            Text('Booking confirmed!'),
-          ],
-        ),
-        backgroundColor: AppTheme.success,
-        duration: const Duration(seconds: 4),
-        action: SnackBarAction(
-          label: 'View Booking',
-          textColor: Colors.white,
-          onPressed: () {
-            unawaited(ServiceLocation.clear());
-            setState(() {
-              _bookingsInitialSegment = 0;
-              _currentIndex = 2;
-              _bookingsTabKey = UniqueKey();
-            });
-          },
-        ),
-      ),
-    );
-
-    unawaited(ServiceLocation.clear());
-    setState(() {
-      _bookingsInitialSegment = 0;
-      _currentIndex = 2;
-      _bookingsTabKey = UniqueKey();
-    });
-  }
-
   Future<void> _openCategoryGuides() async {
     await Navigator.push(
       context,
@@ -255,7 +201,7 @@ class _DashboardShellState extends State<DashboardShell>
         ),
       ];
       return Scaffold(
-        backgroundColor: const Color(0xFFF5F7FA),
+        backgroundColor: AppTheme.pageBackground,
         body: SafeArea(
             child: IndexedStack(index: _currentIndex, children: guestTabs)),
         bottomNavigationBar: MainBottomNavigation(
@@ -453,146 +399,6 @@ class _DashboardShellState extends State<DashboardShell>
       ),
     );
   }
-
-  void _showOffersSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.65,
-          minChildSize: 0.4,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (context, scrollController) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              child: Column(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: AppTheme.line,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      const Icon(Icons.stars,
-                          color: AppTheme.orange500, size: 26),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Exclusive Offers for You',
-                        style: AppTheme.headingStyle
-                            .copyWith(fontSize: 18, color: AppTheme.navy700),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: ListView(
-                      controller: scrollController,
-                      children: [
-                        _buildOfferCard(
-                          title: '\$50 Off Summer HVAC Special',
-                          desc:
-                              'Get \$50 off any HVAC repair or maintenance service this month.',
-                          code: 'SUMMER50',
-                          partner: 'AirFlow HVAC Specialists',
-                        ),
-                        _buildOfferCard(
-                          title: 'Free Water Quality Test',
-                          desc:
-                              'Book a plumbing diagnostic and get a water hardness/purity test free.',
-                          code: 'PUREWATER',
-                          partner: 'Rooter & Plumb Co.',
-                        ),
-                        _buildOfferCard(
-                          title: 'Double Rewards Points',
-                          desc:
-                              'Earn 6% back in service credits on your next landscaping booking.',
-                          code: 'DOUBLEGREEN',
-                          partner: 'TradeWorks Network',
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildOfferCard({
-    required String title,
-    required String desc,
-    required String code,
-    required String partner,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.orangeTint,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.orange500.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                partner,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.orange700,
-                    fontSize: 11),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppTheme.orange500,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  code,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 10,
-                      letterSpacing: 0.5),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppTheme.navy700,
-                fontSize: 14.5),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            desc,
-            style: const TextStyle(color: AppTheme.gray, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class BrowseScreen extends StatelessWidget {
@@ -758,16 +564,15 @@ class GiftBoxPainter extends CustomPainter {
     }
 
     final redPaint = Paint()
-      ..color =
-          const Color(0xFFD32F2F) // Red box color (standard red/gold requested)
+      ..color = AppTheme.red // Red box color (standard red/gold requested)
       ..style = PaintingStyle.fill;
 
     final goldPaint = Paint()
-      ..color = const Color(0xFFFFC107) // Gold strip / ribbon color
+      ..color = AppTheme.gold // Gold strip / ribbon color
       ..style = PaintingStyle.fill;
 
     final goldStrokePaint = Paint()
-      ..color = const Color(0xFFFFC107)
+      ..color = AppTheme.gold
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;

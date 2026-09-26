@@ -84,7 +84,7 @@ class _TopNotification extends StatelessWidget {
   Widget build(BuildContext context) {
     final (background, icon, label) = switch (tone) {
       AppNotificationTone.error => (
-          const Color(0xFFB42318),
+          AppTheme.red,
           Icons.error_outline_rounded,
           'Error',
         ),
@@ -124,9 +124,9 @@ class _TopNotification extends StatelessWidget {
               decoration: BoxDecoration(
                 color: background,
                 borderRadius: BorderRadius.circular(14),
-                boxShadow: const [
+                boxShadow: [
                   BoxShadow(
-                    color: Color(0x330F172A),
+                    color: AppTheme.navy.withOpacity(0.2),
                     blurRadius: 18,
                     offset: Offset(0, 8),
                   ),

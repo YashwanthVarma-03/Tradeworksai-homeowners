@@ -87,11 +87,15 @@ class RescheduleWorkOrderScreen extends StatefulWidget {
     required this.job,
     required this.workOrderId,
     required this.contractorId,
+    this.selectSlotOnly = false,
   });
 
   final Map<String, dynamic> job;
   final int workOrderId;
   final String contractorId;
+
+  /// Reuse availability selection for cap approval without sending a reschedule.
+  final bool selectSlotOnly;
 
   @override
   State<RescheduleWorkOrderScreen> createState() =>
@@ -138,6 +142,14 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
         if (rawSlot is! Map) continue;
         final slot = Map<String, dynamic>.from(rawSlot);
         final start = slot['start']?.toString() ?? '';
+        if (widget.selectSlotOnly) {
+          final startTime = DateTime.tryParse(start);
+          final endTime = DateTime.tryParse(slot['end']?.toString() ?? '');
+          if (startTime == null ||
+              endTime == null ||
+              !endTime.isAfter(startTime) ||
+              !startTime.isAfter(now)) continue;
+        }
         final date = start.split('T').first;
         if (DateTime.tryParse(date) == null) continue;
         grouped.putIfAbsent(date, () => []).add(slot);
@@ -164,6 +176,13 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
   Future<void> _submit() async {
     final slot = _selectedSlot;
     if (slot == null || _isSubmitting) return;
+    if (widget.selectSlotOnly) {
+      Navigator.pop(context, <String, String>{
+        'start': slot['start'].toString(),
+        'end': slot['end'].toString(),
+      });
+      return;
+    }
     setState(() => _isSubmitting = true);
     try {
       await HomeownerService.instance.performWorkOrderAction(
@@ -208,8 +227,10 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
           backgroundColor: Colors.white,
           elevation: 0,
           foregroundColor: AppTheme.navy700,
-          title: const Text('Reschedule booking',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+          title: Text(
+              widget.selectSlotOnly ? 'Choose a time' : 'Reschedule booking',
+              style:
+                  const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
         ),
         body: SafeArea(
           top: false,
@@ -236,9 +257,11 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            const Text(
-                                'Choose a new time, then send your request.',
-                                style: TextStyle(
+                            Text(
+                                widget.selectSlotOnly
+                                    ? 'Choose a time to include with your cap approval.'
+                                    : 'Choose a new time, then send your request.',
+                                style: const TextStyle(
                                     color: AppTheme.gray, fontSize: 13)),
                             const SizedBox(height: 24),
                             const Text('Select date', style: _labelStyle),
@@ -299,21 +322,24 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
                                 );
                               }).toList(),
                             ),
-                            const SizedBox(height: 24),
-                            const Text('Reason for rescheduling',
-                                style: _labelStyle),
-                            const SizedBox(height: 10),
-                            TextField(
-                              controller: _reasonController,
-                              maxLines: 3,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: InputDecoration(
-                                hintText:
-                                    'Tell the pro why you need another time',
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12)),
+                            if (!widget.selectSlotOnly) ...[
+                              const SizedBox(height: 24),
+                              const Text('Reason for rescheduling',
+                                  style: _labelStyle),
+                              const SizedBox(height: 10),
+                              TextField(
+                                controller: _reasonController,
+                                maxLines: 3,
+                                textCapitalization:
+                                    TextCapitalization.sentences,
+                                decoration: InputDecoration(
+                                  hintText:
+                                      'Tell the pro why you need another time',
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                ),
                               ),
-                            ),
+                            ],
                             const SizedBox(height: 28),
                             SizedBox(
                               height: 52,
@@ -334,8 +360,11 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
                                             color: Colors.white,
                                             strokeWidth: 2),
                                       )
-                                    : const Text('Send reschedule request',
-                                        style: TextStyle(
+                                    : Text(
+                                        widget.selectSlotOnly
+                                            ? 'Use this time'
+                                            : 'Send reschedule request',
+                                        style: const TextStyle(
                                             fontWeight: FontWeight.w800)),
                               ),
                             ),

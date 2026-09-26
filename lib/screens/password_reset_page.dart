@@ -123,9 +123,6 @@ class _PasswordResetPageState extends State<PasswordResetPage>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     return PopScope(
       canPop: !_isLoading && _tabController.index == 0,
       onPopInvoked: (didPop) {
@@ -144,12 +141,11 @@ class _PasswordResetPageState extends State<PasswordResetPage>
           title: const Text('Password Reset',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           backgroundColor: Colors.transparent,
-          iconTheme:
-              IconThemeData(color: isDark ? Colors.white : AppTheme.navy700),
+          iconTheme: const IconThemeData(color: AppTheme.navy700),
           bottom: TabBar(
             controller: _tabController,
             labelColor: AppTheme.orange500,
-            unselectedLabelColor: isDark ? Colors.white60 : AppTheme.gray,
+            unselectedLabelColor: AppTheme.gray,
             indicatorColor: AppTheme.orange500,
             tabs: const [
               Tab(text: 'Request Link'),
@@ -181,15 +177,15 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                               style:
                                   AppTheme.textTheme.headlineMedium?.copyWith(
                                 fontSize: 18,
-                                color: isDark ? Colors.white : AppTheme.navy700,
+                                color: AppTheme.navy700,
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Text(
+                            const Text(
                               'Enter your email address and we\'ll send you a secure link carrying your reset token.',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: isDark ? Colors.white70 : AppTheme.gray,
+                                color: AppTheme.gray,
                               ),
                             ),
                             const SizedBox(height: 24),
@@ -205,14 +201,10 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                               enabled: !_isLoading,
                               decoration: InputDecoration(
                                 hintText: 'e.g. yashwanth@example.com',
-                                hintStyle: TextStyle(
-                                    color:
-                                        isDark ? Colors.white38 : AppTheme.gray,
-                                    fontSize: 13),
+                                hintStyle: const TextStyle(
+                                    color: AppTheme.gray, fontSize: 13),
                                 filled: true,
-                                fillColor: isDark
-                                    ? const Color(0xFF1E2E4A)
-                                    : AppTheme.pageAlt,
+                                fillColor: AppTheme.pageAlt,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10),
                                   borderSide: BorderSide.none,
@@ -263,15 +255,15 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                               style:
                                   AppTheme.textTheme.headlineMedium?.copyWith(
                                 fontSize: 18,
-                                color: isDark ? Colors.white : AppTheme.navy700,
+                                color: AppTheme.navy700,
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Text(
+                            const Text(
                               'Type the token received in your email and enter your new password.',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: isDark ? Colors.white70 : AppTheme.gray,
+                                color: AppTheme.gray,
                               ),
                             ),
                             const SizedBox(height: 24),
@@ -286,14 +278,10 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                               enabled: !_isLoading,
                               decoration: InputDecoration(
                                 hintText: 'Paste token from email link',
-                                hintStyle: TextStyle(
-                                    color:
-                                        isDark ? Colors.white38 : AppTheme.gray,
-                                    fontSize: 13),
+                                hintStyle: const TextStyle(
+                                    color: AppTheme.gray, fontSize: 13),
                                 filled: true,
-                                fillColor: isDark
-                                    ? const Color(0xFF1E2E4A)
-                                    : AppTheme.pageAlt,
+                                fillColor: AppTheme.pageAlt,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10),
                                   borderSide: BorderSide.none,
@@ -320,15 +308,11 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                               obscureText: true,
                               enabled: !_isLoading,
                               decoration: InputDecoration(
-                                hintText: 'Min 6 characters',
-                                hintStyle: TextStyle(
-                                    color:
-                                        isDark ? Colors.white38 : AppTheme.gray,
-                                    fontSize: 13),
+                                hintText: 'Min 8 characters',
+                                hintStyle: const TextStyle(
+                                    color: AppTheme.gray, fontSize: 13),
                                 filled: true,
-                                fillColor: isDark
-                                    ? const Color(0xFF1E2E4A)
-                                    : AppTheme.pageAlt,
+                                fillColor: AppTheme.pageAlt,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10),
                                   borderSide: BorderSide.none,
@@ -337,8 +321,8 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                                     horizontal: 14, vertical: 12),
                               ),
                               validator: (val) {
-                                if (val == null || val.length < 6) {
-                                  return 'Password must be at least 6 characters';
+                                if (val == null || val.length < 8) {
+                                  return 'Password must be at least 8 characters';
                                 }
                                 return null;
                               },

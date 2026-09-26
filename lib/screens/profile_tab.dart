@@ -27,10 +27,10 @@ class ProfileTab extends StatefulWidget {
 }
 
 class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
-  static const Color _pageBackground = Color(0xFFF5F7FA);
-  static const Color _inkStrong = Color(0xFF1E293B);
-  static const Color _mutedText = Color(0xFF64748B);
-  static const Color _lineSoft = Color(0xFFE1E7EF);
+  static const Color _pageBackground = AppTheme.pageBackground;
+  static const Color _inkStrong = AppTheme.navy;
+  static const Color _mutedText = AppTheme.textSecondary;
+  static const Color _lineSoft = AppTheme.cardBorder;
 
   bool _isLoading = true;
   bool _isRefreshing = false;
@@ -301,7 +301,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE7F7F8),
+                      color: AppTheme.blueTint,
                       borderRadius: BorderRadius.circular(5),
                     ),
                     child: Text(

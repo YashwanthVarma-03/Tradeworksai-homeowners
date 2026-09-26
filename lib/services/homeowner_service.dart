@@ -40,14 +40,9 @@ class HomeownerService {
   static const String _legacyAvailabilityPath =
       'contractor-availability-get-v2-supabase';
 
-  // Mock State
-  final List<Map<String, dynamic>> _mockWorkOrders = [];
-  final Map<int, Map<String, dynamic>> _mockReviews = {};
-  List<dynamic>? _mockAddresses;
-  List<dynamic>? get cachedAddresses => _mockAddresses;
-  int _mockIdCounter = 102;
-  double _mockRewardsBalance = 150.0;
-  double _mockRewardsEarned = 25.0;
+  // Live profile and address caches.
+  List<dynamic>? _cachedAddresses;
+  List<dynamic>? get cachedAddresses => _cachedAddresses;
   Map<String, dynamic>? _cachedProfile;
   DateTime? _cachedProfileAt;
   Future<Map<String, dynamic>>? _profileInFlight;
@@ -437,16 +432,6 @@ class HomeownerService {
   }
 
   Future<String?> resolveContractorIdForWorkOrder(int workOrderId) async {
-    if (_isDemo) {
-      for (final workOrder in _mockWorkOrders) {
-        final id = _extractWorkOrderId(workOrder);
-        if (id == workOrderId.toString()) {
-          return _extractContractorIdFromNode(workOrder);
-        }
-      }
-      return null;
-    }
-
     final resp = await fetchWorkOrders();
     final tabs = resp['tabs'] as Map<String, dynamic>? ?? const {};
     final allJobs = <dynamic>[
@@ -567,9 +552,7 @@ class HomeownerService {
     _cachedWorkOrdersAt = null;
     _workOrdersInFlight = null;
     _backgroundSyncInFlight = null;
-    _mockAddresses = null;
-    _mockWorkOrders.clear();
-    _mockReviews.clear();
+    _cachedAddresses = null;
     _reviewEligibilityCache.clear();
     _reviewEligibilityCacheAt.clear();
     _reviewEligibilityInFlight.clear();
@@ -577,77 +560,6 @@ class HomeownerService {
     _reviewsHydrationInFlight = null;
     _bookingCommitsInFlight.clear();
     _completedBookingCommits.clear();
-  }
-
-  /// Demo/mock mode is permanently disabled for the commercial build.
-  /// It previously auto-enabled on `localhost`/`127.0.0.1`, which meant
-  /// every local dev/staging run silently faked contractor availability,
-  /// pricing, and booking submission instead of hitting the real backend —
-  /// including in any environment that happens to resolve to those hosts.
-  /// If a mock mode is ever needed again for offline UI work, it must be
-  /// an explicit opt-in (e.g. a build flag), never inferred from hostname.
-  bool get _isDemo => false;
-
-  void _ensureDemoState() {
-    _mockAddresses ??= [
-      {
-        'id': 100,
-        'label': 'Home',
-        'street': '742 Evergreen Terrace',
-        'city': 'Riverview',
-        'state': 'FL',
-        'zip': '33578',
-        'isDefault': true,
-      },
-    ];
-
-    if (_mockWorkOrders.isNotEmpty) return;
-
-    final now = DateTime.now();
-    _mockWorkOrders.addAll([
-      {
-        'workOrderId': 101,
-        'status': 'active',
-        'serviceCategory': 'Plumbing',
-        'priority': 'Urgent',
-        'createdAt': now.subtract(const Duration(hours: 3)).toIso8601String(),
-        'scheduledStart': now.add(const Duration(hours: 2)).toIso8601String(),
-        'scheduledEnd': now.add(const Duration(hours: 4)).toIso8601String(),
-        'address': Map<String, dynamic>.from(_mockAddresses!.first),
-        'pro': {
-          'id': 'pro-plumbing-1',
-          'slug': 'sunrise-plumbing',
-          'businessName': 'Sunrise Plumbing Co.',
-        },
-        'timeline': {
-          'acceptedAt':
-              now.subtract(const Duration(hours: 2)).toIso8601String(),
-        },
-        'description': 'Kitchen sink leak and water pressure check.',
-      },
-      {
-        'workOrderId': 102,
-        'status': 'scheduled',
-        'serviceCategory': 'HVAC',
-        'priority': 'Standard',
-        'createdAt': now.subtract(const Duration(days: 1)).toIso8601String(),
-        'scheduledStart':
-            now.add(const Duration(days: 1, hours: 4)).toIso8601String(),
-        'scheduledEnd':
-            now.add(const Duration(days: 1, hours: 6)).toIso8601String(),
-        'address': Map<String, dynamic>.from(_mockAddresses!.first),
-        'pro': {
-          'id': 'pro-hvac-1',
-          'slug': 'gulf-coast-air',
-          'businessName': 'Gulf Coast Air',
-        },
-        'timeline': {
-          'acceptedAt':
-              now.subtract(const Duration(hours: 20)).toIso8601String(),
-        },
-        'description': 'Seasonal AC tune-up and airflow inspection.',
-      },
-    ]);
   }
 
   Future<SharedPreferences> _getPreferences() {
@@ -711,7 +623,7 @@ class HomeownerService {
   /// Restores user-scoped data from disk for immediate launch rendering.
   /// Callers must refresh in the background after using these fallbacks.
   Future<Map<String, dynamic>?> loadCachedWorkOrders() async {
-    if (_isDemo || _userId == null) return null;
+    if (_userId == null) return null;
     final cached = await _readPersistentCache(
       'work-orders',
       _offlineFallbackCacheTtl,
@@ -720,19 +632,19 @@ class HomeownerService {
   }
 
   Future<Map<String, dynamic>?> loadCachedProfile() async {
-    if (_isDemo || _userId == null) return null;
+    if (_userId == null) return null;
     return _readPersistentCache('profile', _offlineFallbackCacheTtl);
   }
 
   Future<Map<String, dynamic>?> loadCachedRewards() async {
-    if (_isDemo || _userId == null) return null;
+    if (_userId == null) return null;
     return _readPersistentCache('rewards', _offlineFallbackCacheTtl);
   }
 
   /// Refreshes the user-scoped cache without making a screen wait for it.
   /// Concurrent callers intentionally share one network pass.
   Future<void> syncInBackground() {
-    if (_isDemo || _userId == null) return Future.value();
+    if (_userId == null) return Future.value();
     final pending = _backgroundSyncInFlight;
     if (pending != null) return pending;
 
@@ -1050,16 +962,6 @@ class HomeownerService {
   // H1: Fetch Work Orders
   Future<Map<String, dynamic>> fetchWorkOrders(
       {bool forceRefresh = false}) async {
-    if (_isDemo) {
-      _ensureDemoState();
-      await Future.delayed(const Duration(milliseconds: 300));
-      return _withNormalizedTabs({
-        'success': true,
-        'tabs': _groupWorkOrdersByTab(
-            _mockWorkOrders.map((j) => Map<String, dynamic>.from(j)).toList()),
-      });
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
@@ -1115,42 +1017,8 @@ class HomeownerService {
     required String action,
     Map<String, dynamic>? extra,
   }) async {
-    if (_isDemo) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      for (var i = 0; i < _mockWorkOrders.length; i++) {
-        if (_mockWorkOrders[i]['workOrderId'] == workOrderId) {
-          if (action == 'cancel') {
-            _mockWorkOrders[i]['status'] = 'canceled';
-          } else if (action == 'propose_reschedule') {
-            _mockWorkOrders[i]['scheduledStart'] =
-                extra?['proposedStart'] ?? _mockWorkOrders[i]['scheduledStart'];
-            _mockWorkOrders[i]['scheduledEnd'] =
-                extra?['proposedEnd'] ?? _mockWorkOrders[i]['scheduledEnd'];
-          } else if (action == 'confirm_complete') {
-            _mockWorkOrders[i]['status'] = 'completed';
-          }
-        }
-      }
-      notifyLocalDataChanged();
-      return {'success': true, 'ok': true};
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
-
-    // Handle mock updates
-    for (var i = 0; i < _mockWorkOrders.length; i++) {
-      if (_mockWorkOrders[i]['id'] == workOrderId) {
-        if (action == 'cancel') {
-          _mockWorkOrders[i]['status'] = 'canceled';
-        } else if (action == 'propose_reschedule' ||
-            action == 'respond_reschedule') {
-          // Just mock as updated
-        } else if (action == 'confirm_complete') {
-          _mockWorkOrders[i]['status'] = 'completed';
-        }
-      }
-    }
 
     final body = {
       'action': action,
@@ -1169,8 +1037,9 @@ class HomeownerService {
     return result;
   }
 
-  // H3: booking-commit-v2-supabase - accept/decline quote
-  Future<Map<String, dynamic>> respondToQuote({
+  // H3: homeowner approves or declines the cap.
+  // Keep quote_accept/quote_decline: the backend still expects these wire values.
+  Future<Map<String, dynamic>> respondToCap({
     required int workOrderId,
     required bool accept,
     String? startsAt,
@@ -1178,24 +1047,6 @@ class HomeownerService {
     String? contractorId,
     String? reason,
   }) async {
-    if (_isDemo) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      for (var i = 0; i < _mockWorkOrders.length; i++) {
-        if (_mockWorkOrders[i]['workOrderId'] == workOrderId) {
-          if (accept) {
-            _mockWorkOrders[i]['status'] = 'scheduled';
-            if (startsAt != null)
-              _mockWorkOrders[i]['scheduledStart'] = startsAt;
-            if (endsAt != null) _mockWorkOrders[i]['scheduledEnd'] = endsAt;
-          } else {
-            _mockWorkOrders[i]['status'] = 'canceled';
-          }
-        }
-      }
-      notifyLocalDataChanged();
-      return {'success': true, 'ok': true};
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
     final Map<String, dynamic> body;
@@ -1234,20 +1085,6 @@ class HomeownerService {
     required String text,
     String? displayName,
   }) async {
-    if (_isDemo) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      final review = <String, dynamic>{
-        'rating': rating,
-        'reviewText': text,
-        'displayName': displayName ?? 'Demo Homeowner',
-        'reviewed': true,
-      };
-      _mockReviews[workOrderId] = review;
-      _cacheReview(workOrderId, review);
-      notifyLocalDataChanged();
-      return {'success': true, 'ok': true};
-    }
-
     if (_userId == null) throw Exception('User is not authenticated');
     final ratingInt = rating.round().clamp(1, 5).toInt();
 
@@ -1488,15 +1325,6 @@ class HomeownerService {
   Future<Map<String, dynamic>> getReviewEligibility({
     required int workOrderId,
   }) async {
-    if (_isDemo) {
-      return {
-        'success': true,
-        'eligible': !_mockReviews.containsKey(workOrderId),
-        'reason':
-            _mockReviews.containsKey(workOrderId) ? 'already_reviewed' : null,
-      };
-    }
-
     if (_userId == null) throw Exception('User is not authenticated');
 
     final cached = _reviewEligibilityCache[workOrderId];
@@ -1600,11 +1428,6 @@ class HomeownerService {
     String? serviceCategory,
     String? workOrderType,
   }) async {
-    if (_isDemo) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      return {'success': true, 'slots': const <Map<String, String>>[]};
-    }
-
     final identity = [
       contractorId,
       serviceId ?? '',
@@ -1721,16 +1544,6 @@ class HomeownerService {
 
   // H5: Fetch Rewards
   Future<Map<String, dynamic>> fetchRewards({bool forceRefresh = false}) async {
-    if (_isDemo) {
-      _ensureDemoState();
-      await Future.delayed(const Duration(milliseconds: 100));
-      return {
-        'success': true,
-        'balance': _mockRewardsBalance,
-        'earned': _mockRewardsEarned,
-      };
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
@@ -1775,26 +1588,6 @@ class HomeownerService {
   }
 
   Future<Map<String, dynamic>> fetchProfile({bool forceRefresh = false}) async {
-    if (_isDemo) {
-      _ensureDemoState();
-      await Future.delayed(const Duration(milliseconds: 100));
-      return {
-        'success': true,
-        'profile': {
-          'userId': _userId ?? '999',
-          'email': AuthService.instance.userEmail ?? 'demo.homeowner@gmail.com',
-          'name': AuthService.instance.userName ?? 'Demo Homeowner',
-          'givenName': AuthService.instance.givenName ?? 'Demo',
-          'familyName': AuthService.instance.familyName ?? 'Homeowner',
-          'phone': '(813) 555-9999',
-          'emailVerified': true,
-          'rewardsBalance': _mockRewardsBalance,
-          'rewardsTier': 'bronze',
-        },
-        'addresses': _mockAddresses ?? const [],
-      };
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
@@ -1815,7 +1608,7 @@ class HomeownerService {
       if (persistent != null) {
         _cachedProfile = persistent;
         _cachedProfileAt = DateTime.now();
-        _mockAddresses = persistent['addresses'] ??
+        _cachedAddresses = persistent['addresses'] ??
             persistent['profile']?['addresses'] ??
             [];
         return persistent;
@@ -1838,7 +1631,8 @@ class HomeownerService {
       }
       _cachedProfile = resp;
       _cachedProfileAt = DateTime.now();
-      _mockAddresses = resp['addresses'] ?? resp['profile']?['addresses'] ?? [];
+      _cachedAddresses =
+          resp['addresses'] ?? resp['profile']?['addresses'] ?? [];
       await _writePersistentCache('profile', resp);
       return resp;
     } finally {
@@ -1855,28 +1649,6 @@ class HomeownerService {
     required String preferredContact,
     required bool marketingConsent,
   }) async {
-    if (_isDemo) {
-      _ensureDemoState();
-      await Future.delayed(const Duration(milliseconds: 200));
-      notifyLocalDataChanged();
-      return {
-        'success': true,
-        'profile': {
-          'userId': _userId ?? '999',
-          'email': email,
-          'name': userName,
-          'userName': userName,
-          'givenName': givenName,
-          'familyName': familyName,
-          'phone': phone,
-          'preferredContact': preferredContact,
-          'marketingConsent': marketingConsent,
-          'emailVerified': true,
-        },
-        'addresses': _mockAddresses ?? const [],
-      };
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
     final result = await _post(
@@ -1947,30 +1719,6 @@ class HomeownerService {
   }
 
   Future<Map<String, dynamic>> addAddress(Map<String, String> address) async {
-    if (_isDemo) {
-      _ensureDemoState();
-      await Future.delayed(const Duration(milliseconds: 200));
-      _mockIdCounter++;
-      final newAddr = {
-        'id': _mockIdCounter,
-        'label': address['label'] ?? 'Address',
-        'street': address['street'] ?? '',
-        'unit': address['unit'],
-        'city': address['city'] ?? '',
-        'state': address['state'] ?? '',
-        'zip': address['zip'] ?? '',
-        'isDefault': address['isDefault'] == 'true',
-      };
-      if (newAddr['isDefault'] == true) {
-        for (var a in _mockAddresses!) {
-          a['isDefault'] = false;
-        }
-      }
-      _mockAddresses!.add(newAddr);
-      notifyLocalDataChanged();
-      return {'success': true, 'addresses': _mockAddresses};
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
@@ -1989,7 +1737,7 @@ class HomeownerService {
     final result =
         await _post(_profilePath, body, fallbackEndpoint: _legacyProfilePath);
     if (result['success'] == true && result['addresses'] != null) {
-      _mockAddresses = result['addresses'];
+      _cachedAddresses = result['addresses'];
     }
     await _invalidateProfileCache();
     unawaited(syncInBackground());
@@ -2000,24 +1748,6 @@ class HomeownerService {
     required int addressId,
     required Map<String, String> address,
   }) async {
-    if (_isDemo) {
-      _ensureDemoState();
-      await Future.delayed(const Duration(milliseconds: 200));
-      for (var a in _mockAddresses!) {
-        if (a['id'] == addressId) {
-          a['label'] = address['label'] ?? a['label'];
-          a['street'] = address['street'] ?? a['street'];
-          a['unit'] = address['unit'];
-          a['city'] = address['city'] ?? a['city'];
-          a['state'] = address['state'] ?? a['state'];
-          a['zip'] = address['zip'] ?? a['zip'];
-          a['isDefault'] = address['isDefault'] == 'true';
-        }
-      }
-      notifyLocalDataChanged();
-      return {'success': true, 'addresses': _mockAddresses};
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
@@ -2037,7 +1767,7 @@ class HomeownerService {
     final result =
         await _post(_profilePath, body, fallbackEndpoint: _legacyProfilePath);
     if (result['success'] == true && result['addresses'] != null) {
-      _mockAddresses = result['addresses'];
+      _cachedAddresses = result['addresses'];
     }
     await _invalidateProfileCache();
     unawaited(syncInBackground());
@@ -2045,18 +1775,6 @@ class HomeownerService {
   }
 
   Future<Map<String, dynamic>> setDefaultAddress(dynamic addressId) async {
-    if (_isDemo) {
-      _ensureDemoState();
-      await Future.delayed(const Duration(milliseconds: 200));
-      final parsedId =
-          addressId is int ? addressId : int.tryParse(addressId.toString());
-      for (var a in _mockAddresses!) {
-        a['isDefault'] = (a['id'] == parsedId);
-      }
-      notifyLocalDataChanged();
-      return {'success': true, 'addresses': _mockAddresses};
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
@@ -2070,7 +1788,7 @@ class HomeownerService {
       fallbackEndpoint: _legacyProfilePath,
     );
     if (result['success'] == true && result['addresses'] != null) {
-      _mockAddresses = result['addresses'];
+      _cachedAddresses = result['addresses'];
     }
     await _invalidateProfileCache();
     unawaited(syncInBackground());
@@ -2078,14 +1796,6 @@ class HomeownerService {
   }
 
   Future<Map<String, dynamic>> removeAddress(int addressId) async {
-    if (_isDemo) {
-      _ensureDemoState();
-      await Future.delayed(const Duration(milliseconds: 200));
-      _mockAddresses!.removeWhere((a) => a['id'] == addressId);
-      notifyLocalDataChanged();
-      return {'success': true, 'addresses': _mockAddresses};
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
@@ -2099,7 +1809,7 @@ class HomeownerService {
       fallbackEndpoint: _legacyProfilePath,
     );
     if (result['success'] == true && result['addresses'] != null) {
-      _mockAddresses = result['addresses'];
+      _cachedAddresses = result['addresses'];
     }
     await _invalidateProfileCache();
     unawaited(syncInBackground());
@@ -2116,7 +1826,7 @@ class HomeownerService {
     String? endsAt,
     String? transactionId,
   }) {
-    if (!_isDemo && _userId == null) {
+    if (_userId == null) {
       return Future.error(Exception('User is not authenticated'));
     }
     final key = transactionId?.trim() ?? '';
@@ -2168,45 +1878,6 @@ class HomeownerService {
     String? endsAt,
     String? transactionId,
   }) async {
-    if (_isDemo) {
-      _ensureDemoState();
-      await Future.delayed(const Duration(milliseconds: 300));
-      _mockIdCounter++;
-      final newWO = {
-        'workOrderId': _mockIdCounter,
-        'status': action == 'quote_request' ? 'quote_ready' : 'scheduled',
-        'serviceCategory': booking['service_category'] ?? 'Home Service',
-        'priority': urgency == 'urgent'
-            ? 'Urgent'
-            : (urgency == 'emergency' ? 'Emergency' : 'Standard'),
-        'scheduledStart': startsAt ??
-            DateTime.now().add(const Duration(days: 1)).toIso8601String(),
-        'scheduledEnd': endsAt ??
-            DateTime.now()
-                .add(const Duration(days: 1, hours: 2))
-                .toIso8601String(),
-        'address': {
-          'street': booking['address_street'] ?? '',
-          'city': booking['address_city'] ?? '',
-          'state': booking['address_state'] ?? '',
-          'zip': booking['address_zip'] ?? '',
-        },
-        'pro': {
-          'id': contractorId,
-          'businessName': 'Mocked Contractor',
-        },
-        'description':
-            booking['service_description'] ?? 'Diagnostic and repair request.',
-      };
-      _mockWorkOrders.add(newWO);
-      notifyLocalDataChanged();
-      return {
-        'success': true,
-        'ok': true,
-        'woNumber': 'WO-$_mockIdCounter',
-      };
-    }
-
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
@@ -2408,21 +2079,9 @@ class HomeownerService {
     );
   }
 
-  // ALIASES for mocked screens
   Future<Map<String, dynamic>> getProfile() => fetchProfile();
 
-  Future<void> createWorkOrder(Map<String, dynamic> reqBody) async {
-    throw UnsupportedError(
-      'createWorkOrder is not connected to the live backend. Use commitBooking instead.',
-    );
-  }
-
   Future<Map<String, dynamic>?> getReview(int workOrderId) async {
-    if (_isDemo) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      return _mockReviews[workOrderId];
-    }
-
     final cached = cachedReviewForWorkOrder(workOrderId);
     if (cached != null) return cached;
 

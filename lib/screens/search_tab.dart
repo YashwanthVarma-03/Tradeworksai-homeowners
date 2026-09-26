@@ -68,13 +68,13 @@ class _SearchTabState extends State<SearchTab> {
   static const double _railTileGap = 8;
 
   static const Map<String, Color> _homeCategoryBackgrounds = {
-    'HVAC': Color(0xFFE3F2FD),
-    'Plumbing': Color(0xFFE0F7FA),
-    'Electrical': Color(0xFFFFF8E1),
-    'Cleaning': Color(0xFFE8F5E9),
+    'HVAC': AppTheme.blueTint,
+    'Plumbing': AppTheme.blueTint,
+    'Electrical': AppTheme.amberTint,
+    'Cleaning': AppTheme.greenTint,
     'Roofing': Color(0xFFFFEBEE),
-    'Lawn': Color(0xFFF1F8E9),
-    'Landscaping': Color(0xFFF1F8E9),
+    'Lawn': AppTheme.greenTint,
+    'Landscaping': AppTheme.greenTint,
     'Handyman': Color(0xFFF3E5F5),
   };
   late final TextEditingController _searchController;
@@ -260,10 +260,9 @@ class _SearchTabState extends State<SearchTab> {
     await _loadSharedLocationOverride();
     await _loadLocationFromProfile();
     if (_selectedZip.isEmpty) {
-      final hasPendingSearch =
-          (_committedQuery != null && _committedQuery!.isNotEmpty) ||
-              (widget.initialCategory != null &&
-                  widget.initialCategory != 'All');
+      final hasPendingSearch = (_committedQuery != null &&
+              _committedQuery!.isNotEmpty) ||
+          (widget.initialCategory != null && widget.initialCategory != 'All');
       if (!hasPendingSearch || !await _requestZipIfNeeded()) return;
     }
     await _refreshZipCoverage();
@@ -1773,275 +1772,6 @@ class _SearchTabState extends State<SearchTab> {
       .map((service) => _BrowseService(service.name, service.category))
       .toList(growable: false);
 
-  List<_BrowsePro> get _pros => const [
-        _BrowsePro(
-          name: 'Gulf Coast Air',
-          initials: 'GC',
-          category: 'HVAC',
-          trade: 'Heating & Cooling',
-          ratingLabel: 'Exceptional',
-          rating: 4.9,
-          reviews: 212,
-          distanceMiles: 2.1,
-          completedWorkOrders: 212,
-          nextAvailable: 'Tomorrow, 8-10 AM',
-          price: 149,
-          priceLabel: 'Upfront price',
-          summary: 'AC repair diagnose and fix',
-          selectedCertified: true,
-          services: ['AC repair', 'AC tune-up', 'Refrigerant leak diagnosis'],
-          mediaCount: 6,
-          responseTime: 'Typically responds in about 20 min',
-        ),
-        _BrowsePro(
-          name: 'Jenkins Plumbing',
-          initials: 'JP',
-          category: 'Plumbing',
-          trade: 'Repair & Install',
-          ratingLabel: 'Great',
-          rating: 4.8,
-          reviews: 92,
-          distanceMiles: 1.8,
-          completedWorkOrders: 92,
-          nextAvailable: 'Today, 2-4 PM',
-          price: 119,
-          priceLabel: 'Upfront price',
-          summary: 'Drain repair and leak fixes',
-          selectedCertified: true,
-          services: ['Leak repair', 'Drain cleaning', 'Toilet repair'],
-          mediaCount: 4,
-          responseTime: 'Typically responds in about 18 min',
-        ),
-        _BrowsePro(
-          name: 'Spark Electric',
-          initials: 'SE',
-          category: 'Electrical',
-          trade: 'Service',
-          ratingLabel: 'Great',
-          rating: 4.7,
-          reviews: 64,
-          distanceMiles: 3.2,
-          completedWorkOrders: 64,
-          nextAvailable: 'Thu, 8-10 AM',
-          price: 99,
-          priceLabel: 'Upfront price',
-          summary: 'Electrical service and fixture work',
-          selectedCertified: true,
-          services: ['Outlet install', 'Ceiling fan install', 'Panel service'],
-          mediaCount: 5,
-          responseTime: 'Typically responds in about 24 min',
-        ),
-        _BrowsePro(
-          name: 'Bay Area HVAC',
-          initials: 'BA',
-          category: 'HVAC',
-          trade: 'Repair & Install',
-          ratingLabel: 'Great',
-          rating: 4.8,
-          reviews: 156,
-          distanceMiles: 3.4,
-          completedWorkOrders: 156,
-          nextAvailable: 'Thu, 8-10 AM',
-          price: 159,
-          priceLabel: 'Upfront price',
-          summary: 'Heat pump and AC repair',
-          selectedCertified: true,
-          services: ['Heat pump repair', 'AC repair', 'Maintenance'],
-          mediaCount: 3,
-          responseTime: 'Typically responds in about 22 min',
-        ),
-        _BrowsePro(
-          name: 'Reliable Climate',
-          initials: 'RC',
-          category: 'HVAC',
-          trade: 'Service',
-          ratingLabel: 'Great',
-          rating: 4.7,
-          reviews: 98,
-          distanceMiles: 4.0,
-          completedWorkOrders: 98,
-          nextAvailable: 'Fri, 1-3 PM',
-          price: 139,
-          priceLabel: 'Upfront price',
-          summary: 'Cooling and thermostat help',
-          selectedCertified: true,
-          services: ['Thermostat install', 'Cooling tune-up', 'Maintenance'],
-          mediaCount: 2,
-          responseTime: 'Typically responds in about 30 min',
-        ),
-        _BrowsePro(
-          name: 'Prime Plumb Co.',
-          initials: 'PP',
-          category: 'Plumbing',
-          trade: 'Install & Repair',
-          ratingLabel: 'Excellent',
-          rating: 4.9,
-          reviews: 173,
-          distanceMiles: 2.9,
-          completedWorkOrders: 173,
-          nextAvailable: 'Today, 5-7 PM',
-          price: 109,
-          priceLabel: 'Upfront price',
-          summary: 'Kitchen and bath plumbing',
-          selectedCertified: true,
-          services: ['Sink repair', 'Garbage disposal', 'Water heater'],
-          mediaCount: 4,
-          responseTime: 'Typically responds in about 16 min',
-        ),
-        _BrowsePro(
-          name: 'Northshore Handyman',
-          initials: 'NH',
-          category: 'Handyman',
-          trade: 'Home Repairs',
-          ratingLabel: 'Great',
-          rating: 4.8,
-          reviews: 87,
-          distanceMiles: 2.4,
-          completedWorkOrders: 87,
-          nextAvailable: 'Today, 4-6 PM',
-          price: 89,
-          priceLabel: 'Upfront price',
-          summary: 'Assembly, mounting, small fixes',
-          selectedCertified: true,
-          services: ['TV mounting', 'Furniture assembly', 'Door repair'],
-          mediaCount: 2,
-          responseTime: 'Typically responds in about 28 min',
-        ),
-        _BrowsePro(
-          name: 'EverGreen Lawn',
-          initials: 'EG',
-          category: 'Landscaping',
-          trade: 'Lawn Care',
-          ratingLabel: 'Great',
-          rating: 4.7,
-          reviews: 121,
-          distanceMiles: 4.8,
-          completedWorkOrders: 121,
-          nextAvailable: 'Sat, 7-9 AM',
-          price: 79,
-          priceLabel: 'Upfront price',
-          summary: 'Mowing, cleanup, and edging',
-          selectedCertified: true,
-          services: ['Mowing', 'Edging', 'Cleanup'],
-          mediaCount: 5,
-          responseTime: 'Typically responds in about 35 min',
-        ),
-        _BrowsePro(
-          name: 'BrightFix Appliance',
-          initials: 'BF',
-          category: 'Appliance Repair',
-          trade: 'Repair',
-          ratingLabel: 'Great',
-          rating: 4.6,
-          reviews: 58,
-          distanceMiles: 3.6,
-          completedWorkOrders: 58,
-          nextAvailable: 'Tomorrow, 10-12 PM',
-          price: 129,
-          priceLabel: 'Upfront price',
-          summary: 'Fridge, oven, washer, dryer',
-          selectedCertified: true,
-          services: ['Fridge repair', 'Oven repair', 'Washer service'],
-          mediaCount: 3,
-          responseTime: 'Typically responds in about 40 min',
-        ),
-        _BrowsePro(
-          name: 'AquaPure Water',
-          initials: 'AP',
-          category: 'Water Treatment',
-          trade: 'Water Quality',
-          ratingLabel: 'Great',
-          rating: 4.8,
-          reviews: 66,
-          distanceMiles: 5.1,
-          completedWorkOrders: 66,
-          nextAvailable: 'Mon, 9-11 AM',
-          price: 149,
-          priceLabel: 'Upfront price',
-          summary: 'Filtration and softeners',
-          selectedCertified: true,
-          services: ['Water softener', 'RO system', 'Water testing'],
-          mediaCount: 2,
-          responseTime: 'Typically responds in about 32 min',
-        ),
-        _BrowsePro(
-          name: 'Summit Roofing',
-          initials: 'SR',
-          category: 'Roofing',
-          trade: 'Roof Repair',
-          ratingLabel: 'Great',
-          rating: 4.7,
-          reviews: 74,
-          distanceMiles: 6.0,
-          completedWorkOrders: 74,
-          nextAvailable: 'Tue, 8-10 AM',
-          price: 189,
-          priceLabel: 'Upfront price',
-          summary: 'Leak repair and roof maintenance',
-          selectedCertified: true,
-          services: ['Leak repair', 'Maintenance', 'Inspection'],
-          mediaCount: 4,
-          responseTime: 'Typically responds in about 27 min',
-        ),
-        _BrowsePro(
-          name: 'ClearView Windows',
-          initials: 'CV',
-          category: 'Windows & Doors',
-          trade: 'Install & Repair',
-          ratingLabel: 'Great',
-          rating: 4.8,
-          reviews: 84,
-          distanceMiles: 2.7,
-          completedWorkOrders: 84,
-          nextAvailable: 'Wed, 11-1 PM',
-          price: 139,
-          priceLabel: 'Upfront price',
-          summary: 'Windows, doors, screen repair',
-          selectedCertified: true,
-          services: ['Window repair', 'Door install', 'Screen repair'],
-          mediaCount: 3,
-          responseTime: 'Typically responds in about 21 min',
-        ),
-        _BrowsePro(
-          name: 'SecureGate Locksmith',
-          initials: 'SG',
-          category: 'Locksmith',
-          trade: 'Lock & Key',
-          ratingLabel: 'Great',
-          rating: 4.9,
-          reviews: 51,
-          distanceMiles: 1.3,
-          completedWorkOrders: 51,
-          nextAvailable: 'Today, 6-7 PM',
-          price: 89,
-          priceLabel: 'Upfront price',
-          summary: 'Rekey, deadbolt, lockout help',
-          selectedCertified: true,
-          services: ['Rekey', 'Deadbolt install', 'Lockout'],
-          mediaCount: 2,
-          responseTime: 'Typically responds in about 12 min',
-        ),
-        _BrowsePro(
-          name: 'StoneCraft Masonry',
-          initials: 'SM',
-          category: 'Concrete & Masonry',
-          trade: 'Masonry',
-          ratingLabel: 'Great',
-          rating: 4.7,
-          reviews: 43,
-          distanceMiles: 6.8,
-          completedWorkOrders: 43,
-          nextAvailable: 'Fri, 8-11 AM',
-          price: 169,
-          priceLabel: 'Upfront price',
-          summary: 'Patios, walkways, brickwork',
-          selectedCertified: true,
-          services: ['Patio repair', 'Brick work', 'Sidewalk patch'],
-          mediaCount: 1,
-          responseTime: 'Typically responds in about 45 min',
-        ),
-      ];
-
   List<_BrowsePro> _matchesQuery(String query) {
     final lower = query.toLowerCase().trim();
     if (lower.isEmpty) return const [];
@@ -2207,7 +1937,7 @@ class _SearchTabState extends State<SearchTab> {
             Text(
               '${visiblePros.length} Select-certified pros',
               style: const TextStyle(
-                color: Color(0xFF1E293B),
+                color: AppTheme.navy,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
@@ -2281,7 +2011,7 @@ class _SearchTabState extends State<SearchTab> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
           decoration: BoxDecoration(
-            color: const Color(0xFFEAF5FD),
+            color: AppTheme.blueTint,
             borderRadius: BorderRadius.circular(999),
           ),
           child: Row(
@@ -2324,7 +2054,7 @@ class _SearchTabState extends State<SearchTab> {
               child: Text(
                 'All services',
                 style: const TextStyle(
-                  color: Color(0xFF1E293B),
+                  color: AppTheme.navy,
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
                 ),
@@ -2520,7 +2250,9 @@ class _SearchTabState extends State<SearchTab> {
                 width: 84,
                 height: 84,
                 decoration: const BoxDecoration(
-                  color: Color(0xFFEAF3FF),
+                  border: Border.fromBorderSide(
+                      BorderSide(color: AppTheme.cardBorder)),
+                  color: AppTheme.pageBackground,
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -2585,21 +2317,7 @@ class _SearchTabState extends State<SearchTab> {
     );
   }
 
-  Widget _buildWireframePills({
-    required bool focused,
-    required String placeholder,
-    required VoidCallback onSearchTap,
-  }) {
-    return Column(
-      children: [
-        _buildSearchInputPill(collapsed: !focused),
-        const SizedBox(height: 10),
-        _buildLocationPill(),
-      ],
-    );
-  }
-
-  Widget _buildSearchInputPill({bool collapsed = false}) {
+  Widget _buildSearchInputPill() {
     final typed = _searchController.text.trim();
 
     void focusSearchField() {
@@ -2620,9 +2338,8 @@ class _SearchTabState extends State<SearchTab> {
       controller: _searchController,
       focusNode: _searchFocusNode,
       hint: 'Search a service or pro',
-      borderColor: _searchFocusNode.hasFocus
-          ? AppTheme.orange500
-          : const Color(0xFFD9E2EC),
+      borderColor:
+          _searchFocusNode.hasFocus ? AppTheme.orange500 : AppTheme.cardBorder,
       onTap: focusSearchField,
       // Keep the focused suggestions mounted long enough for their rows to
       // receive the gesture. Unfocusing on pointer-down replaces this view
@@ -2674,51 +2391,6 @@ class _SearchTabState extends State<SearchTab> {
         });
     }
     return sorted;
-  }
-
-  Widget _buildLocationPill() {
-    return GestureDetector(
-      onTap: () async {
-        final nextZip = await showServiceZipEntryDialog(
-          context,
-          initialZip: _selectedZip,
-        );
-        if (nextZip != null) await _applyLocationInput(nextZip);
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppTheme.line),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.location_on, color: AppTheme.gray, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                _locationController.text,
-                style: const TextStyle(
-                  color: AppTheme.navy700,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const Text(
-              'Change',
-              style: TextStyle(
-                color: AppTheme.teal700,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildRail(List<_BrowseCategory> categories) {
@@ -2778,8 +2450,7 @@ class _SearchTabState extends State<SearchTab> {
           padding: EdgeInsets.zero,
           scrollDirection: Axis.horizontal,
           itemBuilder: (context, index) => chips[index],
-          separatorBuilder: (_, __) =>
-              const SizedBox(width: _railTileGap),
+          separatorBuilder: (_, __) => const SizedBox(width: _railTileGap),
           itemCount: chips.length,
         ),
       ),
@@ -2935,7 +2606,7 @@ class _SearchTabState extends State<SearchTab> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE6E8EC)),
+          border: Border.all(color: AppTheme.cardBorder),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2952,7 +2623,7 @@ class _SearchTabState extends State<SearchTab> {
                       Text(
                         pro.name,
                         style: const TextStyle(
-                          color: Color(0xFF1E293B),
+                          color: AppTheme.navy,
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           height: 1.1,
@@ -2962,7 +2633,7 @@ class _SearchTabState extends State<SearchTab> {
                       Text(
                         '${pro.category} · ${pro.distanceMiles.toStringAsFixed(1)} mi · ${pro.completedWorkOrders} orders',
                         style: const TextStyle(
-                          color: Color(0xFF64748B),
+                          color: AppTheme.textSecondary,
                           fontSize: 12,
                           fontWeight: FontWeight.w400,
                           height: 1.1,
@@ -2988,7 +2659,7 @@ class _SearchTabState extends State<SearchTab> {
                     Text(
                       pro.priceLabel,
                       style: TextStyle(
-                        color: Color(0xFF64748B),
+                        color: AppTheme.textSecondary,
                         fontSize: 10,
                         fontWeight: FontWeight.w400,
                         height: 1.1,
@@ -3005,7 +2676,7 @@ class _SearchTabState extends State<SearchTab> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFF7ED),
+                    color: AppTheme.amberTint,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Row(
@@ -3020,7 +2691,7 @@ class _SearchTabState extends State<SearchTab> {
                       Text(
                         '${pro.reviews} reviews (${pro.rating.toStringAsFixed(1)})',
                         style: const TextStyle(
-                          color: Color(0xFF1E293B),
+                          color: AppTheme.navy,
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
                           height: 1.0,
@@ -3034,13 +2705,13 @@ class _SearchTabState extends State<SearchTab> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: AppTheme.pageBackground,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     nextAvailable,
                     style: const TextStyle(
-                      color: Color(0xFF15A86B),
+                      color: AppTheme.green,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       height: 1.0,
@@ -3053,7 +2724,7 @@ class _SearchTabState extends State<SearchTab> {
             const Divider(
               height: 1,
               thickness: 1,
-              color: Color(0xFFE6E8EC),
+              color: AppTheme.cardBorder,
             ),
             const SizedBox(height: 8),
             Row(
@@ -3065,7 +2736,7 @@ class _SearchTabState extends State<SearchTab> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFF64748B),
+                      color: AppTheme.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w400,
                       height: 1.2,
@@ -3077,7 +2748,7 @@ class _SearchTabState extends State<SearchTab> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF5F7FA),
+                    color: AppTheme.pageBackground,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: const Text(
@@ -3133,141 +2804,6 @@ class _SearchTabState extends State<SearchTab> {
           color: _avatarTextColorForCategory(pro.category),
           fontWeight: FontWeight.w700,
           fontSize: 12,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEnrichedCard(_BrowsePro pro) {
-    return InkWell(
-      onTap: () => _openProProfile(pro),
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppTheme.line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: _avatarColorForCategory(pro.category),
-                  child: Text(
-                    pro.initials,
-                    style: TextStyle(
-                      color: _avatarTextColorForCategory(pro.category),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        pro.name,
-                        style: const TextStyle(
-                          color: AppTheme.navy700,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '${pro.category} · ${pro.trade}',
-                        style: const TextStyle(
-                          color: AppTheme.gray,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: AppTheme.gray),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.star, color: AppTheme.orange500, size: 16),
-                const SizedBox(width: 4),
-                Text(
-                  '${pro.ratingLabel} ${pro.rating.toStringAsFixed(1)}',
-                  style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12.5,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '(${pro.reviews})',
-                  style: const TextStyle(color: AppTheme.gray, fontSize: 12),
-                ),
-                const Spacer(),
-                if (pro.selectedCertified)
-                  const Text(
-                    'Select-certified',
-                    style: TextStyle(
-                      color: AppTheme.teal700,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '${pro.distanceMiles.toStringAsFixed(1)} mi away · ${pro.completedWorkOrders} completed work orders',
-              style: const TextStyle(color: AppTheme.gray, fontSize: 12.5),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'Next available: ${pro.nextAvailable}',
-              style: const TextStyle(color: AppTheme.gray, fontSize: 12.5),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppTheme.orangeTint,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                children: [
-                  Text(
-                    'From \$${pro.price}',
-                    style: const TextStyle(
-                      color: AppTheme.navy700,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13.5,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    pro.priceLabel,
-                    style:
-                        const TextStyle(color: AppTheme.gray, fontSize: 11.5),
-                  ),
-                  const Spacer(),
-                  const Text(
-                    'View profile',
-                    style: TextStyle(
-                      color: AppTheme.teal700,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -3739,77 +3275,6 @@ class _AllServiceListRow extends StatelessWidget {
               const Icon(
                 Icons.chevron_right_rounded,
                 color: AppTheme.gray,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoryGridTile extends StatelessWidget {
-  final _BrowseCategory category;
-  final VoidCallback onTap;
-
-  const _CategoryGridTile({
-    required this.category,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final dimmed = !category.covered;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Opacity(
-        opacity: dimmed ? 0.42 : 1,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTheme.line),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircleAvatar(
-                radius: 19,
-                backgroundColor: category.color == AppTheme.navy700
-                    ? AppTheme.navyTint
-                    : category.color == AppTheme.orange500
-                        ? AppTheme.orangeTint
-                        : AppTheme.tealTint,
-                child: ServiceCategoryIcon(
-                  category: category.name,
-                  size: 26,
-                  fallbackIcon: category.icon,
-                  fallbackColor: category.color,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                category.name,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppTheme.navy700,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                dimmed ? 'None near you' : '${category.serviceCount} services',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                ),
               ),
             ],
           ),

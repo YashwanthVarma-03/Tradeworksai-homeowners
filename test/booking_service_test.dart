@@ -1,189 +1,160 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:homeowners_app/services/auth_service.dart';
 import 'package:homeowners_app/services/homeowner_service.dart';
 import 'package:homeowners_app/services/stream_service.dart';
 
 void main() {
-  // Ensure Flutter binding and mock shared preferences
   TestWidgetsFlutterBinding.ensureInitialized();
-  SharedPreferences.setMockInitialValues({});
+  final requests = <Map<String, dynamic>>[];
+  var rejectCap = false;
+  final api = MockClient((request) async {
+    final body = jsonDecode(request.body) as Map<String, dynamic>;
+    if (request.url.path.contains('booking-commit')) {
+      requests.add(body);
+      if (rejectCap) {
+        return http.Response(
+            jsonEncode({
+              'success': true,
+              'ok': false,
+              'reason': 'slot_unavailable',
+            }),
+            200);
+      }
+    }
+    return http.Response(
+        jsonEncode({
+          'success': true,
+          'ok': true,
+          'tabs': <String, dynamic>{},
+          'profile': <String, dynamic>{},
+          'addresses': <dynamic>[],
+        }),
+        200);
+  });
 
-  group('Booking and Work Orders Integration Tests (Demo Mode)', () {
-    setUp(() async {
-      AuthService.instance.isTesting = true;
-      await AuthService.instance.loadSession();
-      await AuthService.instance.simulateGoogleSignInSuccess();
-    });
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    final exp =
+        DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch ~/
+            1000;
+    final token =
+        'eyJhbGciOiJIUzI1NiJ9.${base64Url.encode(utf8.encode(jsonEncode({
+                  'exp': exp,
+                  'sub': 'test-homeowner'
+                }))).replaceAll('=', '')}.test';
+    await Supabase.initialize(
+      url: 'https://test.supabase.co',
+      anonKey: 'test-key',
+      debug: false,
+      authOptions: const FlutterAuthClientOptions(
+        autoRefreshToken: false,
+        detectSessionInUri: false,
+        localStorage: EmptyLocalStorage(),
+      ),
+      httpClient: MockClient((request) async => http.Response(
+          jsonEncode({
+            'access_token': token,
+            'refresh_token': 'test-refresh',
+            'token_type': 'bearer',
+            'expires_in': 3600,
+            'user': {
+              'id': 'test-homeowner',
+              'aud': 'authenticated',
+              'email': 'homeowner@example.com',
+              'created_at': '2026-01-01T00:00:00Z',
+              'app_metadata': <String, dynamic>{},
+              'user_metadata': <String, dynamic>{}
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json'})),
+    );
+    await AuthService.instance
+        .login(email: 'homeowner@example.com', password: 'test-password');
+  });
+  tearDownAll(() async {
+    await AuthService.instance.logout();
+    await Supabase.instance.dispose();
+  });
+  setUp(() {
+    requests.clear();
+    rejectCap = false;
+  });
 
-    tearDown(() async {
-      await AuthService.instance.logout();
-    });
-
-    test('AuthService sets up demo user correctly', () {
-      expect(AuthService.instance.isAuthenticated, isTrue);
-      expect(AuthService.instance.userId, equals('999'));
-      expect(
-          AuthService.instance.userEmail, equals('demo.homeowner@gmail.com'));
-    });
-
-    test('booking cap errors are presented as actionable copy', () {
-      final message =
-          HomeownerService.instance.bookingErrorMessage(Exception('booking_cap'));
-
-      expect(message, contains('maximum number of open bookings'));
-      expect(message, contains('complete or cancel'));
-    });
-
-    test('commitBooking saves work order to mock state in demo mode', () async {
-      final bookingData = {
-        'requester_name': AuthService.instance.userName ?? 'Homeowner',
-        'requester_email': AuthService.instance.userEmail ?? '',
-        'service_category': 'HVAC',
-        'service_description': 'Test HVAC Repair',
-        'address_street': '124 Skyview Lane',
-        'address_city': 'Tampa',
-        'address_state': 'FL',
-        'address_zip': '33569',
-        'work_order_type': 'rate_card',
-      };
-
-      final response = await HomeownerService.instance.commitBooking(
-        contractorId: '1',
-        action: 'commit',
-        urgency: 'standard',
-        booking: bookingData,
-        startsAt: DateTime.now().add(const Duration(days: 1)).toIso8601String(),
-        endsAt: DateTime.now()
-            .add(const Duration(days: 1, hours: 2))
-            .toIso8601String(),
-      );
-
-      expect(response['success'], isTrue);
-      expect(response['ok'], isTrue);
-      expect(response['woNumber'], startsWith('WO-'));
-
-      // Fetch work orders and verify it contains the scheduled job
-      final woData = await HomeownerService.instance.fetchWorkOrders();
-      expect(woData['success'], isTrue);
-      expect(woData['tabs'], isNotNull);
-
-      final List<dynamic> scheduledJobs = woData['tabs']['scheduled'] ?? [];
-      expect(scheduledJobs, isNotEmpty);
-
-      final newJob = scheduledJobs.firstWhere(
-        (j) =>
-            j['serviceCategory'] == 'HVAC' &&
-            j['description'] == 'Test HVAC Repair',
-        orElse: () => <String, dynamic>{},
-      );
-      expect(newJob, isNotEmpty);
-      expect(newJob['status'], equals('scheduled'));
-    });
-
-    test('reschedule resolver accepts raw contractor ids from work orders',
-        () async {
-      final bookingData = {
-        'requester_name': AuthService.instance.userName ?? 'Homeowner',
-        'requester_email': AuthService.instance.userEmail ?? '',
-        'service_category': 'Plumbing',
-        'service_description': 'Test reschedule',
-        'address_street': '55 Palm Ave',
-        'address_city': 'Tampa',
-        'address_state': 'FL',
-        'address_zip': '33569',
-        'work_order_type': 'rate_card',
-      };
-
+  test('cap acceptance retains the server action and chosen appointment',
+      () async {
+    await http.runWithClient(() async {
+      await HomeownerService.instance.respondToCap(
+          workOrderId: 101,
+          accept: true,
+          contractorId: 'contractor-7',
+          startsAt: '2026-12-01T10:00:00Z',
+          endsAt: '2026-12-01T11:00:00Z');
+      await HomeownerService.instance.syncInBackground();
+    }, () => api);
+    expect(requests.single, containsPair('action', 'quote_accept'));
+    expect(requests.single, containsPair('startsAt', '2026-12-01T10:00:00Z'));
+    expect(requests.single, containsPair('requesterUserId', 'test-homeowner'));
+    expect(requests.single, containsPair('contractorId', 'contractor-7'));
+  });
+  test('declining retains the server action and explicit reason', () async {
+    await http.runWithClient(() async {
+      await HomeownerService.instance.respondToCap(
+          workOrderId: 102, accept: false, reason: 'homeowner_declined_cap');
+      await HomeownerService.instance.syncInBackground();
+    }, () => api);
+    expect(requests.single, containsPair('action', 'quote_decline'));
+    expect(requests.single, containsPair('reason', 'homeowner_declined_cap'));
+  });
+  test('a rejected cap is not treated as successful approval', () async {
+    rejectCap = true;
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance.respondToCap(
+              workOrderId: 103,
+              accept: true,
+              contractorId: 'contractor-7',
+              startsAt: '2026-12-01T10:00:00Z',
+              endsAt: '2026-12-01T11:00:00Z'),
+          throwsException);
+    }, () => api);
+  });
+  test('booking limits retain actionable copy', () {
+    final message =
+        HomeownerService.instance.bookingErrorMessage(Exception('booking_cap'));
+    expect(message, contains('maximum number of open bookings'));
+    expect(message, contains('complete or cancel'));
+  });
+  test('the existing quote-request booking remains supported without a slot',
+      () async {
+    await http.runWithClient(() async {
       await HomeownerService.instance.commitBooking(
-        contractorId: 'pro_alpha_42',
-        action: 'commit',
+        contractorId: 'contractor-7',
+        action: 'quote_request',
         urgency: 'standard',
-        booking: bookingData,
-        startsAt: DateTime.now().add(const Duration(days: 2)).toIso8601String(),
-        endsAt: DateTime.now()
-            .add(const Duration(days: 2, hours: 2))
-            .toIso8601String(),
-      );
-
-      final woData = await HomeownerService.instance.fetchWorkOrders();
-      final List<dynamic> scheduledJobs = woData['tabs']['scheduled'] ?? [];
-      final newJob = scheduledJobs.firstWhere(
-        (j) => j['description'] == 'Test reschedule',
-        orElse: () => <String, dynamic>{},
-      );
-
-      final workOrderId = newJob['workOrderId'] as int?;
-      expect(workOrderId, isNotNull);
-
-      final contractorId = await HomeownerService.instance
-          .resolveContractorIdForWorkOrder(workOrderId!);
-      expect(contractorId, equals('pro_alpha_42'));
-    });
-
-    test('review submit persists in demo mode and becomes retrievable',
-        () async {
-      final bookingData = {
-        'requester_name': AuthService.instance.userName ?? 'Homeowner',
-        'requester_email': AuthService.instance.userEmail ?? '',
-        'service_category': 'Electrical',
-        'service_description': 'Completed visit review',
-        'address_street': '10 Test Ave',
-        'address_city': 'Tampa',
-        'address_state': 'FL',
-        'address_zip': '33569',
-        'work_order_type': 'rate_card',
-      };
-
-      await HomeownerService.instance.commitBooking(
-        contractorId: 'review_pro_7',
-        action: 'commit',
-        urgency: 'standard',
-        booking: bookingData,
-        startsAt: DateTime.now().add(const Duration(days: 1)).toIso8601String(),
-        endsAt: DateTime.now()
-            .add(const Duration(days: 1, hours: 2))
-            .toIso8601String(),
-      );
-
-      final woData = await HomeownerService.instance.fetchWorkOrders();
-      final List<dynamic> scheduledJobs = woData['tabs']['scheduled'] ?? [];
-      final newJob = scheduledJobs.firstWhere(
-        (j) => j['description'] == 'Completed visit review',
-        orElse: () => <String, dynamic>{},
-      );
-
-      final workOrderId = newJob['workOrderId'] as int?;
-      expect(workOrderId, isNotNull);
-
-      await HomeownerService.instance.performWorkOrderAction(
-        workOrderId: workOrderId!,
-        action: 'confirm_complete',
-      );
-
-      await HomeownerService.instance.submitReview(
-        workOrderId: workOrderId,
-        rating: 5,
-        text: 'Excellent work and clear communication.',
-        displayName: 'Demo Homeowner',
-      );
-
-      final review = await HomeownerService.instance.getReview(workOrderId);
-      expect(review, isNotNull);
-      expect(review!['rating'], equals(5));
-      expect(review['reviewText'], contains('Excellent work'));
-    });
-
-    test('messaging resolver prefers contractor user ids over profile ids', () {
-      final resolved = StreamService.instance.resolveMessagingUserId({
-        'contractorId': 'profile_100',
-        'userId': '20',
-        'profile': {
-          'user_id': '21',
+        booking: {
+          'service_category': 'Roofing',
+          'work_order_type': 'quote_request'
         },
-      });
-
-      expect(resolved, equals('20'));
-    });
+      );
+      await HomeownerService.instance.syncInBackground();
+    }, () => api);
+    expect(requests.single, containsPair('action', 'quote_request'));
+    expect(requests.single.containsKey('startsAt'), isFalse);
+    expect(requests.single.containsKey('endsAt'), isFalse);
+  });
+  test('messaging resolves the contractor user ID before the profile ID', () {
+    expect(
+        StreamService.instance.resolveMessagingUserId({
+          'contractorId': 'profile_100',
+          'userId': '20',
+          'profile': {'user_id': '21'},
+        }),
+        '20');
   });
 }

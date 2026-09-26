@@ -35,10 +35,10 @@ class GlassCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+        border: Border.all(color: AppTheme.cardBorder, width: 1.0),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0F172A).withOpacity(0.04),
+            color: AppTheme.navy.withOpacity(0.04),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -97,12 +97,12 @@ class _HoverButtonState extends State<HoverButton> {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: _isHovered
-                  ? const [Color(0xFFFFFFFF), Color(0xFFDCE0E5)]
-                  : const [Color(0xFFFFFFFF), Color(0xFFF0F2F4)],
+                  ? const [AppTheme.pageBackground, AppTheme.cardBorder]
+                  : const [AppTheme.pageBackground, AppTheme.pageBackground],
             ),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Color(0x280F172A),
+                color: AppTheme.navy.withOpacity(0.16),
                 blurRadius: 0,
                 spreadRadius: 0.75,
               )
@@ -111,7 +111,7 @@ class _HoverButtonState extends State<HoverButton> {
           child: Text(
             widget.text,
             style: const TextStyle(
-              color: Color(0xFF121F31),
+              color: AppTheme.navy,
               fontWeight: FontWeight.bold,
               fontSize: 14,
             ),
@@ -301,106 +301,6 @@ class TradeWorksCategoryTokens {
   static CategoryToken forName(String name) => all[name] ?? fallback;
 }
 
-/// The supplied service artwork is deliberately one-to-one with the Browse
-/// rail categories. Keep this registry as the single source of truth so a
-/// service is never accidentally rendered with another service's icon.
-class ServiceCategoryIcons {
-  static const String _basePath = 'assets/icons/services';
-  static const String _cleanBasePath = '$_basePath/clean';
-
-  static const Map<String, String> _assets = {
-    'All': '$_basePath/32.svg',
-    'Moving': '$_basePath/1.svg',
-    'Appliance Repair': '$_basePath/2.svg',
-    'Concrete': '$_basePath/3.svg',
-    'Garage Doors': '$_basePath/4.svg',
-    'Flooring': '$_basePath/5.svg',
-    'Plumbing': '$_basePath/6.svg',
-    'HVAC': '$_basePath/7.svg',
-    'Electrical': '$_basePath/8.svg',
-    'Cleaning': '$_basePath/9.svg',
-    'Landscaping': '$_basePath/10.svg',
-    'Painting': '$_basePath/11.svg',
-    'Water Treatment': '$_basePath/12.svg',
-    'Roofing': '$_basePath/13.svg',
-    'Windows & Doors': '$_basePath/14.svg',
-    'Smart Home': '$_basePath/15.svg',
-    'Solar Energy': '$_basePath/16.svg',
-    'Tree Service': '$_basePath/17.svg',
-    'Pest Control': '$_basePath/18.svg',
-    'Home Security': '$_basePath/19.svg',
-    'Insulation': '$_basePath/20.svg',
-    'Locksmith': '$_basePath/21.svg',
-    'Junk Removal': '$_basePath/22.svg',
-    'Remodeling': '$_basePath/23.svg',
-    'Fencing & Decks': '$_basePath/24.svg',
-    'Drywall & Plaster': '$_basePath/25.svg',
-    'Gutters': '$_basePath/26.svg',
-    'Screen Repair': '$_basePath/27.svg',
-    'Pool & Spa': '$_basePath/28.svg',
-    'Fireplace & Chimney': '$_basePath/29.svg',
-    'Siding': '$_basePath/30.svg',
-    'Concrete & Masonry': '$_basePath/31.svg',
-  };
-
-  static String? assetFor(String category) => _cleanAssetFor(category);
-
-  static String? sourceAssetFor(String category) =>
-      _assets[category == 'All 31' ? 'All' : category];
-
-  static String? _cleanAssetFor(String category) {
-    final source = sourceAssetFor(category);
-    return source
-        ?.replaceFirst(_basePath, _cleanBasePath)
-        .replaceFirst('.svg', '.png');
-  }
-
-  static bool get hasUniqueBrowseAssets {
-    final values = _assets.values.toSet();
-    return values.length == _assets.length && _assets.length == 32;
-  }
-
-  // The source artwork has varying visual density. These values keep each
-  // supplied icon optically balanced within the same tile frame.
-  static const Map<String, double> _scales = {
-    'All': 0.88,
-    'Moving': 0.94,
-    'Appliance Repair': 0.98,
-    'Concrete': 0.94,
-    'Garage Doors': 0.96,
-    'Flooring': 0.94,
-    'Plumbing': 0.96,
-    'HVAC': 0.94,
-    'Electrical': 0.98,
-    'Cleaning': 0.93,
-    'Landscaping': 0.95,
-    'Painting': 0.95,
-    'Water Treatment': 0.96,
-    'Roofing': 0.96,
-    'Windows & Doors': 0.94,
-    'Smart Home': 0.95,
-    'Solar Energy': 0.94,
-    'Tree Service': 0.95,
-    'Pest Control': 0.94,
-    'Home Security': 0.96,
-    'Insulation': 0.95,
-    'Locksmith': 0.96,
-    'Junk Removal': 0.95,
-    'Remodeling': 0.94,
-    'Fencing & Decks': 0.94,
-    'Drywall & Plaster': 0.95,
-    'Gutters': 0.96,
-    'Screen Repair': 0.94,
-    'Pool & Spa': 0.95,
-    'Fireplace & Chimney': 0.95,
-    'Siding': 0.94,
-    'Concrete & Masonry': 0.94,
-  };
-
-  static double scaleFor(String category) =>
-      _scales[category == 'All 31' ? 'All' : category] ?? 0.95;
-}
-
 class ServiceCategoryIcon extends StatelessWidget {
   final String category;
   final double size;
@@ -438,182 +338,6 @@ class ServiceCategoryIcon extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class TradeWorksCategoryTile extends StatelessWidget {
-  final String label;
-  final String? meta;
-  final bool selected;
-  final VoidCallback onTap;
-  final double? width;
-
-  const TradeWorksCategoryTile({
-    super.key,
-    required this.label,
-    this.meta,
-    required this.onTap,
-    this.selected = false,
-    this.width,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final token = TradeWorksCategoryTokens.forName(label);
-    final background = selected ? token.color : token.tint;
-    final foreground = selected ? Colors.white : AppTheme.ink;
-    final iconColor = selected ? Colors.white : token.color;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: width,
-        constraints: const BoxConstraints(minHeight: 88),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected ? token.color : token.color.withOpacity(0.12),
-            width: selected ? 0 : 1,
-          ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: token.color.withOpacity(0.22),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
-                ]
-              : null,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: selected ? Colors.white.withOpacity(0.16) : Colors.white,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: ServiceCategoryIcon(
-                category: label,
-                size: 28,
-                fallbackIcon: token.icon,
-                fallbackColor: iconColor,
-              ),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: foreground,
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
-                height: 1.15,
-              ),
-            ),
-            if (meta != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                meta!,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color:
-                      selected ? Colors.white.withOpacity(0.88) : AppTheme.gray,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 9.5,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class AnimatedEntrance extends StatefulWidget {
-  final Widget child;
-  final Duration duration;
-  final Duration delay;
-  final double slideOffset;
-
-  const AnimatedEntrance({
-    super.key,
-    required this.child,
-    this.duration = const Duration(milliseconds: 600),
-    this.delay = Duration.zero,
-    this.slideOffset = 30.0,
-  });
-
-  @override
-  State<AnimatedEntrance> createState() => _AnimatedEntranceState();
-}
-
-class _AnimatedEntranceState extends State<AnimatedEntrance>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _opacityAnimation;
-  late Animation<double> _slideAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.duration,
-    );
-
-    _opacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
-
-    _slideAnimation =
-        Tween<double>(begin: widget.slideOffset, end: 0.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
-
-    if (widget.delay == Duration.zero) {
-      _controller.forward();
-    } else {
-      Future.delayed(widget.delay, () {
-        if (mounted) {
-          _controller.forward();
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _opacityAnimation.value,
-          child: Transform.translate(
-            offset: Offset(0.0, _slideAnimation.value),
-            child: child,
-          ),
-        );
-      },
-      child: widget.child,
     );
   }
 }
@@ -662,7 +386,7 @@ class SlidingSegmentControl extends StatelessWidget {
     required this.currentIndex,
     required this.items,
     required this.onSegmentChanged,
-    this.activeColor = const Color(0xFF1B3C6E),
+    this.activeColor = AppTheme.navy,
   });
 
   @override

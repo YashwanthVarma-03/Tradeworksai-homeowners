@@ -18,10 +18,10 @@ class NotificationSettingsScreen extends StatefulWidget {
 
 class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
-  static const Color _pageBackground = Color(0xFFF5F7FA);
-  static const Color _inkStrong = Color(0xFF1E293B);
-  static const Color _mutedText = Color(0xFF64748B);
-  static const Color _lineSoft = Color(0xFFE1E7EF);
+  static const Color _pageBackground = AppTheme.pageBackground;
+  static const Color _inkStrong = AppTheme.navy;
+  static const Color _mutedText = AppTheme.textSecondary;
+  static const Color _lineSoft = AppTheme.cardBorder;
 
   bool _isLoading = true;
   bool _pushStatus = false;
@@ -393,7 +393,7 @@ class _NotificationSettingsScreenState
             activeColor: Colors.white,
             activeTrackColor: AppTheme.orange500,
             inactiveThumbColor: Colors.white,
-            inactiveTrackColor: const Color(0xFFCBD5E1),
+            inactiveTrackColor: AppTheme.cardBorder,
             onChanged: onChanged,
           ),
         ],
@@ -405,7 +405,7 @@ class _NotificationSettingsScreenState
     return Container(
       padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAFBFF),
+        color: AppTheme.blueTint,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.teal500),
       ),

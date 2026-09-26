@@ -428,7 +428,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                         ? AppTheme.orange500
                         : (_speechReady
                             ? AppTheme.orangeTint
-                            : const Color(0xFFF7FAFD)),
+                            : AppTheme.pageBackground),
                     border: Border.all(
                       color: AppTheme.orange500.withOpacity(
                         _isListening ? 0.8 : (_speechReady ? 0.3 : 0.15),
@@ -477,7 +477,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           decoration: BoxDecoration(
-            color: const Color(0xFFF7FAFD),
+            color: AppTheme.pageBackground,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppTheme.line),
           ),
@@ -508,7 +508,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF7FAFD),
+              color: AppTheme.pageBackground,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppTheme.line),
             ),
@@ -556,7 +556,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
             decoration: BoxDecoration(
-              color: const Color(0xFFF7FAFD),
+              color: AppTheme.pageBackground,
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: AppTheme.line,
@@ -569,6 +569,8 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                   width: 58,
                   height: 58,
                   decoration: const BoxDecoration(
+                    border: Border.fromBorderSide(
+                        BorderSide(color: AppTheme.cardBorder)),
                     color: AppTheme.navyTint,
                     shape: BoxShape.circle,
                   ),
@@ -655,7 +657,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                     child: Container(
                       width: 100,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF7FAFD),
+                        color: AppTheme.pageBackground,
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: AppTheme.line),
                       ),
