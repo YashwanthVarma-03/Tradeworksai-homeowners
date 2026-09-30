@@ -49,16 +49,16 @@ class OfflineState extends StatelessWidget {
                   width: 66,
                   height: 66,
                   decoration: BoxDecoration(
-                    color: AppTheme.orangeTint,
+                    color: AppTheme.amberTint,
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: AppTheme.orange500.withOpacity(0.2),
+                      color: AppTheme.amber.withOpacity(0.2),
                     ),
                   ),
                   child: Icon(
                     icon,
                     size: 34,
-                    color: AppTheme.orange500,
+                    color: AppTheme.amber,
                   ),
                 ),
                 const SizedBox(height: 18),
@@ -88,7 +88,7 @@ class OfflineState extends StatelessWidget {
                     onPressed: onRetry,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.orange500,
-                      foregroundColor: AppTheme.navy700,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),

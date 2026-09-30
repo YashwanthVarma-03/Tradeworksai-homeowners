@@ -1,319 +1,173 @@
 import 'package:flutter/material.dart';
-
 import '../../services/homeowner_service.dart';
-import '../../theme.dart';
+import '../../services/stream_service.dart';
 import '../../widgets/app_notification.dart';
+import '../chat_screen.dart';
 
 class PaymentMethodsScreen extends StatefulWidget {
   const PaymentMethodsScreen({super.key});
-
   @override
   State<PaymentMethodsScreen> createState() => _PaymentMethodsScreenState();
 }
 
 class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
-  static const Color _pageBackground = AppTheme.pageBackground;
-  static const Color _inkStrong = AppTheme.navy;
-  static const Color _mutedText = AppTheme.textSecondary;
-  static const Color _lineSoft = AppTheme.cardBorder;
-
-  List<dynamic> _methods = [];
-  bool _isLoading = true;
-
+  List<Map<String, dynamic>> _pros = [];
+  bool _loading = true;
+  Object? _error;
+  static const _labels = {
+    'cash': 'Cash',
+    'check': 'Check',
+    'credit_card': 'Credit card',
+    'ach': 'Bank transfer (ACH)',
+    'zelle': 'Zelle',
+    'venmo': 'Venmo',
+    'paypal': 'PayPal',
+    'apple_pay': 'Apple Pay',
+    'google_pay': 'Google Pay'
+  };
   @override
   void initState() {
     super.initState();
-    _fetchMethods();
+    _load();
   }
 
-  Future<void> _fetchMethods() async {
-    setState(() => _isLoading = true);
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final profile = await HomeownerService.instance.fetchProfile();
-      if (!mounted) return;
-      setState(() {
-        _methods = profile['paymentMethods'] as List? ??
-            profile['profile']?['paymentMethods'] as List? ??
-            const [];
-        _isLoading = false;
-      });
+      final data =
+          await HomeownerService.instance.fetchWorkOrders(forceRefresh: true);
+      final tabs = data['tabs'];
+      final pros = <String, Map<String, dynamic>>{};
+      if (tabs is Map) {
+        for (final rows in tabs.values.whereType<List>()) {
+          for (final job in rows.whereType<Map>()) {
+            if (job['pro'] is! Map) continue;
+            final pro = Map<String, dynamic>.from(job['pro']);
+            final key = '${pro['slug'] ?? pro['userId'] ?? pro['id'] ?? ''}';
+            if (key.isNotEmpty) pros[key] = pro;
+          }
+        }
+      }
+      final resolved = await Future.wait(pros.values.map((pro) async {
+        final slug = '${pro['slug'] ?? ''}';
+        if (slug.isEmpty) return pro;
+        try {
+          final data =
+              await HomeownerService.instance.getContractorProfile(slug);
+          final profile =
+              data['profile'] ?? data['contractor'] ?? data['pro'] ?? data;
+          return {
+            ...pro,
+            if (profile is Map) ...Map<String, dynamic>.from(profile)
+          };
+        } catch (_) {
+          return {...pro, 'loadFailed': true};
+        }
+      }));
+      if (mounted)
+        setState(() {
+          _pros = resolved;
+          _loading = false;
+        });
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      AppNotification.showError(
-        context,
-        e,
-        fallback: 'We couldn\'t load payment methods. Please try again.',
-      );
+      if (mounted)
+        setState(() {
+          _error = e;
+          _loading = false;
+        });
     }
   }
 
-  void _addCard() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Add card is not available yet.'),
-        backgroundColor: AppTheme.gray,
-      ),
-    );
+  Future<void> _message(Map<String, dynamic> pro) async {
+    final id = StreamService.instance.resolveMessagingUserId(pro);
+    if (id == null) {
+      AppNotification.showInfo(
+          context, 'Open this booking to contact your pro.');
+      return;
+    }
+    await Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => ChatScreen(
+                contractorId: id,
+                contractorName:
+                    '${pro['businessName'] ?? pro['business_name'] ?? 'Your pro'}')));
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _pageBackground,
-      appBar: _appBar('Payment methods'),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppTheme.orange500),
-            )
-          : RefreshIndicator(
-              onRefresh: _fetchMethods,
-              color: AppTheme.orange500,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                children: [
-                  if (_methods.isEmpty)
-                    _emptyState()
-                  else
-                    ..._methods.map(
-                      (dynamic item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: _methodCard(_asMap(item)),
-                      ),
-                    ),
-                  _addCardButton(),
-                  const SizedBox(height: 16),
-                  _securityCallout(),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'Cards pay the pro directly. TradeWorks adds no markup and no platform fee.',
-                    style: TextStyle(
-                      color: _mutedText,
-                      fontSize: 13,
-                      height: 1.45,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-    );
-  }
-
-  PreferredSizeWidget _appBar(String title) {
-    return AppBar(
-      toolbarHeight: 56,
-      backgroundColor: Colors.white,
-      elevation: 0,
-      leadingWidth: 54,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded, size: 25),
-        color: AppTheme.navy700,
-        onPressed: () => Navigator.pop(context),
-      ),
-      titleSpacing: 0,
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: AppTheme.navy700,
-          fontSize: 20,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      bottom: const PreferredSize(
-        preferredSize: Size.fromHeight(1),
-        child: Divider(height: 1, color: _lineSoft),
-      ),
-    );
-  }
-
-  Widget _methodCard(Map<String, dynamic> method) {
-    final brand = _string(method['brand']) ?? 'Card';
-    final last4 = _string(method['last4']);
-    final isDefault =
-        method['isDefault'] == true || method['isDefault'] == 'true';
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _lineSoft),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: brand.toLowerCase().contains('visa')
-                  ? AppTheme.navy700
-                  : _inkStrong,
-              borderRadius: BorderRadius.circular(5),
-            ),
-            child: Text(
-              brand.toLowerCase().contains('master')
-                  ? 'MC'
-                  : brand.toUpperCase(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  last4 == null ? brand : '$brand ending $last4',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _inkStrong,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _expiryLabel(method),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _mutedText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (isDefault)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppTheme.blueTint,
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: const Text(
-                'DEFAULT',
-                style: TextStyle(
-                  color: AppTheme.teal500,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            )
-          else
-            const Icon(
-              Icons.card_giftcard_rounded,
-              color: _mutedText,
-              size: 23,
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _addCardButton() {
-    return OutlinedButton(
-      onPressed: _addCard,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppTheme.teal500,
-        side: const BorderSide(color: AppTheme.teal500, width: 1.2),
-        padding: const EdgeInsets.symmetric(vertical: 17),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      child: const Text(
-        '+ Add card',
-        style: TextStyle(
-          fontSize: 15.5,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-
-  Widget _securityCallout() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
-      decoration: BoxDecoration(
-        color: AppTheme.blueTint,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.teal500),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.trending_up_rounded, color: AppTheme.teal500, size: 25),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Cards are entered in a secure, encrypted field and tokenized.',
-              style: TextStyle(
-                color: _inkStrong,
-                fontSize: 12.5,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _emptyState() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _lineSoft),
-      ),
-      child: const Text(
-        'No saved payment methods yet.',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: _mutedText,
-          fontSize: 13.5,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  String _expiryLabel(Map<String, dynamic> method) {
-    final expiry = _string(method['expiry']) ??
-        _string(method['expires']) ??
-        _string(method['exp']);
-    if (expiry != null) return 'Expires $expiry';
-    final month = _string(method['expMonth']) ?? _string(method['exp_month']);
-    final year = _string(method['expYear']) ?? _string(method['exp_year']);
-    if (month != null && year != null) return 'Expires $month/$year';
-    return 'Payment method';
-  }
-
-  Map<String, dynamic> _asMap(dynamic value) {
-    if (value is Map<String, dynamic>) return value;
-    if (value is Map) return Map<String, dynamic>.from(value);
-    return const {};
-  }
-
-  String? _string(dynamic value) {
-    final text = value?.toString().trim();
-    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
-      return null;
-    }
-    return text;
-  }
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Payment methods')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Payment methods could not be loaded.'),
+                    TextButton(onPressed: _load, child: const Text('Try again'))
+                  ]))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(20),
+                        children: [
+                          Text('Pay your pro directly',
+                              style: Theme.of(context).textTheme.headlineSmall),
+                          const SizedBox(height: 12),
+                          const Text(
+                              'These are the payment methods published by your booked pros. Confirm payment details with your pro. TradeWorks does not store or charge your card here.'),
+                          const SizedBox(height: 20),
+                          if (_pros.isEmpty)
+                            const Text(
+                                'After you book a pro, their accepted payment methods will appear here. You can also check their profile before booking.'),
+                          for (final pro in _pros)
+                            Card(
+                                child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                              '${pro['businessName'] ?? pro['business_name'] ?? 'Your pro'}',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium),
+                                          const SizedBox(height: 12),
+                                          if ((pro['payment_methods'] ??
+                                                      pro['paymentMethods'])
+                                                  is List &&
+                                              ((pro['payment_methods'] ??
+                                                          pro['paymentMethods'])
+                                                      as List)
+                                                  .isNotEmpty)
+                                            Wrap(
+                                                spacing: 8,
+                                                runSpacing: 8,
+                                                children: [
+                                                  for (final method in (pro[
+                                                              'payment_methods'] ??
+                                                          pro['paymentMethods'])
+                                                      as List)
+                                                    Chip(
+                                                        label: Text(_labels[
+                                                                '$method'] ??
+                                                            '$method'))
+                                                ])
+                                          else
+                                            Text(pro['loadFailed'] == true
+                                                ? 'Payment details could not be loaded. Pull down to retry.'
+                                                : 'This pro has not published payment methods.'),
+                                          TextButton.icon(
+                                              onPressed: () => _message(pro),
+                                              icon: const Icon(
+                                                  Icons.chat_bubble_outline),
+                                              label:
+                                                  const Text('Ask your pro')),
+                                        ]))),
+                        ])),
+      );
 }

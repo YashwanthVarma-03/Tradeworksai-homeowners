@@ -236,7 +236,7 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
           top: false,
           child: _isLoading
               ? const Center(
-                  child: CircularProgressIndicator(color: AppTheme.orange500))
+                  child: CircularProgressIndicator(color: AppTheme.navy))
               : _error != null
                   ? _ErrorState(message: _error!, onRetry: _loadAvailability)
                   : dates.isEmpty
@@ -279,8 +279,8 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
                                   return ChoiceChip(
                                     label: Text(_dateLabel(date)),
                                     selected: selected,
-                                    selectedColor: AppTheme.orange500,
-                                    backgroundColor: AppTheme.pageAlt,
+                                    selectedColor: AppTheme.navy,
+                                    backgroundColor: AppTheme.pageBackground,
                                     labelStyle: TextStyle(
                                       color: selected
                                           ? Colors.white
@@ -309,8 +309,8 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
                                   label: Text(_timeLabel(
                                       slot['start']?.toString() ?? '')),
                                   selected: selected,
-                                  selectedColor: AppTheme.orange500,
-                                  backgroundColor: AppTheme.pageAlt,
+                                  selectedColor: AppTheme.navy,
+                                  backgroundColor: AppTheme.pageBackground,
                                   labelStyle: TextStyle(
                                     color: selected
                                         ? Colors.white

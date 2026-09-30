@@ -11,13 +11,17 @@ class LeaveReviewScreen extends StatefulWidget {
   final int jobId;
   final double initialRating;
   final String initialReviewText;
+  final List<String> initialTags;
+  final bool hasExistingReview;
 
   const LeaveReviewScreen({
     super.key,
     required this.job,
     required this.jobId,
-    this.initialRating = 5,
+    this.initialRating = 0,
     this.initialReviewText = '',
+    this.initialTags = const [],
+    this.hasExistingReview = false,
   });
 
   @override
@@ -27,13 +31,14 @@ class LeaveReviewScreen extends StatefulWidget {
 class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
   late double _rating;
   late final TextEditingController _controller;
-  final Set<String> _tags = {'On time', 'Professional'};
+  final Set<String> _tags = {};
   bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    _rating = widget.initialRating.clamp(1, 5);
+    _rating = widget.initialRating.clamp(0, 5);
+    if (widget.hasExistingReview) _tags.addAll(widget.initialTags);
     _controller = TextEditingController(text: widget.initialReviewText);
   }
 
@@ -52,6 +57,7 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
         widget.job['timeline']?['completedAt'] != null;
 
     try {
+      if (_rating < 1) throw Exception('Please choose a star rating.');
       if (widget.jobId == 0) {
         throw Exception('Unable to resolve the booking for review.');
       }
@@ -63,31 +69,38 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
       }
 
       setState(() => _isSubmitting = true);
-      final eligibility = await HomeownerService.instance.getReviewEligibility(
-        workOrderId: widget.jobId,
-      );
-      if (eligibility['eligible'] == false) {
-        final reason = eligibility['reason']?.toString();
-        if (reason == 'already_reviewed') {
-          HomeownerService.instance.rememberReviewedWorkOrder(widget.jobId);
-          if (mounted) Navigator.pop(context);
-          return;
+      if (!widget.hasExistingReview) {
+        final eligibility =
+            await HomeownerService.instance.getReviewEligibility(
+          workOrderId: widget.jobId,
+        );
+        if (eligibility['eligible'] == false) {
+          final reason = eligibility['reason']?.toString();
+          if (reason != 'already_reviewed' || !widget.hasExistingReview) {
+            throw Exception(reason ?? 'not_eligible');
+          }
         }
-        throw Exception(reason ?? 'not_eligible');
       }
-
-      await HomeownerService.instance.submitReview(
+      final saved = await HomeownerService.instance.submitReview(
         workOrderId: widget.jobId,
         rating: _rating.roundToDouble(),
         text: reviewText,
-        displayName: AuthService.instance.userName,
+        displayName: _publishingName,
+        tags: _tags
+            .where((tag) => tag != 'Price stayed within the cap' || _hasInvoice)
+            .toList(),
+        hasExistingReview: widget.hasExistingReview,
       );
 
       if (mounted) {
         Navigator.pop(context, {
+          ...saved,
           'rating': _rating.roundToDouble(),
           'reviewText': reviewText,
-          'tags': _tags.toList(),
+          'tags': _tags
+              .where(
+                  (tag) => tag != 'Price stayed within the cap' || _hasInvoice)
+              .toList(),
         });
       }
     } catch (e) {
@@ -102,6 +115,51 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     }
   }
 
+  String get _publishingName {
+    final name = AuthService.instance.userName?.trim();
+    return name == null || name.isEmpty ? 'TradeWorks Customer' : name;
+  }
+
+  bool get _hasInvoice {
+    final amount = widget.job['invoiceAmount'] ?? widget.job['invoice_amount'];
+    final number =
+        amount is num ? amount.toDouble() : double.tryParse('$amount');
+    final url =
+        _readString(widget.job['invoiceUrl'] ?? widget.job['invoice_url']);
+    return (number != null && number.isFinite && number >= 0) || url != null;
+  }
+
+  Future<void> _delete() async {
+    if (_isSubmitting || !widget.hasExistingReview) return;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Delete your review?'),
+              content: const Text(
+                  'Your rating and review will be removed from this pro’s profile.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Keep review')),
+                TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Delete review',
+                        style: TextStyle(color: AppTheme.red)))
+              ],
+            ));
+    if (confirmed != true || !mounted) return;
+    setState(() => _isSubmitting = true);
+    try {
+      await HomeownerService.instance.deleteReview(widget.jobId);
+      if (mounted) Navigator.pop(context, {'deleted': true});
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        AppNotification.showError(context, e);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return TransactionGuard(
@@ -111,7 +169,9 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
         backgroundColor: Colors.white,
         body: Column(
           children: [
-            _screenHeader('Leave a review'),
+            _screenHeader(widget.hasExistingReview
+                ? 'Edit your review'
+                : 'Leave a review'),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
@@ -138,7 +198,7 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
                           Text(
                             _ratingLabel(),
                             style: const TextStyle(
-                              color: AppTheme.orange500,
+                              color: AppTheme.navy,
                               fontSize: 14,
                               fontWeight: FontWeight.w900,
                             ),
@@ -161,14 +221,14 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
                       maxLines: 5,
                       decoration: InputDecoration(
                         hintText:
-                            'What went well? Was the pro on time and professional?',
+                            'What should other homeowners know about working with this pro?',
                         hintStyle: const TextStyle(
                           color: AppTheme.gray,
                           fontSize: 12.5,
                           height: 1.35,
                         ),
                         filled: true,
-                        fillColor: AppTheme.pageAlt,
+                        fillColor: AppTheme.pageBackground,
                         contentPadding: const EdgeInsets.all(14),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -192,9 +252,17 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
                         'Clean work',
                         'Great communication',
                         'Fair price',
+                        'Price stayed within the cap',
                       ].map(_tagChip).toList(),
                     ),
                     const SizedBox(height: 26),
+                    if (!_hasInvoice)
+                      const Text(
+                          'Price stayed within the cap: available once your invoice arrives.'),
+                    Text('This will publish as $_publishingName.',
+                        style: const TextStyle(
+                            color: AppTheme.textSecondary, fontSize: 12)),
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -221,10 +289,21 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Text('Submit review'),
+                            : Text(widget.hasExistingReview
+                                ? 'Save changes'
+                                : 'Submit review'),
                       ),
                     ),
                     const SizedBox(height: 14),
+                    const Text(
+                        'Your credits come from what you spend, not from leaving a review.',
+                        style: TextStyle(
+                            color: AppTheme.textSecondary, fontSize: 12)),
+                    if (widget.hasExistingReview)
+                      TextButton(
+                          onPressed: _isSubmitting ? null : _delete,
+                          child: const Text('Delete your review',
+                              style: TextStyle(color: AppTheme.red))),
                     const Center(
                       child: Text(
                         'Your review will be public and tied to this work order',
@@ -252,11 +331,11 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
       return _readString(pro['businessName']) ??
           _readString(pro['business_name']) ??
           _readString(pro['name']) ??
-          'Cool Air Pros';
+          'Your pro';
     }
     return _readString(widget.job['proName']) ??
         _readString(widget.job['businessName']) ??
-        'Cool Air Pros';
+        'Your pro';
   }
 
   String _serviceName() {
@@ -264,14 +343,14 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
         _readString(widget.job['service']) ??
         _readString(widget.job['title']) ??
         _readString(widget.job['serviceCategory']) ??
-        'AC filter replacement';
+        'Service';
   }
 
   String _dateLabel() {
     final completed = _readString(widget.job['completedAt']) ??
         _readString(widget.job['completed_at']) ??
         _readString(widget.job['scheduledStart']);
-    if (completed == null) return 'Aug 14';
+    if (completed == null) return '';
     final parsed = DateTime.tryParse(completed);
     if (parsed == null) return completed;
     const months = [
@@ -312,6 +391,7 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
   }
 
   String _ratingLabel() {
+    if (_rating == 0) return '';
     if (_rating >= 5) return 'Excellent';
     if (_rating >= 4) return 'Great';
     if (_rating >= 3) return 'Okay';
@@ -409,12 +489,13 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
       children: List.generate(5, (index) {
         final filled = index < _rating.round();
         return IconButton(
-          constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+          tooltip: 'Rate ${index + 1} stars',
+          constraints: const BoxConstraints.tightFor(width: 44, height: 44),
           padding: EdgeInsets.zero,
           onPressed: () => setState(() => _rating = index + 1),
           icon: Icon(
             filled ? Icons.star_rounded : Icons.star_border_rounded,
-            color: filled ? AppTheme.orange500 : AppTheme.line,
+            color: filled ? AppTheme.gold : AppTheme.line,
             size: 28,
           ),
         );
@@ -424,18 +505,22 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
 
   Widget _tagChip(String label) {
     final selected = _tags.contains(label);
+    final enabled = !_isSubmitting &&
+        (label != 'Price stayed within the cap' || _hasInvoice);
     return FilterChip(
       label: Text(label),
       selected: selected,
-      onSelected: (value) {
-        setState(() {
-          if (value) {
-            _tags.add(label);
-          } else {
-            _tags.remove(label);
-          }
-        });
-      },
+      onSelected: !enabled
+          ? null
+          : (value) {
+              setState(() {
+                if (value) {
+                  _tags.add(label);
+                } else {
+                  _tags.remove(label);
+                }
+              });
+            },
       showCheckmark: false,
       selectedColor: AppTheme.tealTint,
       backgroundColor: Colors.white,

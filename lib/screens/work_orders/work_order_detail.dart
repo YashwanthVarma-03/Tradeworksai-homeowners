@@ -1,4 +1,10 @@
+import 'package:url_launcher/url_launcher.dart';
+import '../../services/document_upload.dart';
+import '../../utils/arrival_check_state.dart';
+import 'arrival_check.dart';
+import 'no_show_reply.dart';
 import 'package:flutter/material.dart';
+import '../../utils/work_order_status.dart';
 import '../../theme.dart';
 import 'package:intl/intl.dart';
 import 'cap_approval.dart';
@@ -12,8 +18,10 @@ import '../chat_screen.dart';
 
 class WorkOrderDetailScreen extends StatefulWidget {
   final Map<String, dynamic> job;
+  final bool focusMoney;
 
-  const WorkOrderDetailScreen({super.key, required this.job});
+  const WorkOrderDetailScreen(
+      {super.key, required this.job, this.focusMoney = false});
 
   @override
   State<WorkOrderDetailScreen> createState() => _WorkOrderDetailScreenState();
@@ -23,11 +31,22 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   Map<String, dynamic>? _review;
   bool _isReviewLoading = true;
   bool _isCancelling = false;
+  bool _uploadingReceipt = false;
+  int? _receiptDocumentId;
+  final _moneyKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     _fetchReview();
+    if (widget.focusMoney) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _moneyKey.currentContext != null) {
+          Scrollable.ensureVisible(_moneyKey.currentContext!,
+              duration: const Duration(milliseconds: 250));
+        }
+      });
+    }
   }
 
   Future<void> _fetchReview() async {
@@ -72,48 +91,6 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       return DateFormat('MMM d, yyyy • h:mm a').format(dt);
     } catch (e) {
       return dateTimeStr.toString();
-    }
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'requested':
-        return AppTheme.gray;
-      case 'scheduled':
-        return AppTheme.teal500;
-      case 'en_route':
-        return AppTheme.orange500;
-      case 'in_progress':
-        return AppTheme.orange500;
-      case 'quote_provided':
-        return AppTheme.orange500;
-      case 'completed':
-      case 'complete':
-        return AppTheme.success;
-      case 'cancelled':
-      case 'canceled':
-        return AppTheme.error;
-      default:
-        return AppTheme.navy700;
-    }
-  }
-
-  String _getStatusText(String status) {
-    switch (status.toLowerCase()) {
-      case 'en_route':
-        return 'En Route';
-      case 'in_progress':
-        return 'In Progress';
-      case 'quote_provided':
-        return 'Waiting on you';
-      case 'completed':
-        return 'Completed';
-      case 'cancelled':
-      case 'canceled':
-        return 'Cancelled';
-      default:
-        if (status.isEmpty) return 'Active';
-        return status[0].toUpperCase() + status.substring(1).toLowerCase();
     }
   }
 
@@ -204,6 +181,12 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   String _timeWindowText() {
+    final priority = _priorityText().toLowerCase();
+    final deadline = _readString(
+        widget.job['slaArrivalTarget'] ?? widget.job['sla_arrival_target']);
+    if ((priority == 'urgent' || priority == 'emergency') && deadline != null) {
+      return 'By ${_formatDateTime(deadline)}';
+    }
     final start = _readString(widget.job['scheduledStart']);
     final end = _readString(widget.job['scheduledEnd']);
     if (start == null) return 'TBD';
@@ -235,7 +218,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       isProcessing: _isCancelling,
       blockedMessage: 'Please wait while this booking is being cancelled.',
       child: Scaffold(
-        backgroundColor: AppTheme.pageAlt,
+        backgroundColor: AppTheme.pageBackground,
         body: Column(
           children: [
             _screenHeader('Work order'),
@@ -266,22 +249,30 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                     const SizedBox(height: 14),
                     Row(
                       children: [
-                        _statusChip(status, _statusDisplayColor(statusLower)),
-                        const SizedBox(width: 10),
-                        const _Dot(color: AppTheme.success),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Updated just now',
-                          style: TextStyle(
-                            color: AppTheme.gray,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+                        _statusChip(),
                       ],
                     ),
+                    if (ArrivalCheckState.pending(widget.job))
+                      Padding(
+                          padding: const EdgeInsets.only(top: 14),
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.help_outline),
+                            label: const Text('Did your pro arrive?'),
+                            onPressed: () async {
+                              if (await openArrivalCheck(context, widget.job) &&
+                                  mounted) Navigator.pop(context, true);
+                            },
+                          )),
+                    if (WorkOrderStatus.fromJob(widget.job).state ==
+                        WorkOrderState.noShowCustomer)
+                      const Padding(
+                          padding: EdgeInsets.only(top: 14),
+                          child: Text(
+                              'Your pro reported that they could not reach you at the booked time. This is private. Contact support if this is incorrect.')),
                     const SizedBox(height: 22),
-                    _sectionLabel('STATUS TIMELINE'),
+                    if (!WorkOrderStatus.fromJob(widget.job)
+                        .isTerminalWithoutProgress)
+                      _sectionLabel('STATUS TIMELINE'),
                     const SizedBox(height: 12),
                     _buildTimeline(statusLower, dateStr),
                     const SizedBox(height: 18),
@@ -302,10 +293,13 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                       note: _readString(widget.job['description']) ??
                           _readString(widget.job['note']) ??
                           _readString(widget.job['customerNote']) ??
-                          'AC isn\'t cooling properly',
+                          _readString(widget.job['serviceDescription']) ??
+                          'No additional description',
                     ),
                     const SizedBox(height: 14),
-                    _priceCard(_priceText(), displayPro),
+                    KeyedSubtree(
+                        key: _moneyKey,
+                        child: _priceCard(_priceText(), displayPro)),
                     const SizedBox(height: 18),
                     _detailActions(statusLower),
                   ],
@@ -353,31 +347,12 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     );
   }
 
-  Color _statusDisplayColor(String statusLower) {
-    if (statusLower.contains('en_route')) return AppTheme.teal500;
-    if (statusLower.contains('cancel')) return AppTheme.error;
-    if (statusLower.contains('complete')) return AppTheme.success;
-    if (statusLower.contains('quote')) return AppTheme.orange500;
-    return _getStatusColor(statusLower);
-  }
-
-  Widget _statusChip(String status, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color),
-      ),
-      child: Text(
-        _getStatusText(status).replaceAll('En Route', 'En route'),
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
+  Widget _statusChip() {
+    final resolved = WorkOrderStatus.fromJob(widget.job);
+    return Wrap(spacing: 6, runSpacing: 6, children: [
+      WorkOrderStatusChip(resolved),
+      if (resolved.waitingOnYou) const WaitingOnYouChip(),
+    ]);
   }
 
   Widget _sectionLabel(String text) {
@@ -393,30 +368,32 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   Widget _buildTimeline(String currentStatus, String dateStr) {
+    final resolved = WorkOrderStatus.fromJob(widget.job);
+    if (resolved.isTerminalWithoutProgress) return const SizedBox.shrink();
     final steps = <_TimelineStep>[
       _TimelineStep('Booked', _timelineBookedText(dateStr)),
-      const _TimelineStep('En route', 'Now · ETA 8:20 AM'),
-      const _TimelineStep('Arrived', null),
+      const _TimelineStep('En route', null),
       const _TimelineStep('In progress', null),
-      const _TimelineStep('Wrapping up', null),
       const _TimelineStep('Completed', null),
     ];
 
-    int currentIndex = 0;
-    if (currentStatus == 'en_route') currentIndex = 1;
-    if (currentStatus == 'arrived') currentIndex = 2;
-    if (currentStatus == 'in_progress') currentIndex = 3;
-    if (currentStatus == 'wrapping_up') currentIndex = 4;
-    if (currentStatus == 'completed' || currentStatus == 'complete') {
-      currentIndex = 5;
-    }
+    final currentIndex = resolved.progressionIndex;
 
     return Column(
       children: List.generate(steps.length, (index) {
         final step = steps[index];
-        final isDone = index < currentIndex;
+        final timeline = widget.job['timeline'];
+        final recorded = timeline is Map &&
+            timeline[const [
+                  'acceptedAt',
+                  'enRouteAt',
+                  'inProgressAt',
+                  'completedAt'
+                ][index]] !=
+                null;
+        final isDone = index < currentIndex && (index == 0 || recorded);
         final isActive = index == currentIndex;
-        final color = isDone || isActive ? AppTheme.teal500 : AppTheme.line;
+        final color = isDone || isActive ? AppTheme.blue : AppTheme.line;
 
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -429,7 +406,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                     width: isActive ? 20 : 17,
                     height: isActive ? 20 : 17,
                     decoration: BoxDecoration(
-                      color: isDone ? AppTheme.teal500 : AppTheme.pageAlt,
+                      color: isDone ? AppTheme.blue : AppTheme.pageBackground,
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: color,
@@ -445,9 +422,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                     Container(
                       width: 2,
                       height: 34,
-                      color: index < currentIndex
-                          ? AppTheme.teal500
-                          : AppTheme.line,
+                      color:
+                          index < currentIndex ? AppTheme.blue : AppTheme.line,
                     ),
                 ],
               ),
@@ -462,7 +438,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                       step.title,
                       style: TextStyle(
                         color: isActive
-                            ? AppTheme.teal500
+                            ? AppTheme.blue
                             : (index <= currentIndex
                                 ? AppTheme.ink
                                 : AppTheme.gray),
@@ -497,17 +473,16 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     final scheduled = _readString(widget.job['createdAt']) ??
         _readString(widget.job['created_at']);
     if (scheduled != null) return _formatDateTime(scheduled);
-    return dateStr == 'TBD' ? 'Today, 7:58 AM' : dateStr;
+    return dateStr == 'TBD' ? 'Not recorded' : dateStr;
   }
 
   Widget _proPanel(String proName) {
     final dynamic rating = widget.job['pro']?['verifiedRating'] ??
         widget.job['verifiedRating'] ??
-        widget.job['proRating'] ??
-        4.9;
+        widget.job['proRating'];
     final trade = _readString(widget.job['serviceCategory']) ??
         _readString(widget.job['trade']) ??
-        'HVAC';
+        'Service professional';
 
     return Row(
       children: [
@@ -541,21 +516,23 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Text(
-                    '$rating',
-                    style: const TextStyle(
-                      color: AppTheme.orange500,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
+                  if (rating != null) ...[
+                    Text(
+                      '$rating',
+                      style: const TextStyle(
+                        color: AppTheme.navy,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.star_rounded,
-                      color: AppTheme.orange500, size: 16),
-                  const SizedBox(width: 8),
-                  const Text('·',
-                      style: TextStyle(color: AppTheme.gray, fontSize: 14)),
-                  const SizedBox(width: 8),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.star_rounded,
+                        color: AppTheme.gold, size: 16),
+                    const SizedBox(width: 8),
+                    const Text('·',
+                        style: TextStyle(color: AppTheme.gray, fontSize: 14)),
+                    const SizedBox(width: 8),
+                  ],
                   Flexible(
                     child: Text(
                       trade,
@@ -645,22 +622,22 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   Widget _priceCard(String price, String proName) {
-    final displayPrice = price == 'Pending' ? '\$189' : price;
+    final displayPrice = price;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.orangeTint,
+        color: AppTheme.navyTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.orange500),
+        border: Border.all(color: AppTheme.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'UPFRONT PRICE',
+            'JOB MONEY',
             style: TextStyle(
-              color: AppTheme.orange500,
+              color: AppTheme.navy,
               fontSize: 12,
               fontWeight: FontWeight.w900,
               letterSpacing: 1.1,
@@ -670,12 +647,37 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           Text(
             displayPrice,
             style: const TextStyle(
-              color: AppTheme.orange500,
+              color: AppTheme.navy,
               fontSize: 30,
               height: 1,
               fontWeight: FontWeight.w900,
             ),
           ),
+          const SizedBox(height: 14),
+          if (_amount(widget.job['creditsApplied']) != null)
+            Text(
+                'Credits applied: \$${_amount(widget.job['creditsApplied'])!.toStringAsFixed(2)}'),
+          if (_amount(widget.job['paidAmount']) != null)
+            Text(
+                'Customer-paid portion: \$${_amount(widget.job['paidAmount'])!.toStringAsFixed(2)}'),
+          if (_amount(widget.job['paidAmount']) == 0)
+            const Text('No customer-paid portion. This job earns no credits.'),
+          if (WorkOrderStatus.fromJob(widget.job).state ==
+                  WorkOrderState.completed &&
+              _amount(widget.job['paidAmount']) != 0)
+            if (_receiptDocumentId != null ||
+                widget.job['receiptDocumentId'] != null ||
+                _readString(widget.job['paidReceiptUrl']) != null)
+              const Text('Paid receipt uploaded.')
+            else ...[
+              const Text('Attach your paid receipt to keep it with this job.'),
+              OutlinedButton.icon(
+                  onPressed: _uploadingReceipt ? null : _uploadReceipt,
+                  icon: const Icon(Icons.upload_file),
+                  label: Text(_uploadingReceipt
+                      ? 'Uploading…'
+                      : 'Upload paid receipt')),
+            ],
           const SizedBox(height: 14),
           Text(
             'You pay $proName directly · \$0 markup',
@@ -691,15 +693,15 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   Widget _detailActions(String currentStatus) {
-    final isCapPending = currentStatus == 'quote_provided' ||
-        currentStatus.contains('quote') ||
-        currentStatus.contains('review');
+    final isCapPending = currentStatus == 'quote_sent' ||
+        currentStatus == 'quote_provided' ||
+        currentStatus == 'cap_review';
     final isCompleted =
         currentStatus == 'completed' || currentStatus == 'complete';
 
     if (isCapPending) {
       return _fullButton(
-        'Review the cap',
+        'Review the quote',
         background: AppTheme.orange500,
         foreground: Colors.white,
         onPressed: () async {
@@ -734,6 +736,20 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       );
     }
 
+    if (WorkOrderStatus.fromJob(widget.job).state ==
+        WorkOrderState.noShowCustomer) {
+      return _fullButton('Tell us what happened',
+          background: AppTheme.navy,
+          foreground: Colors.white, onPressed: () async {
+        final sent = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(
+                builder: (_) => NoShowReplyScreen(job: widget.job)));
+        if (sent == true && mounted) Navigator.pop(context, true);
+      });
+    }
+    if (WorkOrderStatus.fromJob(widget.job).isTerminalWithoutProgress)
+      return const SizedBox.shrink();
     return Row(
       children: [
         Expanded(
@@ -772,39 +788,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       );
     }
 
-    if (_review != null) {
-      return Semantics(
-        label: 'Review submitted for this service',
-        child: Container(
-          height: 42,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: AppTheme.greenTint,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppTheme.success.withOpacity(0.35)),
-          ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.check_circle_rounded,
-                  size: 18, color: AppTheme.success),
-              SizedBox(width: 7),
-              Flexible(
-                child: Text(
-                  'Review submitted',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppTheme.success,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    if (_review != null)
+      return _outlineButton('Edit your review', onPressed: _openReviewPage);
 
     return _outlineButton('Leave review', onPressed: _openReviewPage);
   }
@@ -824,15 +809,37 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           child: _outlineButton(
             'Call',
             icon: Icons.phone_outlined,
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Calling pro...')),
-              );
-            },
+            onPressed: _callPro,
           ),
         ),
       ],
     );
+  }
+
+  Future<void> _callPro() async {
+    try {
+      final pro = widget.job['pro'] is Map
+          ? Map<String, dynamic>.from(widget.job['pro'])
+          : <String, dynamic>{};
+      var phone = _readString(
+          pro['phone'] ?? pro['business_phone'] ?? widget.job['proPhone']);
+      final slug = _readString(pro['slug']);
+      if (phone == null && slug != null) {
+        final response =
+            await HomeownerService.instance.getContractorProfile(slug);
+        final profile =
+            response['profile'] is Map ? response['profile'] as Map : response;
+        phone = _readString(profile['phone'] ?? profile['business_phone']);
+      }
+      if (phone == null)
+        throw Exception(
+            'This pro has not shared a phone number. You can message them instead.');
+      final dial = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+      if (dial.isEmpty || !await launchUrl(Uri(scheme: 'tel', path: dial)))
+        throw Exception('Calling is not available on this device.');
+    } catch (e) {
+      if (mounted) AppNotification.showError(context, e);
+    }
   }
 
   Future<void> _openMessage() async {
@@ -891,8 +898,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
         builder: (_) => ChatScreen(
           contractorId: messagingUserId!,
           contractorName: _proName().isEmpty ? 'Contractor' : _proName(),
-          workOrderTitle: _serviceName(),
-          workOrderStatus: _readString(widget.job['status']),
+          jobReference:
+              '${_serviceName()} · ${widget.job['woNumber'] ?? _workOrderId()}',
         ),
       ),
     );
@@ -942,7 +949,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   Future<void> _openReviewPage() async {
-    if (_isReviewLoading || _review != null) return;
+    if (_isReviewLoading) return;
     final woId = int.tryParse(widget.job['id']?.toString() ??
             widget.job['workOrderId']?.toString() ??
             '0') ??
@@ -953,7 +960,11 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
         builder: (_) => LeaveReviewScreen(
           job: widget.job,
           jobId: woId,
-          initialRating: (_review?['rating'] as num?)?.toDouble() ?? 5,
+          initialRating: (_review?['rating'] as num?)?.toDouble() ?? 0,
+          hasExistingReview: _review != null,
+          initialTags: (_review?['tags'] as List? ?? const [])
+              .whereType<String>()
+              .toList(),
           initialReviewText: _review?['reviewText']?.toString() ??
               _review?['comment']?.toString() ??
               '',
@@ -962,7 +973,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     );
     if (result != null && mounted) {
       setState(() {
-        _review = result;
+        _review = result['deleted'] == true ? null : result;
       });
     } else if (mounted) {
       final cached = HomeownerService.instance.cachedReviewForWorkOrder(woId);
@@ -1013,48 +1024,78 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     Navigator.pop(context, true);
   }
 
+  double? _amount(dynamic value) {
+    final number = num.tryParse('$value')?.toDouble();
+    return number != null && number.isFinite && number >= 0 ? number : null;
+  }
+
+  Future<void> _uploadReceipt() async {
+    if (_uploadingReceipt) return;
+    setState(() => _uploadingReceipt = true);
+    try {
+      final file = await DocumentUpload.pick();
+      if (file == null) return;
+      final document = await HomeownerService.instance.uploadWorkOrderReceipt(
+          workOrderId: int.parse(_workOrderId()), file: file);
+      if (mounted)
+        setState(() => _receiptDocumentId = int.parse('${document['id']}'));
+    } catch (e) {
+      if (mounted) AppNotification.showError(context, e);
+    } finally {
+      if (mounted) setState(() => _uploadingReceipt = false);
+    }
+  }
+
   void _showReceiptModal(BuildContext context) {
+    final invoice = _readString(widget.job['invoiceUrl']);
+    final receipt = _readString(widget.job['paidReceiptUrl']);
+    final documentId = _receiptDocumentId ??
+        int.tryParse('${widget.job['receiptDocumentId']}');
     showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.receipt_long, size: 48, color: AppTheme.teal500),
-            const SizedBox(height: 16),
-            const Text('Receipt',
-                style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.navy700)),
-            const SizedBox(height: 12),
-            Text(
-              'Total: \$${((widget.job['invoiceAmount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}'
-              '${widget.job['invoiceUrl'] != null ? '\nReceipt available from provider' : ''}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppTheme.gray),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Downloading receipt PDF...')));
-              },
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.orange500,
-                  minimumSize: const Size(double.infinity, 48)),
-              child: const Text('Download Receipt',
-                  style: TextStyle(
-                      color: AppTheme.navy700, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
-    );
+        context: context,
+        builder: (context) => SafeArea(
+                child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text('Job documents',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 16),
+                if (invoice == null && receipt == null && documentId == null)
+                  const Text('No invoice or paid receipt has been uploaded.'),
+                if (invoice != null)
+                  TextButton(
+                      onPressed: () => _openReceiptUrl(invoice),
+                      child: const Text('Open pro invoice')),
+                if (receipt != null || documentId != null)
+                  TextButton(
+                      onPressed: () async {
+                        try {
+                          final url = documentId == null
+                              ? receipt!
+                              : await HomeownerService.instance
+                                  .homeDocumentDownloadUrl(documentId);
+                          await _openReceiptUrl(url);
+                        } catch (e) {
+                          if (mounted)
+                            AppNotification.showError(this.context, e);
+                        }
+                      },
+                      child: const Text('Open paid receipt')),
+              ]),
+            )));
+  }
+
+  Future<void> _openReceiptUrl(String value) async {
+    try {
+      final uri = Uri.tryParse(value);
+      if (uri == null ||
+          uri.scheme != 'https' ||
+          !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw Exception('This document could not be opened.');
+      }
+    } catch (e) {
+      if (mounted) AppNotification.showError(context, e);
+    }
   }
 }
 
@@ -1063,19 +1104,4 @@ class _TimelineStep {
   final String? caption;
 
   const _TimelineStep(this.title, this.caption);
-}
-
-class _Dot extends StatelessWidget {
-  final Color color;
-
-  const _Dot({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 7,
-      height: 7,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
 }

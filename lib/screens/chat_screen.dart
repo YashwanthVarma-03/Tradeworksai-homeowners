@@ -9,15 +9,15 @@ import '../widgets/offline_state.dart';
 class ChatScreen extends StatefulWidget {
   final String contractorId;
   final String contractorName;
-  final String? workOrderTitle;
-  final String? workOrderStatus;
+  final String? jobReference;
+  final Channel? existingChannel;
 
   const ChatScreen({
     super.key,
     required this.contractorId,
     required this.contractorName,
-    this.workOrderTitle,
-    this.workOrderStatus,
+    this.jobReference,
+    this.existingChannel,
   });
 
   @override
@@ -29,20 +29,23 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isCreating = true;
   bool _isNetworkIssue = false;
   String? _error;
+  String? _pendingJobReference;
 
   @override
   void initState() {
     super.initState();
+    _pendingJobReference = widget.jobReference;
     _initChannel();
   }
 
   Future<void> _initChannel({bool forceReconnect = false}) async {
     try {
-      final channel = await StreamService.instance.openDirectMessageChannel(
-        otherUserId: widget.contractorId,
-        otherUserName: widget.contractorName,
-        forceReconnect: forceReconnect,
-      );
+      final channel = widget.existingChannel ??
+          await StreamService.instance.openDirectMessageChannel(
+            otherUserId: widget.contractorId,
+            otherUserName: widget.contractorName,
+            forceReconnect: forceReconnect,
+          );
 
       if (!mounted) return;
       setState(() {
@@ -66,7 +69,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return Scaffold(
         appBar: _buildAppBar(),
         body: const Center(
-          child: CircularProgressIndicator(color: AppTheme.orange500),
+          child: CircularProgressIndicator(color: AppTheme.navy),
         ),
       );
     }
@@ -108,9 +111,43 @@ class _ChatScreenState extends State<ChatScreen> {
           appBar: _buildAppBar(),
           body: Column(
             children: [
-              if (widget.workOrderTitle != null) _buildContextBar(),
-              const Expanded(child: StreamMessageListView()),
-              const StreamMessageInput(),
+              Expanded(child: StreamMessageListView(
+                messageBuilder: (context, details, messages, defaultWidget) {
+                  final reference = details.message.extraData['jobReference'];
+                  return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (reference is String && reference.trim().isNotEmpty)
+                          Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 4),
+                              child: Text(reference,
+                                  style: const TextStyle(
+                                      color: AppTheme.textSecondary,
+                                      fontSize: 12))),
+                        defaultWidget.copyWith(showSendingIndicator: false),
+                      ]);
+                },
+              )),
+              if (_pendingJobReference != null)
+                Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: InputChip(
+                            label: Text(_pendingJobReference!),
+                            onDeleted: () =>
+                                setState(() => _pendingJobReference = null)))),
+              StreamMessageInput(
+                preMessageSending: (message) => message.copyWith(extraData: {
+                  ...message.extraData,
+                  if (_pendingJobReference != null)
+                    'jobReference': _pendingJobReference,
+                }),
+                onMessageSent: (_) {
+                  if (mounted) setState(() => _pendingJobReference = null);
+                },
+              ),
             ],
           ),
         ),
@@ -150,43 +187,6 @@ class _ChatScreenState extends State<ChatScreen> {
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(0.5),
         child: Container(color: AppTheme.line, height: 0.5),
-      ),
-    );
-  }
-
-  Widget _buildContextBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      decoration: const BoxDecoration(
-        color: AppTheme.navyTint,
-        border: Border(bottom: BorderSide(color: AppTheme.line)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.assignment_outlined,
-              size: 16, color: AppTheme.navy700),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.workOrderTitle!,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12.5,
-                    color: AppTheme.navy700,
-                  ),
-                ),
-                if (widget.workOrderStatus != null)
-                  Text(
-                    'Status: ${widget.workOrderStatus}',
-                    style: const TextStyle(color: AppTheme.gray, fontSize: 11),
-                  ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -1,6 +1,8 @@
+import '../widgets/review_annotations.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../utils/work_order_status.dart';
 import '../theme.dart';
 import '../services/homeowner_service.dart';
 import '../widgets/app_notification.dart';
@@ -418,7 +420,19 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
 
   void _leaveReviewDialog(Map<String, dynamic> job) async {
     final jobId = _resolveWorkOrderId(job);
-    final localReview = _localReviews[jobId];
+    Map<String, dynamic>? localReview = _localReviews[jobId];
+    if (_jobHasReview(job)) {
+      try {
+        localReview = await HomeownerService.instance.getReview(jobId);
+        if (localReview == null || localReview['detailsAvailable'] == false)
+          throw Exception(
+              'Your review could not be loaded. Please try again before editing.');
+      } catch (e) {
+        if (mounted) AppNotification.showError(context, e);
+        return;
+      }
+      if (!mounted) return;
+    }
     // Don't use placeholder text as actual review text
     final localReviewText = localReview?['reviewText']?.toString() ?? '';
     final isPlaceholder = localReviewText == 'Already reviewed';
@@ -440,10 +454,10 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             job['homeownerReview']?['rating'] ??
             job['homeowner_review']?['rating'] ??
             job['reviews']?['rating'] ??
-            5);
+            0);
     final initialRating = existingRating is num
         ? existingRating.toDouble()
-        : double.tryParse(existingRating.toString()) ?? 5.0;
+        : double.tryParse(existingRating.toString()) ?? 0.0;
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
@@ -451,16 +465,33 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           job: job,
           jobId: jobId,
           initialRating: initialRating,
+          hasExistingReview: _jobHasReview(job),
+          initialTags: (localReview?['tags'] as List? ?? const [])
+              .whereType<String>()
+              .toList(),
           initialReviewText: isPlaceholder ? '' : existingReviewText.toString(),
         ),
       ),
     );
 
     if (result == null || !mounted) return;
-    final selectedRating = (result['rating'] as num?)?.toDouble() ?? 5;
+    if (result['deleted'] == true) {
+      _localReviews.remove(jobId);
+      job.remove('review');
+      job.remove('reviews');
+      job.remove('homeownerReview');
+      job.remove('homeowner_review');
+      job.remove('rating');
+      job.remove('reviewText');
+      job['reviewed'] = false;
+      await _fetchJobs(showLoading: false, forceRefresh: true);
+      return;
+    }
+    final selectedRating = (result['rating'] as num?)?.toDouble() ?? 0;
     final reviewText = result['reviewText']?.toString() ?? '';
     if (jobId != 0) {
       _localReviews[jobId] = {
+        ...result,
         'rating': selectedRating,
         'reviewText': reviewText,
       };
@@ -494,7 +525,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
               ),
               child: RefreshIndicator(
                 onRefresh: () => _fetchJobs(showLoading: false),
-                color: AppTheme.orange500,
+                color: AppTheme.navy,
                 child: _buildJobsList(),
               ),
             ),
@@ -602,7 +633,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   height: 20,
                   alignment: Alignment.center,
                   decoration: const BoxDecoration(
-                    color: AppTheme.orange500,
+                    color: AppTheme.navy,
                     shape: BoxShape.circle,
                   ),
                   child: Text(
@@ -631,7 +662,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           SliverFillRemaining(
             hasScrollBody: false,
             child: Center(
-              child: CircularProgressIndicator(color: AppTheme.orange500),
+              child: CircularProgressIndicator(color: AppTheme.navy),
             ),
           ),
         ],
@@ -772,9 +803,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     final statusLower = status.toLowerCase();
     final isAlert =
         statusLower.contains('quote') || statusLower.contains('review');
-    final isLive = statusLower == 'en_route' ||
-        statusLower == 'in_progress' ||
-        statusLower == 'arrived';
+    final resolved = WorkOrderStatus.fromJob(job);
+    final isLive = resolved.state == WorkOrderState.enRoute ||
+        resolved.state == WorkOrderState.inProgress;
     final isCancelled = statusLower == 'cancelled' ||
         statusLower == 'canceled' ||
         statusLower == 'cancel';
@@ -810,7 +841,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                 bottom: 0,
                 child: SizedBox(
                   width: 4,
-                  child: ColoredBox(color: AppTheme.orange500),
+                  child: ColoredBox(color: AppTheme.blue),
                 ),
               ),
             Padding(
@@ -835,7 +866,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      _buildStatusBadge(status),
+                      _buildStatusBadge(job),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -854,12 +885,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                     icon: Icons.location_on_outlined,
                     label: addressStr,
                   ),
-                  if (isLive) ...[
-                    const SizedBox(height: 12),
-                    const Divider(height: 1, color: AppTheme.cardBorder),
-                    const SizedBox(height: 12),
-                    _buildProgressTracker(statusLower),
-                  ],
                   const SizedBox(height: 12),
                   if (isAlert)
                     _buildPrimaryAction(
@@ -952,207 +977,34 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildStatusBadge(String status) {
-    final label = _getStatusText(status);
-    final lower = status.toLowerCase();
-    final isCapPending = lower.contains('quote') || lower.contains('review');
-    final isCompleted = lower == 'completed' || lower == 'complete';
-    final isCancelled = lower == 'cancelled' ||
-        lower == 'canceled' ||
-        lower == 'cancel' ||
-        lower == 'declined';
-    final color = isCapPending
-        ? AppTheme.orange500
-        : isCompleted
-            ? AppTheme.success
-            : isCancelled
-                ? AppTheme.red
-                : AppTheme.teal500;
-    final fill = isCapPending
-        ? AppTheme.orangeTint
-        : isCompleted
-            ? AppTheme.greenTint
-            : isCancelled
-                ? const Color(0xFFFFF1F2)
-                : AppTheme.tealTint;
-    final icon = isCancelled
-        ? Icons.close_rounded
-        : lower == 'en_route'
-            ? Icons.local_shipping_outlined
-            : lower == 'scheduled' || lower == 'booked'
-                ? Icons.calendar_today_outlined
-                : Icons.insert_drive_file_outlined;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 12),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              height: 1,
-            ),
-          ),
-        ],
-      ),
-    );
+  Widget _buildStatusBadge(Map<String, dynamic> job) {
+    final resolved = WorkOrderStatus.fromJob(job);
+    return Wrap(spacing: 6, runSpacing: 6, children: [
+      WorkOrderStatusChip(resolved),
+      if (resolved.waitingOnYou) const WaitingOnYouChip(),
+    ]);
   }
 
-  Widget _buildInfoLine({
-    required IconData icon,
-    required String label,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
+  Widget _buildInfoLine({required IconData icon, required String label}) =>
+      Row(children: [
         Icon(icon, color: AppTheme.textSecondary, size: 14),
         const SizedBox(width: 6),
         Expanded(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 13,
-              height: 1,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+            child: Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 13))),
+      ]);
 
-  Widget _buildProgressTracker(String statusLower) {
-    final currentStep = statusLower == 'en_route'
-        ? 2
-        : statusLower == 'arrived'
-            ? 4
-            : 1;
-
-    return Column(
-      children: [
-        Row(
-          children: List.generate(9, (index) {
-            if (index.isOdd) {
-              final lineStep = (index / 2).floor();
-              return Expanded(
-                child: Container(
-                  height: 3,
-                  color: lineStep < currentStep
-                      ? AppTheme.teal500
-                      : AppTheme.cardBorder,
-                ),
-              );
-            }
-            final step = index ~/ 2;
-            final active = step == currentStep;
-            final done = step <= currentStep;
-            return Container(
-              width: active ? 14 : 12,
-              height: active ? 14 : 12,
-              decoration: BoxDecoration(
-                color: active
-                    ? Colors.white
-                    : done
-                        ? AppTheme.teal500
-                        : AppTheme.cardBorder,
-                shape: BoxShape.circle,
-                border: active
-                    ? Border.all(color: AppTheme.teal500, width: 3)
-                    : null,
-              ),
-            );
-          }),
-        ),
-        const SizedBox(height: 12),
-        const Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Booked',
-              style: TextStyle(
-                color: AppTheme.teal500,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            Text(
-              'En route',
-              style: TextStyle(
-                color: AppTheme.teal500,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            Text(
-              'Arrived',
-              style: TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLiveActions(Map<String, dynamic> job) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 88,
-          child: _buildOutlineAction(
-            label: 'Track',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => WorkOrderDetailScreen(job: job),
-                ),
-              ).then((_) => _fetchJobs(showLoading: false));
-            },
-          ),
-        ),
-        const Spacer(),
-        Container(
-          width: 8,
-          height: 8,
-          decoration: const BoxDecoration(
-            color: AppTheme.success,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 8),
-        const Flexible(
-          child: Text(
-            'Live · updated just now',
-            style: TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 12,
-              height: 1,
-              fontWeight: FontWeight.w500,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
+  Widget _buildLiveActions(Map<String, dynamic> job) => _buildOutlineAction(
+        label: 'View booking',
+        onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => WorkOrderDetailScreen(job: job),
+            )).then((_) => _fetchJobs(showLoading: false)),
+      );
 
   Widget _buildScheduledActions(Map<String, dynamic> job) {
     return Row(
@@ -1269,7 +1121,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
               height: 28,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: AppTheme.orange500,
+                color: AppTheme.navy,
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white, width: 3),
               ),
@@ -1329,7 +1181,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(width: 12),
-              _buildStatusBadge(status),
+              _buildStatusBadge(job),
             ],
           ),
           const SizedBox(height: 12),
@@ -1393,7 +1245,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                             ? Icons.star_rounded
                             : Icons.star_border_rounded,
                         color: index < reviewRating
-                            ? AppTheme.orange500
+                            ? AppTheme.gold
                             : AppTheme.textTertiary,
                         size: 18,
                       ),
@@ -1427,6 +1279,15 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
               ),
             ],
           ),
+          ReviewAnnotations(
+              businessName: _jobProName(job),
+              review: _localReviews[_resolveWorkOrderId(job)] ??
+                  HomeownerService.instance
+                      .cachedReviewForWorkOrder(_resolveWorkOrderId(job)) ??
+                  const {}),
+          TextButton(
+              onPressed: () => _leaveReviewDialog(job),
+              child: const Text('Edit your review')),
           if (reviewText.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -1536,7 +1397,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(
-        child: CircularProgressIndicator(color: AppTheme.orange500),
+        child: CircularProgressIndicator(color: AppTheme.navy),
       ),
     );
 
@@ -1703,20 +1564,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       }
     }
     return null;
-  }
-
-  String _getStatusText(String status) {
-    status = status.toLowerCase();
-    if (status.contains('quote') || status.contains('review')) {
-      return 'Waiting on you';
-    }
-    if (status == 'en_route') return 'En route';
-    if (status == 'in_progress') return 'In progress';
-    if (status == 'arrived') return 'Arrived';
-    if (status == 'completed' || status == 'complete') return 'Completed';
-    if (status == 'cancelled' || status == 'cancel') return 'Cancelled';
-    if (status == 'scheduled' || status == 'booked') return 'Booked';
-    return status.toUpperCase();
   }
 }
 

@@ -179,11 +179,11 @@ class _NotificationSettingsScreenState
         appBar: _appBar('Notifications'),
         body: _isLoading
             ? const Center(
-                child: CircularProgressIndicator(color: AppTheme.orange500),
+                child: CircularProgressIndicator(color: AppTheme.navy),
               )
             : RefreshIndicator(
                 onRefresh: _loadSettings,
-                color: AppTheme.orange500,
+                color: AppTheme.navy,
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
@@ -191,7 +191,7 @@ class _NotificationSettingsScreenState
                     _sectionLabel('PUSH NOTIFICATIONS'),
                     _toggleTile(
                       title: 'Work-order status updates',
-                      subtitle: 'Booked, en route, arrived, completed',
+                      subtitle: 'Booked, en route, in progress, completed',
                       value: _pushStatus,
                       onChanged: _isSaving
                           ? null
@@ -208,7 +208,7 @@ class _NotificationSettingsScreenState
                     ),
                     _toggleTile(
                       title: 'Messages from your pro',
-                      subtitle: 'New messages on a work order',
+                      subtitle: 'New messages from your pros',
                       value: _pushMessages,
                       onChanged: _isSaving
                           ? null
@@ -225,7 +225,7 @@ class _NotificationSettingsScreenState
                     ),
                     _toggleTile(
                       title: 'Service credits & rewards',
-                      subtitle: 'When credits are earned',
+                      subtitle: 'When credits are ready, and before they expire',
                       value: _pushCredits,
                       onChanged: _isSaving
                           ? null
@@ -391,7 +391,7 @@ class _NotificationSettingsScreenState
           Switch(
             value: value,
             activeColor: Colors.white,
-            activeTrackColor: AppTheme.orange500,
+            activeTrackColor: AppTheme.navy,
             inactiveThumbColor: Colors.white,
             inactiveTrackColor: AppTheme.cardBorder,
             onChanged: onChanged,

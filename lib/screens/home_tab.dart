@@ -1,9 +1,9 @@
+import '../utils/arrival_check_state.dart';
+import 'work_orders/arrival_check.dart';
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/browse_search_history.dart';
 import '../services/homeowner_service.dart';
@@ -67,9 +67,9 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     'Plumbing': AppTheme.blueTint,
     'Electrical': AppTheme.amberTint,
     'Cleaning': AppTheme.greenTint,
-    'Roofing': Color(0xFFFFEBEE),
+    'Roofing': AppTheme.categoryRoofing,
     'Lawn': AppTheme.greenTint,
-    'Handyman': Color(0xFFF3E5F5),
+    'Handyman': AppTheme.categoryHandyman,
   };
 
   static const Color _pageBackground = AppTheme.pageBackground;
@@ -91,7 +91,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   String? _manualZipOverride;
   String? _manualLocationName;
   Map<String, dynamic> _profile = const {};
-  Map<String, dynamic> _localHomeDetails = const {};
+  Map<String, dynamic> _serverHomeDetails = const {};
   List<dynamic> _addresses = const [];
   List<dynamic> _activeJobs = const [];
   List<dynamic> _upcomingJobs = const [];
@@ -180,13 +180,13 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     final results = await Future.wait([
       HomeownerService.instance.loadCachedWorkOrders(),
       HomeownerService.instance.loadCachedProfile(),
-      _loadLocalHomeDetails(),
+      _loadServerHomeDetails(),
     ]);
     if (!mounted) return;
 
     final woData = results[0] as Map<String, dynamic>?;
     final profileData = results[1] as Map<String, dynamic>?;
-    final localHomeDetails = results[2] as Map<String, dynamic>;
+    final serverHomeDetails = results[2] as Map<String, dynamic>;
     if (woData != null || profileData != null) {
       final tabs = woData?['tabs'];
       final profile = profileData?['profile'];
@@ -199,7 +199,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             : profile is Map
                 ? Map<String, dynamic>.from(profile)
                 : const {};
-        _localHomeDetails = localHomeDetails;
+        _serverHomeDetails = serverHomeDetails;
         _addresses = List<dynamic>.from(addresses);
         if (tabs is Map) {
           _activeJobs = List<dynamic>.from(tabs['active'] ?? const []);
@@ -241,12 +241,12 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       final results = await Future.wait([
         HomeownerService.instance.fetchWorkOrders(forceRefresh: forceRefresh),
         HomeownerService.instance.fetchProfile(forceRefresh: forceRefresh),
-        _loadLocalHomeDetails(),
+        _loadServerHomeDetails(),
       ]);
 
       final woData = results[0] as Map<String, dynamic>;
       final profileData = results[1] as Map<String, dynamic>;
-      final localHomeDetails = results[2] as Map<String, dynamic>;
+      final serverHomeDetails = results[2] as Map<String, dynamic>;
       final tabs = woData['tabs'];
       final quoteSourceJobs = _workOrderCandidatesFrom(woData);
       final profile = profileData['profile'];
@@ -261,7 +261,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             : profile is Map
                 ? Map<String, dynamic>.from(profile)
                 : const {};
-        _localHomeDetails = localHomeDetails;
+        _serverHomeDetails = serverHomeDetails;
         _addresses = List<dynamic>.from(addresses);
         if (tabs is Map) {
           _activeJobs = List<dynamic>.from(tabs['active'] ?? const []);
@@ -387,36 +387,36 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     return digits.length == 5 ? digits : null;
   }
 
-  Future<Map<String, dynamic>> _loadLocalHomeDetails() async {
-    final defaultAddress = _defaultAddress;
-    final addressId = defaultAddress?['id']?.toString() ?? '';
-    if (addressId.isEmpty) {
-      return const {};
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getString('home_profile_$addressId');
-    if (stored == null || stored.isEmpty) {
-      return const {};
-    }
-
+  Future<Map<String, dynamic>> _loadServerHomeDetails() async {
     try {
-      final decoded = jsonDecode(stored);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
+      final response = await HomeownerService.instance.fetchHomeProfiles();
+      final addresses =
+          (response['addresses'] as List? ?? []).whereType<Map>().toList();
+      final defaults = addresses
+          .where((a) => a['isDefault'] == true || a['is_default'] == true);
+      final addressId = _defaultAddress?['id']?.toString() ??
+          (defaults.isNotEmpty
+                  ? defaults.first['id']
+                  : addresses.isNotEmpty
+                      ? addresses.first['id']
+                      : null)
+              ?.toString();
+      if (addressId == null) return const {};
+      for (final profile
+          in (response['homeProfiles'] as List? ?? const []).whereType<Map>()) {
+        if ('${profile['addressId']}' == addressId)
+          return Map<String, dynamic>.from(profile);
       }
-      if (decoded is Map) {
-        return Map<String, dynamic>.from(decoded);
-      }
-    } catch (_) {}
-
+    } catch (_) {
+      // An unavailable profile does not prevent loading bookings or Home.
+    }
     return const {};
   }
 
   bool get _hasBackendHomeDetails {
     return _containsHomeDetails(_profile) ||
         _containsHomeDetails(_defaultAddress) ||
-        _containsHomeDetails(_localHomeDetails);
+        _containsHomeDetails(_serverHomeDetails);
   }
 
   bool _containsHomeDetails(dynamic node) {
@@ -443,6 +443,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       }
 
       for (final key in const [
+        'propertyDetails',
         'homeProfile',
         'home_profile',
         'propertyProfile',
@@ -807,19 +808,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                         size: 21,
                       ),
                     ),
-                    Positioned(
-                      right: 9,
-                      top: 9,
-                      child: Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: AppTheme.orange500,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppTheme.navy700, width: 1),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
             ],
@@ -956,7 +944,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
               child: Container(
                 decoration: BoxDecoration(
                   color: isAll
-                      ? AppTheme.orange500
+                      ? AppTheme.navy
                       : _categoryBackgrounds[label] ?? AppTheme.navyTint,
                   borderRadius: BorderRadius.circular(12),
                   border: isAll ? null : Border.all(color: _lineSoft),
@@ -992,82 +980,25 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   }
 
   Widget _buildForYourHomeCard() {
-    if (!_hasBackendHomeDetails) {
-      return _buildTailoredSuggestionsCard();
-    }
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.cardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Suggested for you',
-            style: TextStyle(
-              color: _inkStrong,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              height: 1.05,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Your AC is about 12 years old. Book a pre-summer tune-up to avoid a mid-July breakdown.',
-            style: TextStyle(
-              color: _inkStrong,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              height: 1.43,
-            ),
-          ),
-          const SizedBox(height: 10),
-          RichText(
-            text: const TextSpan(
-              style: TextStyle(
-                color: _mutedText,
-                fontSize: 11.5,
-                height: 1.35,
-              ),
+    if (!_hasBackendHomeDetails) return _buildTailoredSuggestionsCard();
+    return Card(
+        child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextSpan(text: 'Based on the install date on your AC · '),
-                TextSpan(
-                  text: 'Not right? Update',
-                  style: TextStyle(
-                    color: AppTheme.teal500,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                const Text('Your home profile',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 12),
+                const Text(
+                    'Keep your property details, systems and documents together.'),
+                const SizedBox(height: 16),
+                OutlinedButton(
+                    onPressed: widget.onManageHomeTap,
+                    child: const Text('View home profile')),
               ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton(
-            onPressed: () => widget.onCategorySelected('HVAC'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.navy700,
-              backgroundColor: Colors.white,
-              side: const BorderSide(color: AppTheme.navy700, width: 1.25),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-            ),
-            child: const Text(
-              'Book a tune-up',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+            )));
   }
 
   Widget _buildGuestSignupSection() {
@@ -1089,7 +1020,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.orange500),
+            border: Border.all(color: AppTheme.cardBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1097,7 +1028,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
               const Text(
                 'CREATE YOUR ACCOUNT',
                 style: TextStyle(
-                  color: AppTheme.orange500,
+                  color: AppTheme.navy,
                   fontSize: 11,
                   letterSpacing: .5,
                   fontWeight: FontWeight.w900,
@@ -1157,7 +1088,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'GET TAILORED SUGGESTIONS',
+            'YOUR HOME PROFILE',
             style: TextStyle(
               color: eyebrowColor,
               fontSize: 11,
@@ -1177,7 +1108,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 10),
           const Text(
-            "Add your systems and their install dates, and we'll flag maintenance before it becomes a breakdown.",
+            "Keep a record of your systems, installation dates and documents for booked service visits.",
             style: TextStyle(
               color: bodyColor,
               fontSize: 13.5,
@@ -1246,8 +1177,8 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
           decoration: const BoxDecoration(
             border: Border(
-              top: BorderSide(color: AppTheme.orange500),
-              bottom: BorderSide(color: AppTheme.orange500),
+              top: BorderSide(color: AppTheme.amber),
+              bottom: BorderSide(color: AppTheme.amber),
             ),
           ),
           child: Row(
@@ -1256,7 +1187,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 width: 42,
                 height: 42,
                 decoration: const BoxDecoration(
-                  color: AppTheme.orange500,
+                  color: AppTheme.amber,
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -1275,7 +1206,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: AppTheme.orange500,
+                        color: AppTheme.amber,
                         fontSize: 12,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0.6,
@@ -1339,7 +1270,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: const [
-                CircularProgressIndicator(color: AppTheme.orange500),
+                CircularProgressIndicator(color: AppTheme.navy),
                 SizedBox(height: 12),
                 Text(
                   'Loading your home',
@@ -1385,13 +1316,35 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       child: RefreshIndicator(
         onRefresh:
             widget.isGuest ? _loadSharedLocationOverride : _fetchHomeData,
-        color: AppTheme.orange500,
+        color: AppTheme.navy,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.only(bottom: 120),
           children: [
             _buildHomeHero(),
+            if (!widget.isGuest)
+              for (final raw in _quoteSourceJobs.whereType<Map>())
+                if (ArrivalCheckState.pending(Map<String, dynamic>.from(raw)))
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                    child: Card(
+                        child: ListTile(
+                      leading: const Icon(Icons.help_outline,
+                          color: AppTheme.amber),
+                      title: const Text('Did your pro arrive?'),
+                      subtitle: Text(
+                          '${raw['serviceCategory'] ?? 'Booking'} · Answer when you are ready'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () async {
+                        if (await openArrivalCheck(
+                                context, Map<String, dynamic>.from(raw)) &&
+                            mounted) {
+                          await _fetchHomeData();
+                        }
+                      },
+                    )),
+                  ),
             if (!widget.isGuest && quoteReadyJob != null) ...[
               const SizedBox(height: 14),
               _buildCapPendingStrip(quoteReadyJob, quoteReadyJobs.length),

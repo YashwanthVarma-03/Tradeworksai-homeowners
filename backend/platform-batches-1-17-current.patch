@@ -1,0 +1,692 @@
+diff --git a/backend/services/api/contractor/routes.py b/backend/services/api/contractor/routes.py
+index 34a2dfce38997d255f49b900c3051522e9b2a6a2..6863bb9f0c6868a5075f1d0c37027a3ffbb7fba6 100644
+--- a/backend/services/api/contractor/routes.py
++++ b/backend/services/api/contractor/routes.py
+@@ -18,6 +18,7 @@ are namespaced; do NOT merge them:
+     WO_PHOTOS_TABLE/WO_PHOTOS_BUCKET (work-order photos).
+   * _services_reorder vs _reviews_reorder (different tables).
+ """
++import json
+ import base64
+ import binascii
+ import logging
+@@ -3215,3 +3216,100 @@ def contractor_homeowner_attachment_download_url(work_order_id, attachment_id):
+     except Exception:
+         logging.exception("contractor attachment download failed work_order_id=%s", work_order_id)
+         return jsonify(success=False, error="attachment_download_failed"), 500
++
++@bp.post("/arrival-case-response")
++@require_auth("contractor")
++def arrival_case_response():
++    body = request.get_json(silent=True) or {}
++    response_text = str(body.get("response") or "").strip()
++    if not response_text or len(response_text) > 2000:
++        return jsonify(success=False, error="invalid_response"), 400
++    supabase = sb()
++    cases = (supabase.table("arrival_cases").select("*")
++             .eq("id", body.get("caseId")).limit(1).execute()).data or []
++    if not cases:
++        return jsonify(success=False, error="case_not_found"), 404
++    case = cases[0]
++    owned = (supabase.table("work_orders").select("id")
++             .eq("id", case["work_order_id"]).eq("assigned_contractor_user_id", g.legacy_uid)
++             .limit(1).execute()).data or []
++    if not owned:
++        return jsonify(success=False, error="case_not_found"), 404
++    supabase.table("arrival_cases").update({"pro_response": response_text,
++        "responded_at": datetime.now(timezone.utc).isoformat()}).eq("id", case["id"]).execute()
++    return jsonify(success=True)
++
++
++@bp.after_request
++def redact_legacy_access_snapshots(response):
++    # Legacy rows may still carry private snapshots after a job closes. Only
++    # the active-job endpoint below may supply current access notes.
++    if request.endpoint == "contractor.contractor_home_context":
++        return response
++    data = response.get_json(silent=True)
++    if data is None:
++        return response
++    def redact(value):
++        if isinstance(value, dict):
++            for key in ("access_instructions", "access_notes", "accessInstructions"):
++                value.pop(key, None)
++            for item in value.values():
++                redact(item)
++        elif isinstance(value, list):
++            for item in value:
++                redact(item)
++    redact(data)
++    response.set_data(json.dumps(data, default=str))
++    return response
++
++
++@bp.get("/work-orders/<int:work_order_id>/home-context")
++@require_auth("contractor")
++def contractor_home_context(work_order_id):
++    from homeowner.home_profile_routes import _full_profile
++    supabase = sb()
++    jobs = (supabase.table("work_orders").select("*").eq("id", work_order_id)
++            .eq("assigned_contractor_user_id", g.legacy_uid).limit(1).execute()).data or []
++    if not jobs or jobs[0].get("status") not in ("accepted", "en_route", "arrived", "in_progress", "pending_completion"):
++        return jsonify(success=False, error="active_confirmed_job_required"), 403
++    job = jobs[0]
++    if not job.get("home_profile_id"):
++        return jsonify(success=True, home=None, notes=[], systems=[], documents=[])
++    return jsonify(success=True, **_full_profile(supabase, job["requester_user_id"], job["home_profile_id"]))
++
++
++@bp.get("/work-orders/<int:work_order_id>/arrival-cases")
++@require_auth("contractor")
++def contractor_arrival_cases(work_order_id):
++    supabase = sb()
++    owned = (supabase.table("work_orders").select("id").eq("id", work_order_id)
++             .eq("assigned_contractor_user_id", g.legacy_uid).limit(1).execute()).data or []
++    if not owned:
++        return jsonify(success=False, error="work_order_not_found"), 404
++    cases = (supabase.table("arrival_cases")
++             .select("id,work_order_id,reported_at,pro_response,responded_at")
++             .eq("work_order_id", work_order_id).execute()).data or []
++    return jsonify(success=True, cases=cases)
++
++
++@bp.get("/work-orders/<int:work_order_id>/home-documents/<int:document_id>/download-url")
++@require_auth("contractor")
++def contractor_home_document_download(work_order_id, document_id):
++    from homeowner.home_profile_routes import DOCUMENT_BUCKET
++    supabase = sb()
++    jobs = (supabase.table("work_orders").select("*").eq("id", work_order_id)
++            .eq("assigned_contractor_user_id", g.legacy_uid).limit(1).execute()).data or []
++    if not jobs or jobs[0].get("status") not in ("accepted", "en_route", "arrived", "in_progress", "pending_completion"):
++        return jsonify(success=False, error="active_confirmed_job_required"), 403
++    home_id = jobs[0].get("home_profile_id")
++    if not home_id:
++        return jsonify(success=False, error="document_not_found"), 404
++    documents = (supabase.table("home_documents").select("*").eq("id", document_id)
++                 .eq("home_profile_id", home_id).limit(1).execute()).data or []
++    if not documents or documents[0].get("deleted_at") or (documents[0].get("metadata") or {}).get("_upload_status") == "pending":
++        return jsonify(success=False, error="document_not_found"), 404
++    # Short expiry bounds access for a URL issued just before job closure.
++    signed = supabase.storage.from_(DOCUMENT_BUCKET).create_signed_url(documents[0]["storage_path"], 60)
++    url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("signed_url")
++    return jsonify(success=True, downloadUrl=url, expiresIn=60)
++
+diff --git a/backend/services/api/homeowner/home_profile_routes.py b/backend/services/api/homeowner/home_profile_routes.py
+index 47d5b974ad2b653318889ac679900f82822dbfc6..b5f86c274eb8770e73632641b7257dff062c5ebc 100644
+--- a/backend/services/api/homeowner/home_profile_routes.py
++++ b/backend/services/api/homeowner/home_profile_routes.py
+@@ -675,30 +675,23 @@ def prepare_booking_home_context(supabase, user_id, request_body, booking):
+             raise HomeContextError("home_system_not_in_profile")
+         home_id = system["home_profile_id"]
+     if home_id in (None, ""):
+-        return {"home_profile_id": None, "home_system_id": None}
++        address_id = booking.get("address_id") or request_body.get("addressId")
++        if address_id:
++            profiles = (supabase.table("home_profiles").select("id")
++                        .eq("user_id", user_id).eq("address_id", address_id).limit(1).execute()).data or []
++            home_id = profiles[0]["id"] if profiles else None
++        if home_id is None:
++            booking.pop("access_instructions", None)
++            booking.pop("access_notes", None)
++            return {"home_profile_id": None, "home_system_id": None}
+     home = _owned_home(supabase, user_id, home_id, "id,address_id")
+     # If booking includes an address id, prevent attaching notes from another home.
+     booking_address_id = booking.get("address_id") or request_body.get("addressId")
+     if booking_address_id and str(booking_address_id) != str(home.get("address_id")):
+         raise HomeContextError("home_profile_address_mismatch")
+-    notes = (
+-        supabase.table("home_access_notes").select("note_type,label,note_body")
+-        .eq("home_profile_id", home["id"]).eq("is_active", True)
+-        .order("sort_order").order("id").execute().data or []
+-    )
+-    labels = {
+-        "access": "Access", "pets": "Pets", "shut_offs": "Shut-offs",
+-        "parking": "Parking", "other": "Other",
+-    }
+-    snapshots = [
+-        f"{note.get('label') or labels.get(note['note_type'], 'Note')}: {note['note_body']}"
+-        for note in notes
+-    ]
+-    existing = _text(booking.get("access_instructions"), "access_instructions", 10000)
+-    combined = "\n".join(([existing] if existing else []) + snapshots) or None
+-    if combined and len(combined) > 10000:
+-        raise HomeContextError("access_instructions_too_long")
+-    booking["access_instructions"] = combined
++    booking.pop("access_instructions", None)
++    booking.pop("access_notes", None)
++    booking["home_profile_id"] = home["id"]
+     booking["home_system_id"] = system["id"] if system else None
+     return {
+         "home_profile_id": home["id"],
+@@ -711,6 +704,8 @@ def link_work_order_home_context(supabase, work_order_id, context):
+     if not work_order_id or not context:
+         return
+     fields = {}
++    if context.get("home_profile_id") is not None:
++        fields["home_profile_id"] = context["home_profile_id"]
+     if context.get("home_system_id") is not None:
+         fields["home_system_id"] = context["home_system_id"]
+     if fields:
+diff --git a/backend/services/api/homeowner/routes.py b/backend/services/api/homeowner/routes.py
+index 7f945aaafc85b332ddf6647256722d88fa0e6b52..d3f506d8450b5e1d5479779d988ccec6c6e1bf96 100644
+--- a/backend/services/api/homeowner/routes.py
++++ b/backend/services/api/homeowner/routes.py
+@@ -98,6 +98,15 @@ ACTION_REQUIRED_STATUSES = (
+ 
+ 
+ # ---------- Card shaper (verbatim from OLD function) ----------
++def _pending_arrival(row):
++    end = _parse_ts(row.get("scheduled_end"))
++    if not end or row.get("status") not in (
++            "accepted", "en_route", "arrived", "in_progress", "pending_completion"):
++        return False
++    resolved = _parse_ts(row.get("arrival_check_resolved_end"))
++    return resolved != end and _now() >= end + timedelta(hours=2)
++
++
+ def _card(r: dict, contractor_id=None) -> dict:
+     """Shape one RPC row into the card the frontend expects.
+ 
+@@ -108,6 +117,10 @@ def _card(r: dict, contractor_id=None) -> dict:
+     """
+     return {
+         "workOrderId": r.get("id"),
++        "pendingArrivalCheck": _pending_arrival(r),
++        "arrivalCheckId": str(r.get("id")) + ":" + str(r.get("scheduled_end")),
++        "arrivalCheckResolvedAt": r.get("arrival_check_resolved_at"),
++        "cancelledBy": r.get("cancelled_by"),
+         "woNumber": r.get("wo_number"),
+         "status": r.get("status"),
+         "workOrderType": r.get("work_order_type"),
+@@ -125,6 +138,7 @@ def _card(r: dict, contractor_id=None) -> dict:
+         },
+         "pro": {
+             "contractorId": contractor_id,
++            "userId": r.get("assigned_contractor_user_id"),
+             "businessName": r.get("pro_business_name"),
+             "slug": r.get("pro_public_slug"),
+             "photoUrl": None,  # Filled from the current private Storage path.
+@@ -183,6 +197,31 @@ def _homeowner_wo_payload(p_user_id, p_email=None):
+         return None
+ 
+     rows = payload.get("rows") or []
++    # Include fresh arrival and receipt state even if the deployed list RPC
++    # predates those columns. Restrict the merge to the authenticated owner.
++    ids = [row["id"] for row in rows]
++    if ids:
++        detail_rows = (sb_.table("work_orders").select("*").in_("id", ids)
++                       .eq("requester_user_id", p_user_id).execute()).data or []
++        details = {row["id"]: row for row in detail_rows}
++        docs = (sb_.table("home_documents").select("*").in_("work_order_id", ids)
++                .eq("document_type", "receipt")
++                .eq("uploaded_by_user_id", p_user_id)
++                .is_("deleted_at", "null")
++                .order("created_at", desc=True).execute()).data or []
++        receipts = {}
++        for doc in docs:
++            if (doc.get("metadata") or {}).get("_upload_status") == "complete":
++                receipts.setdefault(doc["work_order_id"], doc)
++        for row in rows:
++            row.update(details.get(row["id"], {}))
++            doc = receipts.get(row["id"])
++            if doc:
++                row.update(receipt_document_id=doc["id"],
++                           receipt_file_name=doc["original_file_name"],
++                           receipt_mime_type=doc["mime_type"],
++                           receipt_size_bytes=doc["size_bytes"],
++                           receipt_uploaded_at=doc.get("updated_at"))
+     now = datetime.now(timezone.utc)
+     active, scheduled, history = [], [], []
+     action_required = []
+@@ -219,7 +258,7 @@ def _homeowner_wo_payload(p_user_id, p_email=None):
+         st = r.get("status")
+         c = _card(r, contractor_id_by_uid.get(r.get("assigned_contractor_user_id")))
+         c["pro"]["photoUrl"] = contractor_image_by_uid.get(r.get("assigned_contractor_user_id"))
+-        if st in ACTION_REQUIRED_STATUSES:
++        if st in ACTION_REQUIRED_STATUSES or c["pendingArrivalCheck"]:
+             action_required.append(r["id"])
+         if st in HISTORY_STATUSES:
+             history.append(c)
+@@ -848,7 +887,7 @@ def _review_load_owned(sb_, wo_id, ruid):
+         return None, "missing_params"
+     rows = (sb_.table("work_orders").select(
+         "id, requester_user_id, assigned_contractor_user_id, status, "
+-        "service_category, completed_at, contractor_completed_at"
++        "service_category, completed_at, contractor_completed_at, invoice_amount, invoice_url"
+     ).eq("id", wo_id).limit(1).execute()).data
+     if not rows:
+         return None, "order_not_found"
+@@ -908,14 +947,24 @@ def homeowner_review_action():
+     ruid = g.legacy_uid
+     wo, reason = _review_load_owned(sb_, b.get("workOrderId"), ruid)
+     if reason:
+-        return jsonify({"success": True, "eligible": False, "reason": reason})
++        if action == "get_review_eligibility":
++            return jsonify({"success": True, "eligible": False, "reason": reason})
++        return jsonify({"success": False, "error": reason, "reason": reason}), 403
+ 
+     if action == "get_review_eligibility":
+         elig, why = _eligibility(sb_, wo)
+         return jsonify({"success": True, "eligible": elig, "reason": why})
+ 
+-    if action == "submit_review":
+-        elig, why = _eligibility(sb_, wo)
++    existing = (sb_.table("contractor_reviews").select("*")
++                .eq("work_order_id", wo["id"]).limit(1).execute()).data or []
++    if action == "get_review":
++        return jsonify({"success": True, "review": existing[0] if existing else None})
++    if action == "deleteReview":
++        if existing:
++            sb_.table("contractor_reviews").delete().eq("id", existing[0]["id"]).execute()
++        return jsonify({"success": True, "ok": True, "deleted": True})
++    if action in ("submit_review", "update_review"):
++        elig, why = (bool(existing), "review_not_found") if action == "update_review" else _eligibility(sb_, wo)
+         if not elig:
+             return jsonify({"success": True, "ok": False, "reason": why})
+ 
+@@ -930,6 +979,13 @@ def homeowner_review_action():
+         if not (TEXT_MIN <= len(text) <= TEXT_MAX):
+             return jsonify({"success": True, "ok": False, "reason": "invalid_text_length"})
+ 
++        tags = b.get("tags", [])
++        allowed_tags = {"On time", "Professional", "Clean work", "Great communication", "Fair price", "Price stayed within the cap"}
++        if not isinstance(tags, list) or any(not isinstance(t, str) or t not in allowed_tags for t in tags):
++            return jsonify({"success": False, "error": "invalid_tags"}), 400
++        if "Price stayed within the cap" in tags and wo.get("invoice_amount") is None and not wo.get("invoice_url"):
++            return jsonify({"success": False, "error": "invoice_required_for_cap_tag"}), 400
++
+         cpid = _resolve_contractor_profile_id(sb_, wo.get("assigned_contractor_user_id"))
+         if not cpid:
+             return jsonify({"success": True, "ok": False, "reason": "contractor_not_found"})
+@@ -945,6 +1001,7 @@ def homeowner_review_action():
+             "reviewer_type": "homeowner",
+             "rating": rating,
+             "review_text": text,
++            "tags": list(dict.fromkeys(tags)),
+             "service_performed": wo.get("service_category"),
+             "review_date": date.today().isoformat(),
+             "source": "verified",
+@@ -952,7 +1009,12 @@ def homeowner_review_action():
+             "is_active": (not held),  # held -> not published until admin clears
+         }
+         try:
+-            ins = (sb_.table("contractor_reviews").insert(row).execute()).data
++            if action == "update_review":
++                patch = {key: row[key] for key in ("rating", "review_text", "tags", "is_active")}
++                patch["edited_at"] = _now().isoformat()
++                ins = sb_.table("contractor_reviews").update(patch).eq("id", existing[0]["id"]).execute().data
++            else:
++                ins = (sb_.table("contractor_reviews").insert(row).execute()).data
+         except Exception as e:
+             # UNIQUE violation -> already reviewed (race)
+             logging.warning("review insert failed: %s", e)
+@@ -960,7 +1022,10 @@ def homeowner_review_action():
+ 
+         return jsonify({"success": True, "ok": True,
+                         "reviewId": ins[0]["id"] if ins else None,
+-                        "held": held, "published": (not held)})
++                        "held": held, "published": (not held),
++                        "review": ins[0] if ins else None,
++                        "editedAt": ins[0].get("edited_at") if ins else None,
++                        "tags": tags})
+ 
+     return jsonify({"success": True, "ok": False, "reason": f"unknown_action: {action}"})
+ 
+@@ -1197,27 +1262,31 @@ def homeowner_work_orders_action():
+             logging.exception("dispute hold failed (non-fatal)")
+         return jsonify({"success": True, "ok": True, "status": "disputed"})
+ 
+-    # ---- pro no-show ----
+-    if action == "pro_no_show":
+-        if st not in ("accepted", "en_route"):
+-            return jsonify({"success": True, "ok": False, "reason": "not_no_show_eligible"})
++    # The homeowner's private reply does not resolve the contractor's case.
++    if action == "no_show_reply":
++        if st != "customer_no_show":
++            return jsonify({"success": True, "ok": False, "reason": "not_customer_no_show"})
++        text = str(b.get("text") or "").strip()
++        if not text or len(text) > 2000:
++            return jsonify({"success": True, "ok": False, "reason": "invalid_reply"})
+         sb_.table("work_orders").update({
+-            "status": "pro_no_show", "updated_at": now_iso,
+-        }).eq("id", wo_id).execute()
+-        credit_release = None
+-        if "homeowner" in (getattr(g, "roles", None) or []):
+-            try:
+-                credit_release = release_for_work_order(
+-                    sb_, ruid, wo_id, "contractor_no_show"
+-                )
+-            except Exception:
+-                logging.exception("service credit release failed for pro no-show work order %s", wo_id)
+-        return jsonify({
+-            "success": True,
+-            "ok": True,
+-            "status": "pro_no_show",
+-            "credit": credit_release,
+-        })
++            "homeowner_no_show_reply": text,
++            "homeowner_no_show_replied_at": now_iso,
++            "updated_at": now_iso,
++        }).eq("id", wo_id).eq("requester_user_id", ruid).execute()
++        return jsonify({"success": True, "ok": True, "status": st})
++
++    # The RPC locks the order and makes duplicate arrival answers idempotent.
++    if action in ("confirm_arrival", "arrival_rescheduled", "pro_no_show"):
++        result = sb_.rpc("resolve_arrival_check", {
++            "p_work_order_id": wo_id, "p_user_id": ruid,
++            "p_action": action, "p_note": str(b.get("note") or ""),
++        }).execute().data or {}
++        if action == "pro_no_show" and result.get("ok"):
++            release_for_work_order(sb_, ruid, wo_id, "contractor_no_show")
++            if result.get("newCase"):
++                notify(sb_, "arrival_reported", wo, audience="contractor")
++        return jsonify(success=True, **result)
+ 
+     return jsonify({"success": True, "ok": False, "reason": f"unknown_action: {action}"})
+ 
+@@ -1550,7 +1619,11 @@ def booking_commit():
+                      or (data or {}).get("work_order_id")
+                      or (data or {}).get("id"))
+             # ===== PHASE 2 HOMEOWNER ACCOUNT/HOME PROFILE: START =====
+-            link_work_order_home_context(sb_, wo_id, home_context)
++            try:
++                link_work_order_home_context(sb_, wo_id, home_context)
++            except Exception:
++                logging.exception("Booked order home context follow-up failed")
++                data["homeProfileLinked"] = False
+             # ===== PHASE 2 HOMEOWNER ACCOUNT/HOME PROFILE: END =====
+             # Phase 14b Layer 3 flywheel loop
+             _flip(wo_id)
+@@ -1609,6 +1682,7 @@ def booking_commit():
+             "priority": urgency,
+             "status": "dispatched",
+             "work_order_type": "quote_request",
++            "home_profile_id": home_context.get("home_profile_id"),
+             "quote_expires_at": deadline,
+             "dispatched_at": datetime.now(timezone.utc).isoformat(),
+             # ===== PHASE 2 HOMEOWNER ACCOUNT/HOME PROFILE: START =====
+@@ -1618,7 +1692,7 @@ def booking_commit():
+         ins = (sb_.table("work_orders").insert(row).execute()).data
+         wo = ins[0] if ins else {}
+         # ===== PHASE 2 HOMEOWNER ACCOUNT/HOME PROFILE: START =====
+-        link_work_order_home_context(sb_, wo.get("id"), home_context)
++        # The home link is part of the insert, so the quote is not left half linked.
+         # ===== PHASE 2 HOMEOWNER ACCOUNT/HOME PROFILE: END =====
+         # Phase 14b Layer 3 flywheel loop
+         _flip(wo.get("id"))
+diff --git a/backend/services/api/public/routes.py b/backend/services/api/public/routes.py
+index be6816575ead5e0cadf3eea4e7e0642926964eed..8121b239319a193d2a1c087e4ef272819f187d42 100644
+--- a/backend/services/api/public/routes.py
++++ b/backend/services/api/public/routes.py
+@@ -530,19 +530,25 @@ def contractor_profile_get():
+     # --- reviews split: verified (aggregate) vs manual testimonials ---
+     verified, testimonials = [], []
+     for r in reviews:
++        if r.get("is_active") is False:
++            continue
+         entry = {
+             "reviewer_name": r.get("reviewer_name"),
+             "rating": r.get("rating"),
+             "text": r.get("review_text"),
+             "service_performed": r.get("service_performed"),
+             "month_year": _month_year(r.get("review_date")),
++            "review_date": r.get("review_date"),
++            "tags": r.get("tags") or [],
++            "editedAt": r.get("edited_at"),
++            "proResponse": r.get("pro_response"),
+         }
+         if (r.get("source") or "").strip().lower() == "verified":
+             verified.append(entry)
+         else:
+             testimonials.append(entry)
+ 
+-    # The profile RPC already returns reviews by review_date, newest first.
++    verified.sort(key=lambda e: e.get("review_date") or "", reverse=True)
+     verified_ratings = [v["rating"] for v in verified if v.get("rating") is not None]
+     verified_aggregate = None
+     if verified_ratings:
+@@ -588,6 +594,7 @@ def contractor_profile_get():
+         "service_cities": p.get("service_cities") or [],
+         "service_radius": p.get("service_radius"),
+         "year_founded": p.get("year_founded"),
++        "years_in_business": p.get("years_in_business"),
+         "languages": p.get("languages") or [],
+         "team_chips": _team_chips(p),
+         "badges": badges,
+@@ -595,11 +602,17 @@ def contractor_profile_get():
+         "business_hours": p.get("business_hours"),
+         "emergency": {
+             "available": bool(p.get("after_hours_availability")),
++            "urgent_available": p.get("urgent_available"),
+             "details": p.get("after_hours_details"),
++            "standard_response": p.get("standard_response_time"),
+             "avg_urgent_response": p.get("avg_urgent_response_time"),
++            "avg_emergency_response": p.get("avg_emergency_response_time"),
++            "urgent_fee": p.get("urgent_service_fee"),
++            "emergency_fee": p.get("emergency_service_fee"),
+         },
+         "services": out_services,
+         "photos": out_photos,
++        "photoCount": len(out_photos),
+         "reviews": {
+             "verified": verified,
+             "verified_aggregate": verified_aggregate,
+diff --git a/backend/services/api/shared/notify.py b/backend/services/api/shared/notify.py
+index 9ab0505efc8d8a50039ce4924f8c61bd37c6f9a0..ce47c6030cfa8b723ccb262a067f360d580506d0 100644
+--- a/backend/services/api/shared/notify.py
++++ b/backend/services/api/shared/notify.py
+@@ -33,7 +33,7 @@ HO_DASH = f"{SITE}/dashboard/homeowner/"
+ PRO_DASH = f"{SITE}/dashboard/contractor/"
+ 
+ CONTRACTOR_TEMPLATES = {
+-    "new_job_booked", "booking_cancelled", "reschedule_proposed", "reschedule_responded",
++    "arrival_reported", "new_job_booked", "booking_cancelled", "reschedule_proposed", "reschedule_responded",
+ }
+ 
+ # User-scoped templates: recipient comes from ctx_extra (user_email/user_id/user_name),
+@@ -339,7 +339,14 @@ def _t_maintenance_digest(sb, wo, ctx):
+             "body_html": _wrap(inner), "body_text": text}
+ 
+ 
++def _t_arrival_reported(sb, wo, ctx):
++    text = "A homeowner reported that a visit did not take place. This is private, not a rating. Open the booking to tell TradeWorks your side."
++    return {"subject": "Your response to an arrival report", "title": "Arrival report",
++            "body_html": _wrap("<p>" + text + "</p>"), "body_text": text}
++
++
+ TEMPLATES = {
++    "arrival_reported": _t_arrival_reported,
+     "booking_confirmed": _t_booking_confirmed,
+     "new_job_booked": _t_new_job_booked,
+     "quote_ready": _t_quote_ready,
+diff --git a/backend/services/api/shared/routes.py b/backend/services/api/shared/routes.py
+index e48dc54d4a77b904dcfab0f11bc32a516591310d..5f3e3762609b5ebc0b81f99a5c92c870c7fc57b7 100644
+--- a/backend/services/api/shared/routes.py
++++ b/backend/services/api/shared/routes.py
+@@ -672,14 +672,25 @@ def stream_token():
+     # upsert the caller into Stream so they exist with a display name before chatting
+     _upsert_stream_user(server_client, u)
+ 
+-    # OPTIONAL: also provision the counterparty so the channel can be created
+-    # even if they have never opened chat. Only if it's a different, valid user.
+     if with_user_id is not None and str(with_user_id) != stream_user_id:
+         other = _fetch_user_by_id(sb_, with_user_id)
+-        if other:
+-            _upsert_stream_user(server_client, other)
++        if not other:
++            return jsonify(success=False, error="counterparty_not_found"), 404
++        pair = sorted([stream_user_id, str(other["id"])])
++        channel_id = "_".join(pair)
++        existing = server_client.query_channels({"id": channel_id, "type": "messaging"}, limit=1).get("channels", [])
++        if existing:
++            member_ids = {str(member.get("user_id") or (member.get("user") or {}).get("id"))
++                          for member in existing[0].get("members", [])}
++            if not set(pair).issubset(member_ids):
++                return jsonify(success=False, error="not_channel_members"), 403
+         else:
+-            logging.warning("withUserId=%s not found; skipping counterparty upsert", with_user_id)
++            pro = (sb_.table("contractor_profiles").select("id").eq("user_id", other["id"])
++                   .eq("is_public", True).limit(1).execute()).data or []
++            if "homeowner" not in (getattr(g, "roles", None) or []) or not pro:
++                return jsonify(success=False, error="homeowner_initiation_required"), 403
++            _upsert_stream_user(server_client, other)
++            server_client.channel("messaging", channel_id, {"members": pair}).create(stream_user_id)
+ 
+     # mint the user token (the frontend uses this to connectUser)
+     token = server_client.create_token(stream_user_id)
+diff --git a/backend/sql/rpcs/book_slot.sql b/backend/sql/rpcs/book_slot.sql
+index cd14d698a910c0c7a5199085c6013c05b2029f15..d7d2f49a0de72101fee4457b971362567e9a027d 100644
+--- a/backend/sql/rpcs/book_slot.sql
++++ b/backend/sql/rpcs/book_slot.sql
+@@ -49,6 +49,14 @@ BEGIN
+   FROM availability_settings WHERE contractor_id = p_contractor_id;
+   v_capacity := COALESCE(v_capacity, 1);
+ 
++  IF p_starts_at <= now() OR p_ends_at <> p_starts_at + interval '2 hours' THEN
++    RETURN jsonb_build_object('ok',false,'reason','invalid_arrival_window');
++  END IF;
++  IF (v_urgency = 'urgent' AND p_starts_at > now() + interval '24 hours')
++     OR (v_urgency = 'emergency' AND p_starts_at > now() + interval '4 hours') THEN
++    RETURN jsonb_build_object('ok',false,'reason','response_deadline_unavailable');
++  END IF;
++
+   -- capacity re-check: committed jobs (excl. our own order) + other live holds (excl. our own)
+   SELECT count(*) INTO v_count
+   FROM work_orders
+@@ -81,7 +89,7 @@ BEGIN
+   v_sla := now() + CASE v_urgency
+              WHEN 'emergency' THEN interval '4 hours'
+              WHEN 'urgent'    THEN interval '24 hours'
+-             ELSE                  interval '48 hours'
++             ELSE                  NULL
+            END;
+ 
+   IF p_work_order_id IS NOT NULL THEN
+@@ -97,7 +105,7 @@ BEGIN
+   ELSE
+     -- fresh Book Now: insert a new auto-accepted order
+     INSERT INTO work_orders (
+-      requester_name, requester_phone, requester_email, requester_user_id,
++      requester_name, requester_phone, requester_email, requester_user_id, home_profile_id,
+       assigned_contractor_user_id, service_category, service_description,
+       address_street, address_city, address_state, address_zip, access_instructions,
+       priority, status, work_order_type,
+@@ -107,6 +115,7 @@ BEGIN
+     ) VALUES (
+       p_booking->>'requester_name', p_booking->>'requester_phone', p_booking->>'requester_email',
+       NULLIF(p_booking->>'requester_user_id','')::BIGINT,
++      NULLIF(p_booking->>'home_profile_id','')::BIGINT,
+       v_user_id, p_booking->>'service_category', p_booking->>'service_description',
+       COALESCE(NULLIF(p_booking->>'address_street',''), 'TBD'),
+       p_booking->>'address_city', p_booking->>'address_state', p_booking->>'address_zip',
+diff --git a/backend/sql/rpcs/public_contractor_profile_get.sql b/backend/sql/rpcs/public_contractor_profile_get.sql
+index 6faa37a644f063f64e5bbe6cbc1c8e492d0a6a1e..e367a2ae9528e289a3f3b01621b3a794e2cedf7a 100644
+--- a/backend/sql/rpcs/public_contractor_profile_get.sql
++++ b/backend/sql/rpcs/public_contractor_profile_get.sql
+@@ -66,6 +66,9 @@ BEGIN
+         'review_text', review_text,
+         'service_performed', service_performed,
+         'review_date', review_date,
++        'tags', tags,
++        'edited_at', edited_at,
++        'pro_response', pro_response,
+         'source', source,
+         'sort_order', sort_order
+     )), '[]'::json)
+diff --git a/backend/sql/rpcs/public_contractor_search_pre.sql b/backend/sql/rpcs/public_contractor_search_pre.sql
+index a69e76645973b37a84e2bf980a536a5334c2ffad..b8b33234a0cfd9d5509c517e54d9f5528f487ebf 100644
+--- a/backend/sql/rpcs/public_contractor_search_pre.sql
++++ b/backend/sql/rpcs/public_contractor_search_pre.sql
+@@ -59,7 +59,7 @@ BEGIN
+             AVG(cr.rating)::numeric(4,2) AS avg_rating,
+             COUNT(*)::int                 AS review_count
+         FROM contractor_reviews cr
+-        WHERE COALESCE(cr.source, 'manual') <> 'manual'
++        WHERE COALESCE(cr.source, 'manual') <> 'manual' AND cr.is_active = true
+         GROUP BY cr.contractor_id
+     ),
+     pros AS (
+diff --git a/backend/migrations/20260926_review_metadata.sql b/backend/migrations/20260926_review_metadata.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..1057148b2196ec88b720742ed30a631c6faa1a5a
+--- /dev/null
++++ b/backend/migrations/20260926_review_metadata.sql
+@@ -0,0 +1,6 @@
++-- Apply before deploying the accompanying website patch.
++ALTER TABLE public.contractor_reviews ADD COLUMN IF NOT EXISTS tags jsonb NOT NULL DEFAULT '[]'::jsonb;
++ALTER TABLE public.contractor_reviews ADD COLUMN IF NOT EXISTS edited_at timestamptz;
++ALTER TABLE public.contractor_reviews ADD COLUMN IF NOT EXISTS pro_response jsonb;
++-- One response is stored on the original review. Never create a second review
++-- or include contractor responses in rating totals.
+diff --git a/backend/migrations/20260926_arrival_cases.sql b/backend/migrations/20260926_arrival_cases.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..ee5d9263f684b994cfa866b00b2b543a3b3a475a
+--- /dev/null
++++ b/backend/migrations/20260926_arrival_cases.sql
+@@ -0,0 +1,44 @@
++-- Provisional arrival grace: two hours after scheduled_end, matching the app
++-- fallback. An unanswered check remains open indefinitely.
++ALTER TABLE public.work_orders ADD COLUMN IF NOT EXISTS arrival_check_answer text;
++ALTER TABLE public.work_orders ADD COLUMN IF NOT EXISTS arrival_check_resolved_end timestamptz;
++ALTER TABLE public.work_orders ADD COLUMN IF NOT EXISTS arrival_check_resolved_at timestamptz;
++CREATE TABLE IF NOT EXISTS public.arrival_cases (
++ id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
++ work_order_id bigint NOT NULL REFERENCES public.work_orders(id),
++ scheduled_end timestamptz NOT NULL,
++ reported_by bigint NOT NULL,
++ reported_at timestamptz NOT NULL DEFAULT now(),
++ note text NOT NULL DEFAULT '',
++ pro_response text,
++ responded_at timestamptz,
++ UNIQUE(work_order_id, scheduled_end)
++);
++ALTER TABLE public.arrival_cases ENABLE ROW LEVEL SECURITY;
++REVOKE ALL ON public.arrival_cases FROM anon, authenticated;
++CREATE OR REPLACE FUNCTION public.resolve_arrival_check(p_work_order_id bigint, p_user_id bigint, p_action text, p_note text DEFAULT '')
++RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
++DECLARE w public.work_orders%ROWTYPE; case_id bigint;
++BEGIN
++ SELECT * INTO w FROM public.work_orders WHERE id = p_work_order_id FOR UPDATE;
++ IF NOT FOUND OR w.requester_user_id <> p_user_id THEN RAISE EXCEPTION 'not_your_order'; END IF;
++ IF w.arrival_check_resolved_end = w.scheduled_end AND w.arrival_check_answer IS NOT NULL THEN
++   IF w.arrival_check_answer <> p_action THEN RAISE EXCEPTION 'check_already_answered'; END IF;
++   RETURN jsonb_build_object('ok',true,'newCase',false);
++ END IF;
++ IF w.scheduled_end IS NULL OR now() < w.scheduled_end + interval '2 hours'
++ OR w.status IN ('completed','cancelled','customer_no_show','pro_no_show','disputed') THEN RAISE EXCEPTION 'not_arrival_check_eligible'; END IF;
++ IF p_action NOT IN ('confirm_arrival','arrival_rescheduled','pro_no_show') THEN RAISE EXCEPTION 'invalid_action'; END IF;
++ IF length(p_note) > 2000 THEN RAISE EXCEPTION 'note_too_long'; END IF;
++ UPDATE public.work_orders SET arrival_check_answer = p_action,
++  arrival_check_resolved_end = scheduled_end, arrival_check_resolved_at = now(),
++  status = CASE WHEN p_action = 'pro_no_show' THEN 'pro_no_show' ELSE status END,
++  updated_at = now() WHERE id = w.id;
++ IF p_action = 'pro_no_show' THEN
++  INSERT INTO public.arrival_cases(work_order_id,scheduled_end,reported_by,note)
++  VALUES(w.id,w.scheduled_end,p_user_id,p_note) RETURNING id INTO case_id;
++ END IF;
++ RETURN jsonb_build_object('ok',true,'newCase',case_id IS NOT NULL,'caseId',case_id);
++END $$;
++REVOKE ALL ON FUNCTION public.resolve_arrival_check(bigint,bigint,text,text) FROM PUBLIC,anon,authenticated;
++GRANT EXECUTE ON FUNCTION public.resolve_arrival_check(bigint,bigint,text,text) TO service_role;
+diff --git a/backend/migrations/20260928_platform_home_context.sql b/backend/migrations/20260928_platform_home_context.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..e597d685b7a61ca08d47ac40ebc89fdcf80e8758
+--- /dev/null
++++ b/backend/migrations/20260928_platform_home_context.sql
+@@ -0,0 +1,16 @@
++-- Current platform schema; this does not install the superseded home_profiles_v2 model.
++ALTER TABLE public.work_orders ADD COLUMN IF NOT EXISTS home_profile_id bigint
++  REFERENCES public.home_profiles(id);
++ALTER TABLE public.work_orders ADD COLUMN IF NOT EXISTS homeowner_no_show_reply text;
++ALTER TABLE public.work_orders ADD COLUMN IF NOT EXISTS homeowner_no_show_replied_at timestamptz;
++
++-- A private operational queue. No answer is never an automatic no-show.
++CREATE OR REPLACE VIEW public.pending_arrival_checks AS
++SELECT id AS work_order_id, requester_user_id, assigned_contractor_user_id,
++       scheduled_end, scheduled_end + interval '2 hours' AS check_opened_at
++FROM public.work_orders
++WHERE status IN ('accepted','en_route','arrived','in_progress','pending_completion')
++  AND scheduled_end + interval '2 hours' <= now()
++  AND arrival_check_resolved_end IS DISTINCT FROM scheduled_end;
++REVOKE ALL ON public.pending_arrival_checks FROM PUBLIC, anon, authenticated;
++GRANT SELECT ON public.pending_arrival_checks TO service_role;

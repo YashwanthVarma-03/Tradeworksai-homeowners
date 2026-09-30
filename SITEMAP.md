@@ -14,7 +14,7 @@ Authentication unlocks account data and booking submission.
 
 - Home: `HomeTab`
 - Browse: `SearchTab`
-- Messages: `InboxTab` → `ChatScreen`
+- Messages: `InboxTab` → real Stream channels → `ChatScreen`; Activity shows dated booking events.
 - Bookings: `BookingsTab`
 - Rewards: `RewardTab`
 - Profile: `ProfileTab`
@@ -34,17 +34,21 @@ authentication before a booking can be submitted.
 - Cap approval can open the shared availability selector when the backend
   requires a time that is missing from the work order.
 - Rescheduling → `openRescheduleWorkOrder` → `RescheduleWorkOrderScreen`
-- Completed work → receipt modal within work-order details / `LeaveReviewScreen`
+- Completed work → invoice/paid-receipt modal and paid-receipt upload within work-order details.
+- Reviews → `LeaveReviewScreen` (create, edit, delete).
+- Home, work-order details or once-per-check app-open prompt → `ArrivalCheckScreen` → `NoShowConfirmScreen` → `RecoveryScreen` → Browse.
+- Rewards ledger → work-order details scrolled to Job money.
 
 ## Profile and account
 
 - `PersonalInfoScreen`
 - `ManageAddressesScreen`
-- `HomeProfileScreen`
-- `PaymentMethodsScreen`
+- `HomeProfileScreen` → `HomeSystemEditor`, getting-in notes and documents
+- `PaymentMethodsScreen`: booked pros’ published direct-payment options, with messaging
 - `NotificationSettingsScreen`
+- `AccountSecurityScreen`: password change and account-closure preflight/request
 - `SupportPage`
 - Sign out → public app shell
 
-Account deletion and verified email changes remain pending backend support.
-See `docs/batches-1-4-implementation.md` for implementation details and exceptions.
+Verified email changes and account-closure requests use the authenticated account APIs.
+See `docs/backend-api-contracts.md` for deployment and verification constraints.

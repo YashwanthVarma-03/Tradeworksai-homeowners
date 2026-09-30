@@ -212,8 +212,8 @@ class TradeWorksCategoryTokens {
       icon: Icons.plumbing,
     ),
     'Electrical': CategoryToken(
-      color: AppTheme.orange500,
-      tint: AppTheme.orangeTint,
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
       icon: Icons.flash_on,
     ),
     'Cleaning': CategoryToken(
@@ -227,13 +227,13 @@ class TradeWorksCategoryTokens {
       icon: Icons.roofing,
     ),
     'Landscaping': CategoryToken(
-      color: AppTheme.orange500,
-      tint: AppTheme.orangeTint,
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
       icon: Icons.nature_people,
     ),
     'Lawn': CategoryToken(
-      color: AppTheme.orange500,
-      tint: AppTheme.orangeTint,
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
       icon: Icons.nature_people,
     ),
     'Handyman': CategoryToken(
@@ -247,8 +247,8 @@ class TradeWorksCategoryTokens {
       icon: Icons.format_paint,
     ),
     'Appliance Repair': CategoryToken(
-      color: AppTheme.orange500,
-      tint: AppTheme.orangeTint,
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
       icon: Icons.kitchen,
     ),
     'Pool & Spa': CategoryToken(
@@ -262,8 +262,8 @@ class TradeWorksCategoryTokens {
       icon: Icons.park,
     ),
     'Pest Control': CategoryToken(
-      color: AppTheme.orange500,
-      tint: AppTheme.orangeTint,
+      color: AppTheme.teal500,
+      tint: AppTheme.tealTint,
       icon: Icons.bug_report,
     ),
     'Flooring': CategoryToken(
@@ -277,8 +277,8 @@ class TradeWorksCategoryTokens {
       icon: Icons.texture,
     ),
     'Windows & Doors': CategoryToken(
-      color: AppTheme.orange500,
-      tint: AppTheme.orangeTint,
+      color: AppTheme.navy700,
+      tint: AppTheme.navyTint,
       icon: Icons.window,
     ),
     'Garage Doors': CategoryToken(
@@ -395,7 +395,7 @@ class SlidingSegmentControl extends StatelessWidget {
       height: 44,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppTheme.pageAlt,
+        color: AppTheme.pageBackground,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.line.withOpacity(0.5)),
       ),

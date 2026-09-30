@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'package:intl/intl.dart';
+import '../utils/booking_timing.dart';
+import '../services/intake_service.dart';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -17,19 +20,19 @@ enum BookFlowExit { changeContractor }
 enum _BookingPage {
   service,
   details,
-  pricing,
   urgency,
   schedule,
-  location,
   review,
 }
 
 class BookFlowScreen extends StatefulWidget {
   final Map<String, dynamic> pro;
+  final String? initialDescription;
 
   const BookFlowScreen({
     super.key,
     required this.pro,
+    this.initialDescription,
   });
 
   @override
@@ -45,12 +48,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   late final PageController _pageController;
   final _issueController = TextEditingController();
-  final _accessNotesController = TextEditingController();
-  final _onsiteNotesController = TextEditingController();
   final _creditAmountController = TextEditingController();
   final _picker = ImagePicker();
   final Set<String> _selectedDetailChips = <String>{};
   late final String _bookingTransactionId = TransactionId.create('booking');
+  late final String _creditRequestId = TransactionId.uuid();
 
   final List<XFile> _selectedPhotos = [];
   final List<dynamic> _addresses = [];
@@ -64,7 +66,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   final Map<String, bool> _urgencyAvailabilityStates = {};
   Map<String, dynamic>? _selectedAvailability;
 
-  bool _isLoadingAddresses = true;
   bool _isLoadingSlots = false;
   bool _isSubmitting = false;
   bool _exitRequested = false;
@@ -77,8 +78,10 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   int _pageIndex = 0;
   int _selectedServiceIndex = 0;
   int _selectedPricingIndex = 0;
-  int _selectedUrgencyIndex = 0;
-  final bool _asap = false;
+  int _selectedUrgencyIndex = -1;
+  int _availabilityGeneration = 0;
+  final Map<String, String> _uploadedBookingPhotos = {};
+  String? _bookingIntakeToken;
   String? _selectedDate;
   String? _selectedTime;
 
@@ -89,8 +92,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    _issueController.text = widget.initialDescription?.trim() ?? '';
     if (!AuthService.instance.isAuthenticated) {
-      _isLoadingAddresses = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.maybePop(context);
       });
@@ -105,8 +108,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   void dispose() {
     _pageController.dispose();
     _issueController.dispose();
-    _accessNotesController.dispose();
-    _onsiteNotesController.dispose();
     _creditAmountController.dispose();
     super.dispose();
   }
@@ -462,12 +463,30 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return urgency.toLowerCase() == 'standard' ? 'Included' : '';
   }
 
+  bool get _picksOwnTime => _selectedUrgency.urgencySlug == 'standard';
+
+  bool _stepIsAnswered(_BookingPage page) {
+    if (page == _BookingPage.urgency) return _selectedUrgencyIndex >= 0;
+    if (page == _BookingPage.schedule)
+      return !_isLoadingSlots && _selectedTime != null;
+    if (page == _BookingPage.review)
+      return _selectedUrgencyIndex >= 0 &&
+          (!_picksOwnTime || _selectedTime != null);
+    return true;
+  }
+
+  String _deadlineText() {
+    final hours = BookingTiming.hours(_selectedUrgency.urgencySlug);
+    if (hours == null) return '';
+    return 'By ${DateFormat('EEE d MMM, h:mm a').format(DateTime.now().add(Duration(hours: hours)))}';
+  }
+
   List<_BookingPage> get _pages {
     return <_BookingPage>[
       _BookingPage.service,
       _BookingPage.details,
       _BookingPage.urgency,
-      _BookingPage.schedule,
+      if (_picksOwnTime) _BookingPage.schedule,
       _BookingPage.review,
     ];
   }
@@ -640,7 +659,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   Future<void> _loadAddresses() async {
     if (!mounted) return;
-    setState(() => _isLoadingAddresses = true);
     try {
       final profileResp = await HomeownerService.instance.fetchProfile();
       final List<dynamic> addressList = _readList(profileResp['addresses']) ??
@@ -653,7 +671,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           _addresses
             ..clear()
             ..addAll(addressList);
-          _isLoadingAddresses = false;
           if (_addresses.isNotEmpty) {
             _selectedAddressObj = _addresses.firstWhere(
               (a) => a['isDefault'] == true || a['isDefault'] == 'true',
@@ -667,9 +684,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         }
       }
     } catch (_) {
-      if (mounted) {
-        setState(() => _isLoadingAddresses = false);
-      }
+      if (mounted) {}
     }
   }
 
@@ -685,6 +700,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     }
     if (!mounted) return;
     final selectedUrgencyKey = _selectedUrgency.urgencySlug.toLowerCase();
+    final generation = ++_availabilityGeneration;
 
     setState(() {
       _isLoadingSlots = true;
@@ -704,13 +720,14 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         toDate: range.$2,
       );
 
-      final slotsList = _readList(data['slots']) ?? [];
+      final slotsList = BookingTiming.eligible(
+          _readList(data['slots']) ?? [], selectedUrgencyKey);
       final selectedDetail = _firstAvailabilityDetail(slotsList);
       final selectedPrice = _availabilityPriceText(
         data,
         urgencySlug: _selectedUrgency.urgencySlug,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _availabilityGeneration) return;
       setState(() {
         _isLoadingSlots = false;
         _selectedAvailability = Map<String, dynamic>.from(data);
@@ -725,7 +742,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         _buildSlots(slotsList);
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _availabilityGeneration) return;
       setState(() {
         _isLoadingSlots = false;
         _selectedAvailability = null;
@@ -756,7 +773,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           fromDate: range.$1,
           toDate: range.$2,
         );
-        final slotsList = _readList(data['slots']) ?? [];
+        final slotsList =
+            BookingTiming.eligible(_readList(data['slots']) ?? [], key);
         final detail = _firstAvailabilityDetail(slotsList);
         final price = _availabilityPriceText(
           data,
@@ -783,7 +801,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     // Matches the website's UTC Y-M-D request window exactly.
     final now = DateTime.now().toUtc();
     final from = DateTime.utc(now.year, now.month, now.day);
-    final to = from.add(const Duration(days: 7));
+    final to = from.add(const Duration(days: 14));
     String format(DateTime value) =>
         '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
     return (format(from), format(to));
@@ -901,6 +919,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       if (!seenSlotKeys.add(slotKey)) continue;
       _dates.add(dateKey);
       _slotsByDate.putIfAbsent(dateKey, () => []);
+      if (_slotsByDate[dateKey]!.length >= 4) continue;
       _slotsByDate[dateKey]!.add({
         'label': timeLabel,
         'slot': Map<String, dynamic>.from(slot),
@@ -910,9 +929,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     _dates = _dates.toSet().toList();
     if (_dates.isNotEmpty) {
       _selectedDate = _dates.first;
-      final nextSlots = _slotsByDate[_selectedDate] ?? [];
-      _selectedTime =
-          nextSlots.isNotEmpty ? nextSlots.first['label'] as String : null;
+      _selectedTime = null;
     }
   }
 
@@ -1029,15 +1046,13 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     });
   }
 
-  Future<void> _autoAdvance() async {
-    await Future.delayed(const Duration(milliseconds: 180));
-    if (mounted) {
-      _goToNext();
-    }
-  }
-
   Future<void> _submitBooking() async {
     if (_isSubmitting) return;
+    if (!_stepIsAnswered(_BookingPage.review)) {
+      AppNotification.showInfo(
+          context, 'Choose a response tier and arrival window first.');
+      return;
+    }
     if (!AuthService.instance.isAuthenticated) {
       AppNotification.showInfo(
         context,
@@ -1064,21 +1079,38 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
       String? startsAt;
       String? endsAt;
-      if (!_asap &&
+      if (_picksOwnTime &&
           _selectedDate != null &&
           _slotsByDate.containsKey(_selectedDate)) {
         final slotsForDate = _slotsByDate[_selectedDate];
         if (slotsForDate != null && slotsForDate.isNotEmpty) {
           final chosen = slotsForDate.firstWhere(
             (s) => s['label'] == _selectedTime,
-            orElse: () => slotsForDate.first,
           );
           final slot = chosen['slot'] as Map<String, dynamic>?;
           startsAt = _string(slot?['start']);
           endsAt = _string(slot?['end']);
         }
       }
-      if (startsAt == null || endsAt == null) {
+      if (!_picksOwnTime) {
+        final range = _availabilityDateRange();
+        final live = await HomeownerService.instance.getContractorAvailability(
+            contractorId: contractorId,
+            serviceId: service.serviceId,
+            urgency: _selectedUrgency.urgencySlug,
+            fromDate: range.$1,
+            toDate: range.$2,
+            forceRefresh: true);
+        final slots = BookingTiming.eligible(
+            live['slots'] as List? ?? [], _selectedUrgency.urgencySlug);
+        if (slots.isEmpty)
+          throw Exception(
+              'This pro has no availability within the response deadline. Choose another response tier or pro.');
+        startsAt = BookingTiming.start(slots.first)!.toIso8601String();
+        endsAt = BookingTiming.end(slots.first)!.toIso8601String();
+      }
+      if ((startsAt == null || endsAt == null) &&
+          selectedPricing.workOrderType != 'quote_request') {
         throw Exception('Select an available calendar slot before booking.');
       }
 
@@ -1091,23 +1123,50 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         throw Exception('Select a saved property address before booking.');
       }
 
+      if (_selectedPhotos.isNotEmpty) {
+        _bookingIntakeToken ??= await IntakeService.instance.newSessionToken();
+        for (final photo in _selectedPhotos) {
+          if (_uploadedBookingPhotos.containsKey(photo.path)) continue;
+          final ref = await IntakeService.instance
+              .uploadPhoto(file: photo, sessionToken: _bookingIntakeToken);
+          _bookingIntakeToken = await IntakeService.instance.getSessionToken();
+          _uploadedBookingPhotos[photo.path] = ref;
+        }
+        final intakeResult = await IntakeService.instance.assist(
+            text: _issueController.text.trim().isEmpty
+                ? service.title
+                : _issueController.text.trim(),
+            zip: zip,
+            sessionToken: _bookingIntakeToken,
+            photoRefs: _selectedPhotos
+                .map((photo) => _uploadedBookingPhotos[photo.path]!)
+                .toList());
+        _bookingIntakeToken =
+            intakeResult['sessionToken']?.toString() ?? _bookingIntakeToken;
+      } else {
+        _bookingIntakeToken = null;
+        _uploadedBookingPhotos.clear();
+      }
       final bookingData = {
         'requester_name': AuthService.instance.userName ?? 'Homeowner',
         'requester_email': AuthService.instance.userEmail ?? '',
         'service_category': service.title,
         'service_description': _issueController.text.trim(),
+        'address_id': address?['id'],
         'address_street': street,
         'address_city': city,
         'address_state': state,
         'address_zip': zip,
         'work_order_type': selectedPricing.workOrderType,
-        'access_notes': _accessNotesController.text.trim(),
         'service_details': service.title,
-        'attached_photos': _selectedPhotos.map((p) => p.path).toList(),
+        if (_bookingIntakeToken != null)
+          'intake_session_token': _bookingIntakeToken,
         'selected_pricing_label': selectedPricing.label,
+        'credit_request_id': _creditRequestId,
         if (selectedPricing.amount != null)
           'upfront_price': selectedPricing.amount,
-        if (_appliedServiceCredits(selectedPricing.amount) > 0)
+        if (selectedPricing.workOrderType != 'quote_request' &&
+            _appliedServiceCredits(selectedPricing.amount) > 0)
           'service_credits_applied':
               _appliedServiceCredits(selectedPricing.amount),
       };
@@ -1205,7 +1264,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               title: const Row(
                 children: [
                   Icon(Icons.shield_outlined,
-                      color: AppTheme.orange500, size: 28),
+                      color: AppTheme.navy, size: 28),
                   SizedBox(width: 8),
                   Text(
                     'Verify Email',
@@ -1255,7 +1314,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppTheme.orange500),
+                        borderSide: const BorderSide(color: AppTheme.navy),
                       ),
                     ),
                   ),
@@ -1297,8 +1356,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                           }
                         },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.orange500,
-                    foregroundColor: AppTheme.navy700,
+                    backgroundColor: AppTheme.orange,
+                    foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -1309,7 +1368,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                           height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: AppTheme.navy700,
+                            color: Colors.white,
                           ),
                         )
                       : const Text('Verify & Book',
@@ -1401,7 +1460,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             Expanded(
               child: Center(
                 child: Text(
-                  'Step $_currentStepNumber of 5',
+                  'Step $_currentStepNumber of ${_pages.length}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1520,14 +1579,10 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         return _buildServiceStep();
       case _BookingPage.details:
         return _buildDetailsStep();
-      case _BookingPage.pricing:
-        return _buildPricingStep();
       case _BookingPage.urgency:
         return _buildUrgencyStep();
       case _BookingPage.schedule:
         return _buildScheduleStep();
-      case _BookingPage.location:
-        return _buildLocationStep();
       case _BookingPage.review:
         return _buildReviewStep();
     }
@@ -1550,7 +1605,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: AppTheme.orangeTint,
+                color: AppTheme.amberTint,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -1808,7 +1863,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                             errorBuilder: (_, __, ___) => Container(
                               width: 72,
                               height: 72,
-                              color: AppTheme.pageAlt,
+                              color: AppTheme.pageBackground,
                               child: const Icon(
                                 Icons.image_outlined,
                                 color: AppTheme.gray,
@@ -1963,39 +2018,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     );
   }
 
-  Widget _buildPricingStep() {
-    return _stepShell(
-      title: 'How this is priced',
-      subtitle:
-          'Choose the pricing path for this service. You will always see the full amount or approval rule before you confirm.',
-      child: Column(
-        children: _pricingChoices.asMap().entries.map((entry) {
-          final index = entry.key;
-          final pricing = entry.value;
-          final selected = index == _selectedPricingIndex;
-          return _selectionCard(
-            selected: selected,
-            onTap: () {
-              setState(() {
-                _selectedPricingIndex = index;
-                _urgencyAvailabilityDetails.clear();
-                _urgencyAvailabilityPrices.clear();
-                _urgencyAvailabilityStates.clear();
-              });
-              _refreshAvailability();
-              _hydrateUrgencySummaries();
-              _autoAdvance();
-            },
-            title: pricing.label,
-            subtitle: pricing.detail,
-            trailing: pricing.priceText,
-            trailingSub: pricing.secondaryText,
-          );
-        }).toList(),
-      ),
-    );
-  }
-
   Widget _buildUrgencyStep() {
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 24),
@@ -2007,6 +2029,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             subtitle:
                 'These options and fees are set by $_proName. Other pros differ.',
           ),
+          if (_selectedUrgencyIndex >= 0 && !_picksOwnTime)
+            Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                    '${_deadlineText()} · $_proName’s commitment for this job')),
           const SizedBox(height: 12),
           ..._urgencyOptions.asMap().entries.map((entry) {
             final index = entry.key;
@@ -2022,7 +2049,12 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 child: InkWell(
                   onTap: tier.available
                       ? () {
-                          setState(() => _selectedUrgencyIndex = index);
+                          setState(() {
+                            _selectedUrgencyIndex = index;
+                            _selectedTime = null;
+                            if (_pageIndex >= _pages.length)
+                              _pageIndex = _pages.length - 1;
+                          });
                           _refreshAvailability();
                         }
                       : null,
@@ -2140,7 +2172,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               const SizedBox(width: 12),
               Expanded(
                   child: Text(
-                      'The urgency fee goes to $_proName. TradeWorks adds no markup and no platform fee.',
+                      'The response-tier fee goes to $_proName. TradeWorks adds no markup and no platform fee.',
                       style: const TextStyle(
                           color: AppTheme.navy700,
                           fontSize: 13,
@@ -2161,15 +2193,15 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       padding: const EdgeInsets.only(top: 12, bottom: 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _bookingStepHeader(
-          title: 'Pick a time',
-          subtitle: 'Available times for $_proName',
+          title: 'Pick your arrival window',
+          subtitle: 'Choose one of $_proName’s available arrival windows.',
         ),
         const SizedBox(height: 12),
         if (_isLoadingSlots)
           const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
-                  child: CircularProgressIndicator(color: AppTheme.orange500)))
+                  child: CircularProgressIndicator(color: AppTheme.navy)))
         else if (_slotsError != null)
           Text(_slotsError!,
               style: const TextStyle(color: AppTheme.error, fontSize: 13))
@@ -2186,7 +2218,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           )
         else if (_dates.isEmpty)
           const Text(
-            'No availability in this window — try another pro or a different urgency.',
+            'No availability in this window — try another pro or a different response tier.',
             style: TextStyle(color: AppTheme.gray),
           )
         else ...[
@@ -2203,10 +2235,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 return InkWell(
                   onTap: () => setState(() {
                     _selectedDate = date;
-                    final options = _slotsByDate[date] ?? [];
-                    _selectedTime = options.isEmpty
-                        ? null
-                        : options.first['label']?.toString();
+                    _selectedTime = null;
                   }),
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
@@ -2298,166 +2327,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return (date, '${months[parsed.month - 1]} ${parsed.day}');
   }
 
-  Widget _buildLocationStep() {
-    return _stepShell(
-      title: 'Where & anything we should know',
-      subtitle:
-          'Separate the job description from access instructions. Photos and notes stay attached to the work order.',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _fieldLabel('Service address'),
-          const SizedBox(height: 8),
-          if (_isLoadingAddresses)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Center(
-                  child: CircularProgressIndicator(color: AppTheme.orange500)),
-            )
-          else if (_selectedAddressObj == null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF4F4),
-                border: Border.all(color: AppTheme.error.withOpacity(0.35)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'No address saved',
-                    style: TextStyle(
-                      color: AppTheme.error,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text('You must add an address before booking.'),
-                  const SizedBox(height: 10),
-                  OutlinedButton(
-                    onPressed: _openManageAddresses,
-                    child: const Text('Add an Address'),
-                  ),
-                ],
-              ),
-            )
-          else
-            InkWell(
-              onTap: _openManageAddresses,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppTheme.tealTint,
-                  border: Border.all(color: AppTheme.teal500, width: 1.5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.home, color: AppTheme.teal700),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '${_selectedAddressObj?['label'] ?? 'Home'} · ${_selectedAddressObj?['street']}, ${_selectedAddressObj?['city']}, ${_selectedAddressObj?['state']} ${_selectedAddressObj?['zip']}',
-                        style: const TextStyle(
-                          color: AppTheme.navy700,
-                          fontWeight: FontWeight.w700,
-                          height: 1.35,
-                        ),
-                      ),
-                    ),
-                    const Text(
-                      'Change',
-                      style: TextStyle(
-                        color: AppTheme.teal700,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 18),
-          _fieldLabel('Describe the problem'),
-          _textField(
-            controller: _issueController,
-            hint: 'Upstairs is not cooling, started Sunday.',
-            maxLines: 3,
-          ),
-          const SizedBox(height: 14),
-          _fieldLabel('Gate / access code'),
-          _textField(
-            controller: _accessNotesController,
-            hint: 'e.g. #4233',
-            maxLines: 1,
-          ),
-          const SizedBox(height: 14),
-          _fieldLabel('Getting in & on-site notes'),
-          _textField(
-            controller: _onsiteNotesController,
-            hint: 'Parking, pets, where the unit is...',
-            maxLines: 2,
-          ),
-          const SizedBox(height: 14),
-          _fieldLabel('Photos'),
-          if (_selectedPhotos.isEmpty)
-            GestureDetector(
-              onTap: _pickPhotos,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: AppTheme.line),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Center(
-                  child: Text(
-                    'Tap to add photos',
-                    style: TextStyle(
-                        color: AppTheme.teal700, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-            )
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ..._selectedPhotos.map(
-                  (photo) => ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.file(
-                      File(photo.path),
-                      width: 76,
-                      height: 76,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: _pickPhotos,
-                  child: Container(
-                    width: 76,
-                    height: 76,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppTheme.line),
-                    ),
-                    child: const Icon(Icons.add, color: AppTheme.teal700),
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildReviewStep() {
     final pricing = _selectedPricingChoice;
     final detail = _issueController.text.trim();
@@ -2470,9 +2339,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             _string(address['state']),
             _string(address['zip']),
           ].whereType<String>().where((value) => value.isNotEmpty).join(', ');
-    final when = _selectedDate != null && _selectedTime != null
-        ? '$_selectedDate $_selectedTime'
-        : '';
+    final when = !_picksOwnTime
+        ? _deadlineText()
+        : _selectedDate != null && _selectedTime != null
+            ? '$_selectedDate $_selectedTime'
+            : '';
     final fromPrice = _websiteFromPriceValue();
     final emergencySurcharge = _selectedEmergencySurchargeLabel();
 
@@ -2488,8 +2359,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           _reviewLine('Pro', _proName, onChange: _changeContractor),
           _reviewLine('Service', _selectedService.title,
               onChange: () => _editFromReview(0)),
-          _reviewLine('When', when, onChange: () => _editFromReview(3)),
-          _reviewLine('Urgency', _selectedUrgency.label,
+          _reviewLine('When', when,
+              onChange: () => _editFromReview(_picksOwnTime ? 3 : 2)),
+          _reviewLine('Response tier', _selectedUrgency.label,
               onChange: () => _editFromReview(2)),
           if (fromPrice.isNotEmpty) _reviewLine('From', fromPrice),
           if (emergencySurcharge.isNotEmpty)
@@ -2584,7 +2456,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       fontSize: 24,
                       fontWeight: FontWeight.w900))
             ])),
-        if (_availableServiceCredits != null && pricing.amount != null) ...[
+        if (pricing.workOrderType != 'quote_request' &&
+            _availableServiceCredits != null &&
+            pricing.amount != null) ...[
           const SizedBox(height: 11),
           _serviceCreditsPanel(pricing.amount!),
         ],
@@ -2609,10 +2483,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       return 0;
     }
     final entered = double.tryParse(_creditAmountController.text.trim());
-    final requested = entered ?? _availableServiceCredits!;
+    if (entered == null || !entered.isFinite) return 0;
+    final requested = double.parse(entered.toStringAsFixed(2));
     return requested.clamp(
         0,
-        [price.toDouble(), _availableServiceCredits!]
+        [price.toDouble(), _availableServiceCredits!, 10000.0]
             .reduce((a, b) => a < b ? a : b));
   }
 
@@ -2720,37 +2595,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         ]),
       );
 
-  Widget _stepShell({
-    required String title,
-    required String subtitle,
-    required Widget child,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: AppTheme.navy700,
-            fontSize: 23,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          subtitle,
-          style: const TextStyle(
-            color: AppTheme.gray,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 18),
-        child,
-      ],
-    );
-  }
-
   Widget _buildFooter() {
     final label = _isLastPage
         ? 'Confirm booking'
@@ -2773,7 +2617,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             width: double.infinity,
             height: 44,
             child: ElevatedButton(
-              onPressed: _isSubmitting
+              onPressed: _isSubmitting || !_stepIsAnswered(_pages[_pageIndex])
                   ? null
                   : () {
                       if (_isLastPage) {
@@ -2813,92 +2657,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     );
   }
 
-  Widget _selectionCard({
-    required String title,
-    required String subtitle,
-    required String trailing,
-    required String trailingSub,
-    required VoidCallback? onTap,
-    required bool selected,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: selected ? AppTheme.tealTint : Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? AppTheme.teal500 : AppTheme.line,
-              width: selected ? 1.6 : 1,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _radio(selected),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: selected ? AppTheme.teal700 : AppTheme.navy700,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                    if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          color: AppTheme.gray,
-                          fontSize: 12.5,
-                          height: 1.45,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    trailing,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: AppTheme.navy700,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    trailingSub,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: AppTheme.gray,
-                      fontSize: 10.5,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _radio(bool selected) {
     return Container(
       width: 20,
@@ -2923,49 +2681,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               ),
             )
           : null,
-    );
-  }
-
-  Widget _fieldLabel(String label) {
-    return Text(
-      label,
-      style: const TextStyle(
-        color: AppTheme.navy700,
-        fontSize: 12.5,
-        fontWeight: FontWeight.w700,
-      ),
-    );
-  }
-
-  Widget _textField({
-    required TextEditingController controller,
-    required String hint,
-    int maxLines = 1,
-    bool readOnly = false,
-  }) {
-    return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      readOnly: readOnly,
-      decoration: InputDecoration(
-        hintText: hint,
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppTheme.line),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppTheme.line),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppTheme.teal500),
-        ),
-      ),
     );
   }
 
@@ -3247,8 +2962,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   Map<String, dynamic> _workOrderFromBookingResponse(
     Map<String, dynamic> response, {
     required String contractorId,
-    required String startsAt,
-    required String endsAt,
+    required String? startsAt,
+    required String? endsAt,
     required Map<String, dynamic> address,
     required _ServiceOption service,
     required _PricingChoice pricing,
@@ -3292,6 +3007,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           response['workOrderNumber'] ??
           id,
       'status': workOrder['status'] ?? response['status'] ?? 'scheduled',
+      'slaArrivalTarget':
+          workOrder['slaArrivalTarget'] ?? response['slaArrivalTarget'],
+      'priority': _selectedUrgency.urgencySlug,
       'scheduledStart': workOrder['scheduledStart'] ??
           workOrder['scheduled_start'] ??
           workOrder['startsAt'] ??
@@ -3553,7 +3271,7 @@ class _ServiceOption {
       choices.add(
         _PricingChoice(
           label: workOrderType == 'quote_request'
-              ? 'Free estimate'
+              ? 'Request a quote'
               : workOrderType == 'nte'
                   ? 'You approve the cap'
                   : 'Upfront price',
@@ -3564,12 +3282,12 @@ class _ServiceOption {
                   : '',
           amount: price,
           priceText: workOrderType == 'quote_request'
-              ? 'Free estimate'
+              ? 'Request a quote'
               : workOrderType == 'nte'
                   ? priceText
                   : priceText,
           priceHeadline: workOrderType == 'quote_request'
-              ? 'Free estimate'
+              ? 'Request a quote'
               : workOrderType == 'nte'
                   ? 'You approve the cap'
                   : (price == null ? priceText : '\$$price'),
@@ -3846,7 +3564,6 @@ class _UrgencyOption {
         _string(map['responseTime']) ??
         _string(map['response_time']) ??
         _string(map['window']) ??
-        _string(map['eta']) ??
         _string(map['nextAvailable']) ??
         _string(map['next_available']) ??
         _string(map['startsAt']) ??

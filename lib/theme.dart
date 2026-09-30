@@ -9,6 +9,9 @@ import 'package:google_fonts/google_fonts.dart';
 /// The palette is shared with the homeowner web portal. Do not add a colour
 /// to this file without adding it to the portal too.
 class AppTheme {
+  static const categoryRoofing = Color(0xFFFFEBEE);
+  static const categoryHandyman = Color(0xFFF3E5F5);
+
   // ---------------------------------------------------------------------
   // Surfaces
   // ---------------------------------------------------------------------
@@ -183,6 +186,7 @@ class AppTheme {
 
   static ThemeData get lightTheme {
     return ThemeData(
+      fontFamily: GoogleFonts.inter().fontFamily,
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
         seedColor: navy,

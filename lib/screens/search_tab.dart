@@ -1,3 +1,4 @@
+import '../utils/session_pro_order.dart';
 import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -10,13 +11,18 @@ import '../services/intake_service.dart';
 import '../services/browse_search_history.dart';
 import '../services/service_catalog.dart';
 import '../services/service_location.dart';
+import '../services/stream_service.dart';
 import '../theme.dart';
 import '../utils/app_error_utils.dart';
 import '../utils/service_search_matcher.dart';
 import '../widgets/ai_intake_sheet.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/service_zip_entry_dialog.dart';
 import '../widgets/service_search_bar.dart';
+import '../widgets/select_certified_info.dart';
+import 'compare_pros.dart';
+import 'chat_screen.dart';
 import 'pro_profile.dart';
 
 enum _BrowseView {
@@ -26,21 +32,6 @@ enum _BrowseView {
   typeAhead,
   results,
   noCoverage,
-}
-
-enum _BrowseSort { highestRated, nearest, lowestPrice }
-
-extension on _BrowseSort {
-  String get label {
-    switch (this) {
-      case _BrowseSort.highestRated:
-        return 'Highest rated';
-      case _BrowseSort.nearest:
-        return 'Nearest';
-      case _BrowseSort.lowestPrice:
-        return 'Lowest price';
-    }
-  }
 }
 
 class SearchTab extends StatefulWidget {
@@ -72,10 +63,10 @@ class _SearchTabState extends State<SearchTab> {
     'Plumbing': AppTheme.blueTint,
     'Electrical': AppTheme.amberTint,
     'Cleaning': AppTheme.greenTint,
-    'Roofing': Color(0xFFFFEBEE),
+    'Roofing': AppTheme.categoryRoofing,
     'Lawn': AppTheme.greenTint,
     'Landscaping': AppTheme.greenTint,
-    'Handyman': Color(0xFFF3E5F5),
+    'Handyman': AppTheme.categoryHandyman,
   };
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
@@ -87,9 +78,11 @@ class _SearchTabState extends State<SearchTab> {
   final Map<String, int> _categoryCounts = {};
   final Map<String, bool> _categoryCoverage = {};
   final Map<String, String> _liveNextSlotLabels = {};
+  final List<String> _compareIds = [];
 
   _BrowseView _view = _BrowseView.browse;
-  _BrowseSort _browseSort = _BrowseSort.highestRated;
+  String? _bookingDescription;
+  String? _descriptionCategory;
   String _selectedCategory = 'All';
   String _selectedZip = '';
   String? _committedQuery;
@@ -821,6 +814,8 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Future<void> _runAllServicesSearch() async {
+    _bookingDescription = null;
+    _descriptionCategory = null;
     if (_selectedZip.isEmpty && !await _requestZipIfNeeded()) return;
     // Keep the catalogue visible while nearby-pro data refreshes. Previously,
     // the async completion replaced this route with the default Browse view.
@@ -1025,6 +1020,13 @@ class _SearchTabState extends State<SearchTab> {
     String urgency = 'standard',
     String? forcedSlug,
   }) async {
+    if (overrideQuery != null) {
+      _bookingDescription = overrideQuery.trim();
+      _descriptionCategory = category;
+    } else if (category != _descriptionCategory) {
+      _bookingDescription = null;
+      _descriptionCategory = null;
+    }
     if (_selectedZip.isEmpty && !await _requestZipIfNeeded()) return;
     final requestToken = ++_prosRequestToken;
     final requestedZip = _selectedZip;
@@ -1531,7 +1533,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.kitchen,
           serviceCount: 9,
           prosCount: 1,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: true,
         ),
         _BrowseCategory(
@@ -1555,7 +1557,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.layers,
           serviceCount: 6,
           prosCount: 1,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: true,
         ),
         _BrowseCategory(
@@ -1579,7 +1581,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.flash_on,
           serviceCount: 7,
           prosCount: 2,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: true,
         ),
         _BrowseCategory(
@@ -1603,7 +1605,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.format_paint,
           serviceCount: 5,
           prosCount: 1,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: true,
         ),
         _BrowseCategory(
@@ -1627,7 +1629,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.window,
           serviceCount: 6,
           prosCount: 1,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: true,
         ),
         _BrowseCategory(
@@ -1651,7 +1653,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.park,
           serviceCount: 4,
           prosCount: 1,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: true,
         ),
         _BrowseCategory(
@@ -1675,7 +1677,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.wb_shade,
           serviceCount: 2,
           prosCount: 0,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: false,
         ),
         _BrowseCategory(
@@ -1691,7 +1693,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.delete_outline,
           serviceCount: 4,
           prosCount: 1,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: true,
         ),
         _BrowseCategory(
@@ -1715,7 +1717,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.texture,
           serviceCount: 4,
           prosCount: 1,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: true,
         ),
         _BrowseCategory(
@@ -1739,7 +1741,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.pool,
           serviceCount: 4,
           prosCount: 1,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: true,
         ),
         _BrowseCategory(
@@ -1763,7 +1765,7 @@ class _SearchTabState extends State<SearchTab> {
           icon: Icons.foundation,
           serviceCount: 4,
           prosCount: 0,
-          color: AppTheme.orange500,
+          color: AppTheme.navy700,
           covered: false,
         ),
       ];
@@ -1821,8 +1823,110 @@ class _SearchTabState extends State<SearchTab> {
     await Navigator.push<Object?>(
       context,
       MaterialPageRoute(
-        builder: (context) => ProProfileScreen(pro: _toProMap(pro)),
+        builder: (context) => ProProfileScreen(
+            pro: _toProMap(pro), initialDescription: _bookingDescription),
       ),
+    );
+  }
+
+  // The public profile contract resolves a profile by slug. Selection order is
+  // still the homeowner's order; this is only the stable fetch key.
+  String _compareId(_BrowsePro pro) => pro.slug;
+
+  void _toggleCompare(_BrowsePro pro) {
+    final id = _compareId(pro);
+    setState(() {
+      if (_compareIds.contains(id)) {
+        _compareIds.remove(id);
+      } else if (_compareIds.length < 3) {
+        _compareIds.add(id);
+      }
+    });
+  }
+
+  Future<void> _openCompare() async {
+    if (_compareIds.length < 2) return;
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CompareProsScreen(
+          contractorIds: List<String>.from(_compareIds),
+          serviceLabel:
+              _selectedCategory == 'All' ? _committedQuery : _selectedCategory,
+          zip: _selectedZip,
+        ),
+      ),
+    );
+    if (!mounted || result == null) return;
+    final profile = result['profile'];
+    if (profile is! Map) return;
+    final pro = Map<String, dynamic>.from(profile);
+    switch (result['action']) {
+      case 'book':
+        widget.onBookPro(pro);
+      case 'message':
+        await _openCompareMessage(pro);
+      case 'profile':
+        await Navigator.push<Object?>(
+            context,
+            MaterialPageRoute(
+                builder: (_) => ProProfileScreen(
+                    pro: pro, initialDescription: _bookingDescription)));
+    }
+  }
+
+  Future<void> _openCompareMessage(Map<String, dynamic> pro) async {
+    if (!AuthService.instance.isAuthenticated) {
+      AppNotification.showInfo(
+          context, 'Please sign in to message this contractor.');
+      return;
+    }
+    final recipientId = StreamService.instance.resolveMessagingUserId(pro);
+    if (recipientId == null) {
+      AppNotification.showInfo(
+          context, 'Chat is not available for this contractor yet.');
+      return;
+    }
+    final name = (pro['business_name'] ?? pro['businessName'] ?? 'Contractor')
+        .toString()
+        .trim();
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          contractorId: recipientId,
+          contractorName: name.isEmpty ? 'Contractor' : name,
+        ),
+      ),
+    );
+  }
+
+  Widget _compareTray() {
+    if (_compareIds.isEmpty) return const SizedBox.shrink();
+    final ready = _compareIds.length >= 2;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.pageBackground,
+        border: Border.all(color: AppTheme.cardBorder),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(children: [
+        Expanded(
+            child: Text(
+                '${_compareIds.length} of 3 selected${ready ? '' : ' · Add at least two pros to compare'}',
+                style: const TextStyle(
+                    color: AppTheme.navy, fontWeight: FontWeight.w700))),
+        ElevatedButton(
+          onPressed: ready ? _openCompare : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.orange,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Compare'),
+        ),
+      ]),
     );
   }
 
@@ -1832,7 +1936,7 @@ class _SearchTabState extends State<SearchTab> {
       return _buildZipRequired();
     }
 
-    final visiblePros = _livePros;
+    final visiblePros = _shuffledBrowsePros(_livePros);
     final searchQuery = _searchController.text.trim();
     final activeTypeAhead = _matchesQuery(searchQuery);
 
@@ -1921,7 +2025,7 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildBrowseDefault(List<_BrowsePro> visiblePros) {
-    final sortedPros = _sortedBrowsePros(visiblePros);
+    final sortedPros = _shuffledBrowsePros(visiblePros);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       children: [
@@ -1935,52 +2039,26 @@ class _SearchTabState extends State<SearchTab> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              '${visiblePros.length} Select-certified pros',
+              '${visiblePros.length} pros cover $_selectedZip',
               style: const TextStyle(
                 color: AppTheme.navy,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
             ),
-            PopupMenuButton<_BrowseSort>(
-              tooltip: 'Sort contractors',
-              initialValue: _browseSort,
-              onSelected: (sort) => setState(() => _browseSort = sort),
-              itemBuilder: (context) => _BrowseSort.values
-                  .map(
-                    (sort) => PopupMenuItem<_BrowseSort>(
-                      value: sort,
-                      child: Text(sort.label),
-                    ),
-                  )
-                  .toList(),
-              child: Row(
-                children: [
-                  Text(
-                    _browseSort.label,
-                    style: const TextStyle(
-                      color: AppTheme.teal500,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 2),
-                  const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: AppTheme.teal500,
-                    size: 14,
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
         const SizedBox(height: 8),
+        const Text(
+            "We show your pros in a random order. TradeWorks doesn't rank them.",
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+        const SizedBox(height: 12),
+        _compareTray(),
         if (_isLoadingResults)
           const Padding(
             padding: EdgeInsets.only(top: 28),
             child: Center(
-              child: CircularProgressIndicator(color: AppTheme.orange500),
+              child: CircularProgressIndicator(color: AppTheme.navy),
             ),
           )
         else if (_resultsError != null)
@@ -2137,7 +2215,7 @@ class _SearchTabState extends State<SearchTab> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
-              color: AppTheme.pageAlt,
+              color: AppTheme.pageBackground,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppTheme.line),
             ),
@@ -2204,11 +2282,21 @@ class _SearchTabState extends State<SearchTab> {
       children: [
         _buildSearchInputPill(),
         const SizedBox(height: 12),
+        if (!_isLoadingResults &&
+            _resultsError == null &&
+            matches.isNotEmpty) ...[
+          Text('${matches.length} pros cover $_selectedZip'),
+          const SizedBox(height: 6),
+          const Text(
+              "Pros appear in a random order. TradeWorks does not rank them."),
+          const SizedBox(height: 12),
+          _compareTray(),
+        ],
         if (_isLoadingResults)
           const Padding(
             padding: EdgeInsets.only(top: 40),
             child: Center(
-              child: CircularProgressIndicator(color: AppTheme.orange500),
+              child: CircularProgressIndicator(color: AppTheme.navy),
             ),
           )
         else if (_resultsError != null)
@@ -2227,8 +2315,8 @@ class _SearchTabState extends State<SearchTab> {
   Widget _buildNoCoverage() {
     final subtitle = _selectedCategory == 'All' ||
             _selectedCategory.trim().isEmpty
-        ? 'TradeWorks is zip-gated to guarantee response times and quality. We have not expanded into cleaning to Cape Coral $_selectedZip yet.'
-        : 'TradeWorks is zip-gated to guarantee response times and quality. We have not expanded ${_selectedCategory.toLowerCase()} service in $_selectedZip yet.';
+        ? 'No pros currently list coverage for $_selectedZip.'
+        : 'No pros currently list ${_selectedCategory.toLowerCase()} coverage for $_selectedZip.';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(10, 30, 10, 28),
@@ -2339,7 +2427,7 @@ class _SearchTabState extends State<SearchTab> {
       focusNode: _searchFocusNode,
       hint: 'Search a service or pro',
       borderColor:
-          _searchFocusNode.hasFocus ? AppTheme.orange500 : AppTheme.cardBorder,
+          _searchFocusNode.hasFocus ? AppTheme.blue : AppTheme.cardBorder,
       onTap: focusSearchField,
       // Keep the focused suggestions mounted long enough for their rows to
       // receive the gesture. Unfocusing on pointer-down replaces this view
@@ -2366,37 +2454,19 @@ class _SearchTabState extends State<SearchTab> {
     );
   }
 
-  List<_BrowsePro> _sortedBrowsePros(List<_BrowsePro> pros) {
-    final sorted = [...pros];
-    switch (_browseSort) {
-      case _BrowseSort.highestRated:
-        sorted.sort((a, b) {
-          final rating = b.rating.compareTo(a.rating);
-          if (rating != 0) return rating;
-          final reviews = b.reviews.compareTo(a.reviews);
-          if (reviews != 0) return reviews;
-          return a.distanceMiles.compareTo(b.distanceMiles);
-        });
-      case _BrowseSort.nearest:
-        sorted.sort((a, b) {
-          final distance = a.distanceMiles.compareTo(b.distanceMiles);
-          if (distance != 0) return distance;
-          return b.rating.compareTo(a.rating);
-        });
-      case _BrowseSort.lowestPrice:
-        sorted.sort((a, b) {
-          final price = a.price.compareTo(b.price);
-          if (price != 0) return price;
-          return b.rating.compareTo(a.rating);
-        });
-    }
-    return sorted;
-  }
+  List<_BrowsePro> _shuffledBrowsePros(List<_BrowsePro> pros) =>
+      SessionProOrder.instance.arrange(
+          pros,
+          (pro) => pro.contractorId.isNotEmpty
+              ? pro.contractorId
+              : pro.apiSlug.isNotEmpty
+                  ? pro.apiSlug
+                  : pro.name);
 
   Widget _buildRail(List<_BrowseCategory> categories) {
     Color homeBackgroundFor(String name) {
       if (name == 'All') {
-        return AppTheme.orangeTint;
+        return AppTheme.navyTint;
       }
       return _homeCategoryBackgrounds[name] ??
           TradeWorksCategoryTokens.forName(name).tint;
@@ -2408,7 +2478,7 @@ class _SearchTabState extends State<SearchTab> {
         meta: _isLoadingCoverage ? '...' : '${_allProsCount} pros',
         category: 'All',
         fallbackIcon: Icons.grid_view_rounded,
-        accent: AppTheme.orange500,
+        accent: AppTheme.navy700,
         tint: homeBackgroundFor('All'),
         selected: _selectedCategory == 'All',
         enabled: !_isLoadingCoverage && _allProsCount > 0,
@@ -2550,7 +2620,7 @@ class _SearchTabState extends State<SearchTab> {
               CircleAvatar(
                 radius: 14,
                 backgroundColor: pro.category == 'Plumbing'
-                    ? AppTheme.orangeTint
+                    ? AppTheme.navyTint
                     : pro.category == 'Electrical'
                         ? AppTheme.tealTint
                         : AppTheme.navyTint,
@@ -2558,7 +2628,7 @@ class _SearchTabState extends State<SearchTab> {
                   pro.initials,
                   style: TextStyle(
                     color: pro.category == 'Plumbing'
-                        ? AppTheme.orange700
+                        ? AppTheme.navy700
                         : pro.category == 'Electrical'
                             ? AppTheme.teal700
                             : AppTheme.navy700,
@@ -2639,6 +2709,17 @@ class _SearchTabState extends State<SearchTab> {
                           height: 1.1,
                         ),
                       ),
+                      if (pro.selectedCertified)
+                        TextButton.icon(
+                          onPressed: () => showSelectCertifiedInfo(context),
+                          icon: const Icon(Icons.info_outline, size: 14),
+                          label: const Text('Select-certified'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppTheme.blue,
+                            minimumSize: const Size(44, 44),
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -2684,12 +2765,14 @@ class _SearchTabState extends State<SearchTab> {
                     children: [
                       const Icon(
                         Icons.star_rounded,
-                        color: AppTheme.orange500,
+                        color: AppTheme.gold,
                         size: 14,
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '${pro.reviews} reviews (${pro.rating.toStringAsFixed(1)})',
+                        pro.reviews == 0
+                            ? 'No reviews yet'
+                            : '${pro.rating.toStringAsFixed(1)} · ${pro.reviews} reviews',
                         style: const TextStyle(
                           color: AppTheme.navy,
                           fontWeight: FontWeight.w700,
@@ -2762,6 +2845,23 @@ class _SearchTabState extends State<SearchTab> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton(
+                onPressed: _compareIds.contains(_compareId(pro)) ||
+                        _compareIds.length < 3
+                    ? () => _toggleCompare(pro)
+                    : null,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.navy,
+                  side: const BorderSide(color: AppTheme.navy),
+                ),
+                child: Text(_compareIds.contains(_compareId(pro))
+                    ? 'Added'
+                    : 'Compare'),
+              ),
             ),
           ],
         ),
@@ -2846,7 +2946,7 @@ class _SearchTabState extends State<SearchTab> {
     switch (category) {
       case 'Plumbing':
       case 'Appliance Repair':
-        return AppTheme.orangeTint;
+        return AppTheme.navyTint;
       case 'Electrical':
       case 'Water Treatment':
         return AppTheme.tealTint;
@@ -2859,7 +2959,7 @@ class _SearchTabState extends State<SearchTab> {
     switch (category) {
       case 'Plumbing':
       case 'Appliance Repair':
-        return AppTheme.orange700;
+        return AppTheme.navy700;
       case 'Electrical':
       case 'Water Treatment':
         return AppTheme.teal700;
@@ -2910,7 +3010,6 @@ class _BrowsePro {
   final String initials;
   final String category;
   final String trade;
-  final String ratingLabel;
   final double rating;
   final int reviews;
   final double distanceMiles;
@@ -2933,7 +3032,6 @@ class _BrowsePro {
     required this.initials,
     required this.category,
     required this.trade,
-    required this.ratingLabel,
     required this.rating,
     required this.reviews,
     required this.distanceMiles,
@@ -3021,14 +3119,6 @@ class _BrowsePro {
     final selectedCertified =
         map['selectedCertified'] == true || map['isSelectCertified'] == true;
 
-    final ratingLabel = rating >= 4.9
-        ? 'Exceptional'
-        : rating >= 4.7
-            ? 'Great'
-            : rating > 0
-                ? 'Good'
-                : 'New';
-
     return _BrowsePro(
       contractorId: read(map['contractorId'], read(map['id'])),
       userId: read(map['userId']),
@@ -3050,7 +3140,6 @@ class _BrowsePro {
       initials: initials.isEmpty ? 'SP' : initials,
       category: category,
       trade: trade,
-      ratingLabel: ratingLabel,
       rating: rating,
       reviews: reviews,
       distanceMiles: distance,
@@ -3143,7 +3232,7 @@ class _RailChip extends StatelessWidget {
                 ? accent
                 : enabled
                     ? tint
-                    : AppTheme.pageAlt,
+                    : AppTheme.pageBackground,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: active

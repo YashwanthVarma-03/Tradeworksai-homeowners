@@ -7,6 +7,8 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import '../theme.dart';
 
+const _supportPhoneUri = 'tel:8134777350';
+
 class CategoryGuidesScreen extends StatefulWidget {
   final Future<void> Function(String category)? onBrowseCategory;
 
@@ -33,9 +35,9 @@ class _CategoryGuidesScreenState extends State<CategoryGuidesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.cardBorder,
+      backgroundColor: AppTheme.pageBackground,
       appBar: AppBar(
-        backgroundColor: AppTheme.cardBorder,
+        backgroundColor: AppTheme.pageBackground,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
@@ -54,7 +56,7 @@ class _CategoryGuidesScreenState extends State<CategoryGuidesScreen> {
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(
-              child: CircularProgressIndicator(color: AppTheme.orange500),
+              child: CircularProgressIndicator(color: AppTheme.navy),
             );
           }
           if (snapshot.hasError || !snapshot.hasData) {
@@ -148,7 +150,7 @@ class CategoryGuideDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final serviceCategory = article.serviceCategory;
     return Scaffold(
-      backgroundColor: AppTheme.cardBorder,
+      backgroundColor: AppTheme.pageBackground,
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -158,7 +160,7 @@ class CategoryGuideDetailScreen extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => launchUrlString('tel:8134777350'),
+                  onPressed: () => launchUrlString(_supportPhoneUri),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: AppTheme.navy700, width: 1.4),
                     foregroundColor: AppTheme.navy700,
@@ -183,7 +185,7 @@ class CategoryGuideDetailScreen extends StatelessWidget {
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.orange500,
-                    foregroundColor: AppTheme.navy700,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -301,7 +303,6 @@ class CategoryGuideArticle {
   final String slug;
   final String primaryKeyword;
   final String metaDescription;
-  final String tier;
   final String wordTarget;
   final String ctaTitle;
   final String ctaBody;
@@ -317,7 +318,6 @@ class CategoryGuideArticle {
     required this.slug,
     required this.primaryKeyword,
     required this.metaDescription,
-    required this.tier,
     required this.wordTarget,
     required this.ctaTitle,
     required this.ctaBody,
@@ -335,7 +335,6 @@ class CategoryGuideArticle {
       slug: json['slug'] as String,
       primaryKeyword: json['primaryKeyword'] as String? ?? '',
       metaDescription: json['metaDescription'] as String,
-      tier: json['tier'] as String? ?? '',
       wordTarget: json['wordTarget'] as String,
       ctaTitle: json['ctaTitle'] as String? ?? '',
       ctaBody: json['ctaBody'] as String? ?? '',
@@ -704,7 +703,7 @@ class _GuideListCard extends StatelessWidget {
                         '${article.kindLabel} · ${article.subtitle}',
                         style: TextStyle(
                           color: article.isGeneral
-                              ? AppTheme.orange700
+                              ? AppTheme.navy700
                               : AppTheme.teal700,
                           fontWeight: FontWeight.w600,
                           fontSize: 12.5,
@@ -1391,12 +1390,6 @@ class _PricingModule extends StatelessWidget {
               'Repairs needing diagnosis use a cap you approve before work begins.',
           color: AppTheme.blue,
         ),
-        _PricingCard(
-          title: 'Free estimate',
-          label: 'Free estimate',
-          text: 'Bigger projects get an itemized estimate before you decide.',
-          color: AppTheme.navy,
-        ),
       ],
     );
   }
@@ -1589,9 +1582,9 @@ class _AiExperienceModule extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'The assistant points you to the right service, then you browse, choose, book, and track.',
+                  'The assistant points you to the right service, then you browse, choose and book. You see each step as your pro marks it.',
                   style: AppTheme.bodyStyle.copyWith(
-                    color: AppTheme.cardBorder,
+                    color: Colors.white,
                     fontSize: 13.5,
                   ),
                 ),
@@ -1895,7 +1888,7 @@ class _ArticleCtaCard extends StatelessWidget {
           Text(
             article.ctaBody,
             style: AppTheme.bodyStyle.copyWith(
-              color: AppTheme.cardBorder,
+              color: Colors.white,
               fontSize: 14,
               height: 1.55,
             ),
@@ -1909,7 +1902,7 @@ class _ArticleCtaCard extends StatelessWidget {
                 onPressed: onBrowseTap,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.orange500,
-                  foregroundColor: AppTheme.navy700,
+                  foregroundColor: Colors.white,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
                   shape: RoundedRectangleBorder(
@@ -1922,7 +1915,7 @@ class _ArticleCtaCard extends StatelessWidget {
                 ),
               ),
               OutlinedButton(
-                onPressed: () => launchUrlString('tel:8134777350'),
+                onPressed: () => launchUrlString(_supportPhoneUri),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: Colors.white.withOpacity(0.45)),
                   foregroundColor: Colors.white,

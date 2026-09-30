@@ -144,9 +144,9 @@ class _PasswordResetPageState extends State<PasswordResetPage>
           iconTheme: const IconThemeData(color: AppTheme.navy700),
           bottom: TabBar(
             controller: _tabController,
-            labelColor: AppTheme.orange500,
+            labelColor: AppTheme.navy,
             unselectedLabelColor: AppTheme.gray,
-            indicatorColor: AppTheme.orange500,
+            indicatorColor: AppTheme.navy,
             tabs: const [
               Tab(text: 'Request Link'),
               Tab(text: 'Set Password'),
@@ -204,7 +204,7 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                                 hintStyle: const TextStyle(
                                     color: AppTheme.gray, fontSize: 13),
                                 filled: true,
-                                fillColor: AppTheme.pageAlt,
+                                fillColor: AppTheme.pageBackground,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10),
                                   borderSide: BorderSide.none,
@@ -223,7 +223,7 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                             if (_isLoading)
                               const Center(
                                 child: CircularProgressIndicator(
-                                    color: AppTheme.orange500),
+                                    color: AppTheme.navy),
                               )
                             else
                               HoverButton(
@@ -281,7 +281,7 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                                 hintStyle: const TextStyle(
                                     color: AppTheme.gray, fontSize: 13),
                                 filled: true,
-                                fillColor: AppTheme.pageAlt,
+                                fillColor: AppTheme.pageBackground,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10),
                                   borderSide: BorderSide.none,
@@ -312,7 +312,7 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                                 hintStyle: const TextStyle(
                                     color: AppTheme.gray, fontSize: 13),
                                 filled: true,
-                                fillColor: AppTheme.pageAlt,
+                                fillColor: AppTheme.pageBackground,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10),
                                   borderSide: BorderSide.none,
@@ -331,7 +331,7 @@ class _PasswordResetPageState extends State<PasswordResetPage>
                             if (_isLoading)
                               const Center(
                                 child: CircularProgressIndicator(
-                                    color: AppTheme.orange500),
+                                    color: AppTheme.navy),
                               )
                             else
                               HoverButton(

@@ -83,9 +83,20 @@ void main() {
       'proName': 'Test Plumbing',
     })));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Review the cap'));
-    await tester.tap(find.text('Review the cap'));
+    await tester.ensureVisible(find.text('Review the quote'));
+    await tester.tap(find.text('Review the quote'));
     await tester.pumpAndSettle();
     expect(find.byType(CapApprovalScreen), findsOneWidget);
+  });
+  testWidgets('an unanswered quote request cannot be approved', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+        home: WorkOrderDetailScreen(job: {
+      'id': 13,
+      'status': 'quote_request',
+      'serviceCategory': 'Plumbing',
+    })));
+    await tester.pumpAndSettle();
+    expect(find.text('Review the quote'), findsNothing);
+    expect(find.byType(CapApprovalScreen), findsNothing);
   });
 }

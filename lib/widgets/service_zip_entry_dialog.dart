@@ -72,7 +72,7 @@ class _ServiceZipEntryDialogState extends State<_ServiceZipEntryDialog> {
                 hintText: '5-digit ZIP code',
                 prefixIcon: const Icon(
                   Icons.location_on_outlined,
-                  color: AppTheme.orange500,
+                  color: AppTheme.navy,
                 ),
                 errorText: _errorText,
                 counterText: '',

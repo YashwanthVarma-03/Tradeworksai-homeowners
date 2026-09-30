@@ -792,16 +792,25 @@ class HomeownerService {
 
   Future<http.Response> _postRaw(
     String endpoint,
-    Map<String, dynamic> body,
-  ) async {
+    Map<String, dynamic> body, {
+    String method = 'POST',
+  }) async {
     final headers = await _jsonHeaders();
-    return http
-        .post(
-          Uri.parse('${ApiConfig.baseUrl}$endpoint'),
-          headers: headers,
-          body: jsonEncode(body),
-        )
-        .timeout(_requestTimeout);
+    final uri = Uri.parse('${ApiConfig.baseUrl}$endpoint');
+    switch (method) {
+      case 'GET':
+        return http.get(uri, headers: headers).timeout(_requestTimeout);
+      case 'PATCH':
+        return http
+            .patch(uri, headers: headers, body: jsonEncode(body))
+            .timeout(_requestTimeout);
+      case 'DELETE':
+        return http.delete(uri, headers: headers).timeout(_requestTimeout);
+      default:
+        return http
+            .post(uri, headers: headers, body: jsonEncode(body))
+            .timeout(_requestTimeout);
+    }
   }
 
   void _throwIfRecentFailure(String endpoint) {
@@ -844,12 +853,13 @@ class HomeownerService {
     String endpoint,
     Map<String, dynamic> body, {
     String? fallbackEndpoint,
+    String method = 'POST',
   }) async {
     _throwIfRecentFailure(endpoint);
     try {
       http.Response response;
       try {
-        response = await _postRaw(endpoint, body);
+        response = await _postRaw(endpoint, body, method: method);
       } catch (primaryError) {
         if (fallbackEndpoint == null ||
             !AppErrorUtils.isNetworkError(primaryError)) {
@@ -1010,6 +1020,21 @@ class HomeownerService {
     }
   }
 
+  Future<Map<String, dynamic>> findWorkOrder(int workOrderId) async {
+    final data = await fetchWorkOrders(forceRefresh: true);
+    final tabs = data['tabs'];
+    if (tabs is Map) {
+      for (final list in tabs.values.whereType<List>()) {
+        for (final job in list.whereType<Map>()) {
+          if ('${job['workOrderId'] ?? job['id']}' == '$workOrderId') {
+            return Map<String, dynamic>.from(job);
+          }
+        }
+      }
+    }
+    throw Exception('This work order could not be loaded. Please try again.');
+  }
+
   // H2: Work Order Action
   // Actions: confirm_complete, propose_reschedule, respond_reschedule, raise_dispute, pro_no_show, cancel
   Future<Map<String, dynamic>> performWorkOrderAction({
@@ -1084,17 +1109,23 @@ class HomeownerService {
     required double rating,
     required String text,
     String? displayName,
+    List<String> tags = const [],
+    bool hasExistingReview = false,
   }) async {
     if (_userId == null) throw Exception('User is not authenticated');
-    final ratingInt = rating.round().clamp(1, 5).toInt();
+    if (!rating.isFinite || rating < 1 || rating > 5) {
+      throw Exception('Please choose a star rating.');
+    }
+    final ratingInt = rating.round();
 
     final body = {
-      'action': 'submit_review',
+      'action': hasExistingReview ? 'update_review' : 'submit_review',
       'workOrderId': workOrderId,
       'requesterUserId': _userId,
       'requester_user_id': _userId,
       'rating': ratingInt,
       'text': text,
+      'tags': tags,
       if (displayName != null) 'displayName': displayName,
     };
     final result = await _post(
@@ -1105,6 +1136,13 @@ class HomeownerService {
     _cacheReview(workOrderId, {
       'rating': ratingInt.toDouble(),
       'reviewText': text,
+      'tags': tags,
+      'editedAt': result['editedAt'] ??
+          (result['review'] is Map ? result['review']['edited_at'] : null),
+      'proResponse': result['proResponse'] ??
+          (result['review'] is Map
+              ? result['review']['pro_response']
+              : _reviewsByWorkOrder[workOrderId]?['proResponse']),
       'displayName': displayName,
       'reviewed': true,
       'reviewId': result['reviewId'],
@@ -1118,6 +1156,27 @@ class HomeownerService {
     _notifyContractorCatalogChanged();
     unawaited(syncInBackground());
     return result;
+  }
+
+  Future<void> deleteReview(int workOrderId) async {
+    if (_userId == null) throw Exception('User is not authenticated');
+    await _post(
+        _reviewActionPath,
+        {
+          'action': 'deleteReview',
+          'workOrderId': workOrderId,
+          'requesterUserId': _userId,
+          'requester_user_id': _userId,
+        },
+        fallbackEndpoint: _legacyReviewActionPath);
+    _reviewsByWorkOrder.remove(workOrderId);
+    _invalidateReviewEligibilityCache(workOrderId);
+    await _invalidateWorkOrderCache();
+    await _invalidateContractorProfileCache();
+    await _invalidateContractorSearchCache();
+    reviewVersion.value++;
+    _notifyContractorCatalogChanged();
+    unawaited(syncInBackground());
   }
 
   Map<String, dynamic>? cachedReviewForWorkOrder(int workOrderId) {
@@ -1143,6 +1202,9 @@ class HomeownerService {
     if (workOrderId <= 0) return;
     final normalized = Map<String, dynamic>.from(review)..['reviewed'] = true;
     final previous = _reviewsByWorkOrder[workOrderId];
+    if (normalized['detailsAvailable'] == false &&
+        previous != null &&
+        previous['detailsAvailable'] != false) return;
     if (mapEquals(previous, normalized)) return;
     _reviewsByWorkOrder[workOrderId] = normalized;
     reviewVersion.value++;
@@ -1204,7 +1266,7 @@ class HomeownerService {
       final rows = await Supabase.instance.client
           .from('contractor_reviews')
           .select(
-            'id,work_order_id,rating,review_text,reviewer_name,review_date,is_active',
+            'id,work_order_id,rating,review_text,reviewer_name,review_date,is_active,tags,edited_at,pro_response',
           )
           .inFilter('work_order_id', unresolved);
       for (final raw in rows) {
@@ -1294,6 +1356,9 @@ class HomeownerService {
         ? rawRating.toDouble()
         : double.tryParse(rawRating?.toString() ?? '') ?? 0.0;
     return {
+      'tags': source['tags'] ?? const [],
+      'editedAt': source['editedAt'] ?? source['edited_at'],
+      'proResponse': source['proResponse'] ?? source['pro_response'],
       'reviewed': true,
       'rating': rating,
       'reviewText': (source['reviewText'] ??
@@ -1415,6 +1480,11 @@ class HomeownerService {
     }
   }
 
+  /// Compare deliberately loads the richer profile payload instead of trying
+  /// to infer credentials or response tiers from a lightweight search card.
+  Future<Map<String, dynamic>> fetchContractorProfile(String contractorId) =>
+      getContractorProfile(contractorId);
+
   // H4: Contractor availability
   Future<Map<String, dynamic>> getContractorAvailability({
     required String contractorId,
@@ -1427,6 +1497,7 @@ class HomeownerService {
     String? serviceName,
     String? serviceCategory,
     String? workOrderType,
+    bool forceRefresh = false,
   }) async {
     final identity = [
       contractorId,
@@ -1443,13 +1514,15 @@ class HomeownerService {
     final resource = 'availability:${Uri.encodeComponent(identity)}';
     final cached = _availabilityCache[identity];
     final cachedAt = _availabilityCacheAt[identity];
-    if (cached != null &&
+    if (!forceRefresh &&
+        cached != null &&
         cachedAt != null &&
         DateTime.now().difference(cachedAt) < _availabilityCacheTtl) {
       return cached;
     }
-    final persistent =
-        await _readPersistentCache(resource, _availabilityCacheTtl);
+    final persistent = forceRefresh
+        ? null
+        : await _readPersistentCache(resource, _availabilityCacheTtl);
     if (persistent != null) {
       _availabilityCache[identity] = persistent;
       _availabilityCacheAt[identity] = DateTime.now();
@@ -1887,7 +1960,22 @@ class HomeownerService {
       bookingPayload['client_request_id'] = transactionId;
     }
 
+    final creditAmount = num.tryParse(
+            '${bookingPayload.remove('service_credits_applied') ?? 0}') ??
+        0;
+    final creditRequestId = bookingPayload.remove('credit_request_id');
+    final intakeToken = bookingPayload.remove('intake_session_token');
+    if (creditAmount > 0 && (action != 'commit' || creditRequestId == null)) {
+      throw Exception(
+          'Credits require a confirmed booking and a request identifier.');
+    }
     final body = {
+      if (creditAmount > 0) ...{
+        'applyServiceCredit': true,
+        'serviceCreditAmount': creditAmount.toStringAsFixed(2),
+        'creditRequestId': creditRequestId
+      },
+      if (intakeToken != null) 'intakeSessionToken': intakeToken,
       'contractorId': contractorId,
       'action': action,
       'urgency': urgency,
@@ -2079,11 +2167,357 @@ class HomeownerService {
     );
   }
 
+  Map<String, dynamic> _homeSystem(Map value) {
+    final specs = value['specifications'] as Map? ?? {};
+    return {
+      ...Map<String, dynamic>.from(value),
+      'model': value['modelNumber'],
+      'location': specs['location'],
+      'notes': specs['notes'],
+      'lastServicedAt': value['lastServicedOn'],
+    };
+  }
+
+  Map<String, dynamic> _homeDetail(Map<String, dynamic> data) {
+    final home = Map<String, dynamic>.from(data['home'] as Map);
+    final notes = (data['notes'] as List? ?? []).whereType<Map>();
+    final access = notes.where((note) => note['type'] == 'access').toList();
+    final accessText =
+        access.map((note) => '${note['body'] ?? ''}').join('\n\n');
+    return {
+      ...home,
+      'propertyDetails': {
+        'squareFootage': home['squareFeet'],
+        'yearBuilt': home['yearBuilt'],
+        'bedrooms': home['bedrooms'],
+        'bathrooms': home['bathrooms'],
+      },
+      'accessNotes': access.isEmpty
+          ? <String, dynamic>{}
+          : {
+              'id': access.first['id'],
+              'ids': access.map((note) => note['id']).toList(),
+              'text': accessText,
+              'originalText': accessText.trim(),
+            },
+      'systems': (data['systems'] as List? ?? [])
+          .whereType<Map>()
+          .map(_homeSystem)
+          .toList(),
+      'documents': data['documents'] as List? ?? [],
+    };
+  }
+
+  Future<Map<String, dynamic>> fetchHomeProfiles() async {
+    final uid = _userId;
+    if (uid == null) throw Exception('User is not authenticated');
+    final data = await _post('homeowner/home-profiles', {}, method: 'GET');
+    final homes = (data['homeProfiles'] as List? ?? []).whereType<Map>();
+    final profiles = await Future.wait(homes.map((home) async => _homeDetail(
+        await _post('homeowner/home-profiles/${home['id']}', {},
+            method: 'GET'))));
+    if (_userId != uid)
+      throw Exception('Your account changed. Please try again.');
+    // Include saved addresses without a profile as well.
+    final account = await fetchProfile();
+    return {
+      'homeProfiles': profiles,
+      'addresses': account['addresses'] ??
+          account['profile']?['addresses'] ??
+          homes.map((home) => home['address']).whereType<Map>().toList()
+    };
+  }
+
+  Future<int> _ensureHomeProfile(int addressId) async {
+    final data = await _post('homeowner/home-profiles', {}, method: 'GET');
+    for (final home in (data['homeProfiles'] as List? ?? []).whereType<Map>()) {
+      if ('${home['addressId']}' == '$addressId')
+        return int.parse('${home['id']}');
+    }
+    // The legacy upsert remains the server's creation route. Never upsert an
+    // existing profile here: omitted legacy fields would overwrite its data.
+    final result = await _post('homeowner/home-profile-action', {
+      'action': 'upsert',
+      'addressId': addressId,
+    });
+    final id = int.tryParse('${result['homeProfile']?['id']}');
+    if (id == null) throw Exception('The home profile was not created.');
+    return id;
+  }
+
+  Future<Map<String, dynamic>> saveHomeProfile(
+      Map<String, dynamic> profile) async {
+    if (_userId == null) throw Exception('User is not authenticated');
+    final homeId = int.tryParse('${profile['id']}') ??
+        await _ensureHomeProfile(int.parse('${profile['addressId']}'));
+    profile['id'] = homeId;
+    final details = profile['propertyDetails'] as Map? ?? {};
+    final updated = await _post(
+        'homeowner/home-profiles/$homeId/property',
+        {
+          'yearBuilt': details['yearBuilt'],
+          'squareFeet': details['squareFootage'],
+          'bedrooms': details['bedrooms'],
+          'bathrooms': details['bathrooms'],
+        },
+        method: 'PATCH');
+    if (updated['home'] is! Map)
+      throw Exception('Property changes were not confirmed.');
+    final note =
+        Map<String, dynamic>.from(profile['accessNotes'] as Map? ?? {});
+    profile['accessNotes'] = note;
+    final text = '${note['text'] ?? ''}'.trim();
+    if (text != note['originalText']) {
+      final ids = (note['ids'] as List? ?? [if (note['id'] != null) note['id']])
+          .map((id) => int.parse('$id'))
+          .toList();
+      note['ids'] = ids;
+      final noteId = ids.isEmpty ? null : ids.first;
+      if (text.isNotEmpty) {
+        final result = await _post(
+            noteId == null
+                ? 'homeowner/home-profiles/$homeId/notes'
+                : 'homeowner/home-profile-notes/$noteId',
+            {'type': 'access', 'body': text},
+            method: noteId == null ? 'POST' : 'PATCH');
+        if (result['note'] is! Map)
+          throw Exception('Access notes were not confirmed.');
+        final savedId = int.parse('${result['note']['id']}');
+        note['id'] = savedId;
+        if (ids.isEmpty) ids.add(savedId);
+        // The form represents all access notes as one combined field. Remove
+        // every superseded row only after its combined replacement is saved.
+        for (final id in ids.skip(1).toList()) {
+          await _post('homeowner/home-profile-notes/$id', {}, method: 'DELETE');
+          ids.remove(id);
+        }
+      } else {
+        for (final id in ids.toList()) {
+          await _post('homeowner/home-profile-notes/$id', {}, method: 'DELETE');
+          ids.remove(id);
+        }
+        note.remove('id');
+      }
+      note['originalText'] = text;
+    }
+    final systems = (profile['systems'] as List? ?? [])
+        .whereType<Map>()
+        .map((system) => Map<String, dynamic>.from(system))
+        .toList();
+    profile['systems'] = systems;
+    for (final system in systems) {
+      final saved = await saveHomeSystem(
+          addressId: int.parse('${profile['addressId']}'),
+          system: system,
+          homeProfileId: homeId);
+      system.addAll(saved);
+    }
+    return _homeDetail(
+        await _post('homeowner/home-profiles/$homeId', {}, method: 'GET'));
+  }
+
+  Future<Map<String, dynamic>> saveHomeSystem(
+      {required int addressId,
+      required Map<String, dynamic> system,
+      int? homeProfileId}) async {
+    final homeId = homeProfileId ?? await _ensureHomeProfile(addressId);
+    final id = int.tryParse('${system['id']}');
+    final type =
+        '${system['type'] ?? ''}'.trim().toLowerCase().replaceAll(' ', '_');
+    const types = {
+      'hvac',
+      'water_heater',
+      'plumbing',
+      'electrical',
+      'roof',
+      'appliances',
+      'windows',
+      'insulation',
+      'solar',
+      'pool',
+      'other'
+    };
+    if (!types.contains(type))
+      throw Exception('Choose a supported system type.');
+    final result = await _post(
+        id == null
+            ? 'homeowner/home-profiles/$homeId/systems'
+            : 'homeowner/home-systems/$id',
+        {
+          'type': type,
+          'brand': system['brand'],
+          'modelNumber': system['model'],
+          'installedYear': system['installedYear'],
+          'specifications': {
+            ...?system['specifications'] as Map?,
+            'location': system['location'],
+            'notes': system['notes']
+          },
+        },
+        method: id == null ? 'POST' : 'PATCH');
+    if (result['system'] is! Map)
+      throw Exception('System changes were not confirmed.');
+    return {
+      ..._homeSystem(result['system'] as Map),
+      // Mutation responses do not load relation collections.
+      if (system.containsKey('documents')) 'documents': system['documents'],
+      if (system.containsKey('serviceHistory'))
+        'serviceHistory': system['serviceHistory'],
+    };
+  }
+
+  Future<Map<String, dynamic>> uploadHomeFile(
+      {required int addressId,
+      required String kind,
+      required Map<String, dynamic> file,
+      String? systemId}) async {
+    final homeId = await _ensureHomeProfile(addressId);
+    final id = systemId == null ? null : int.tryParse(systemId);
+    if (systemId != null && id == null)
+      throw Exception('Save this system before attaching a file.');
+    return _uploadPrivateDocument(
+      reservePath: 'homeowner/home-profiles/$homeId/documents/upload-url',
+      file: file,
+      metadata: {
+        'type': kind == 'data_plate' ? 'system_photo' : 'other',
+        if (id != null) 'homeSystemId': id,
+        if (kind == 'data_plate') 'metadata': {'kind': 'data_plate'}
+      },
+      completePath: (documentId) =>
+          'homeowner/home-documents/$documentId/complete',
+    );
+  }
+
+  /// Reserve, upload bytes to private storage, then confirm the document.
+  /// Storage receives only its signed URL, never the homeowner JWT.
+  Future<Map<String, dynamic>> _uploadPrivateDocument({
+    required String reservePath,
+    required Map<String, dynamic> file,
+    required Map<String, dynamic> metadata,
+    required String Function(int) completePath,
+    bool receipt = false,
+  }) async {
+    final uid = _userId;
+    if (uid == null) throw Exception('Please sign in to upload a document.');
+    final bytes = base64Decode(file['fileBase64'] as String);
+    if (bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
+      throw Exception('Choose a non-empty file up to 10 MB.');
+    }
+    final reservation = await _post(reservePath, {
+      ...metadata,
+      'fileName': file['fileName'],
+      'mimeType': file['mimeType'],
+      'sizeBytes': bytes.length,
+    });
+    final document = reservation['document'];
+    final id = document is Map ? int.tryParse('${document['id']}') : null;
+    final uri = Uri.tryParse('${reservation['uploadUrl'] ?? ''}');
+    if (id == null ||
+        uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty) {
+      throw Exception('The server did not provide a valid document upload.');
+    }
+    if (_userId != uid)
+      throw Exception('Your account changed. Please try again.');
+    final upload = await http
+        .put(
+          uri,
+          headers: {'Content-Type': file['mimeType'] as String},
+          body: bytes,
+        )
+        .timeout(_requestTimeout);
+    if (upload.statusCode < 200 || upload.statusCode >= 300) {
+      throw Exception('Document upload failed. Please try again.');
+    }
+    if (_userId != uid)
+      throw Exception('Your account changed. Please try again.');
+    final completed =
+        await _post(completePath(id), receipt ? {'documentId': id} : {});
+    if (completed['document'] is! Map ||
+        '${completed['document']['id']}' != '$id') {
+      throw Exception(
+          'The server did not confirm your document. Please try again.');
+    }
+    return Map<String, dynamic>.from(completed['document']);
+  }
+
+  Future<Map<String, dynamic>> uploadWorkOrderReceipt({
+    required int workOrderId,
+    required Map<String, dynamic> file,
+  }) async {
+    final document = await _uploadPrivateDocument(
+      reservePath: 'homeowner/work-orders/$workOrderId/receipt/upload-url',
+      file: file,
+      metadata: {},
+      completePath: (_) =>
+          'homeowner/work-orders/$workOrderId/receipt/complete',
+      receipt: true,
+    );
+    await _invalidateWorkOrderCache();
+    return document;
+  }
+
+  Future<String> homeDocumentDownloadUrl(int documentId) async {
+    final result = await _post(
+        'homeowner/home-documents/$documentId/download-url', {},
+        method: 'GET');
+    final uri = Uri.tryParse('${result['downloadUrl'] ?? ''}');
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+      throw Exception('This document could not be opened.');
+    }
+    return uri.toString();
+  }
+
+  Future<Map<String, dynamic>> fetchAccount() =>
+      _post('homeowner/account', {}, method: 'GET');
+
+  Future<void> updateAccountDetails(Map<String, dynamic> details) async {
+    await _post('homeowner/account/details', details, method: 'PATCH');
+    await _invalidateProfileCache();
+  }
+
+  Future<Map<String, dynamic>> changeAccountEmail(
+          String email, String password) =>
+      _post('homeowner/account/change-email',
+          {'newEmail': email, 'currentPassword': password});
+
+  Future<Map<String, dynamic>> changeAccountPassword(
+          String current, String password) =>
+      _post('homeowner/account/change-password', {
+        'currentPassword': current,
+        'newPassword': password,
+        'confirmPassword': password
+      });
+
+  Future<Map<String, dynamic>> accountClosurePreflight() =>
+      _post('homeowner/account/closure-preflight', {}, method: 'GET');
+
+  Future<Map<String, dynamic>> requestAccountClosure(
+          String confirmation, String password) =>
+      _post('homeowner/account/close',
+          {'confirmation': confirmation, 'currentPassword': password});
+
   Future<Map<String, dynamic>> getProfile() => fetchProfile();
 
   Future<Map<String, dynamic>?> getReview(int workOrderId) async {
     final cached = cachedReviewForWorkOrder(workOrderId);
-    if (cached != null) return cached;
+    if (cached != null && cached['detailsAvailable'] != false) return cached;
+    try {
+      final response = await _post(_reviewActionPath, {
+        'action': 'get_review',
+        'workOrderId': workOrderId,
+        'requesterUserId': _userId
+      });
+      if (response['review'] is Map) {
+        final review =
+            _normalizeReview(Map<String, dynamic>.from(response['review']));
+        _cacheReview(workOrderId, review);
+        return review;
+      }
+    } catch (_) {
+      // Legacy servers can still supply embedded or RLS-protected review rows.
+    }
 
     final jobsResp = await fetchWorkOrders();
     await hydrateReviewsFromWorkOrders(jobsResp);

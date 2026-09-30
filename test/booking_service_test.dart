@@ -157,4 +157,424 @@ void main() {
         }),
         '20');
   });
+  test('review editing sends explicit rating and tags, including clearing tags',
+      () async {
+    final calls = <Map<String, dynamic>>[];
+    final client = MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      if (request.url.path.contains('review-action')) calls.add(body);
+      return http.Response(
+          jsonEncode({
+            'success': true,
+            'ok': true,
+            'reviewId': 555,
+            'editedAt': '2026-09-26T12:00:00Z',
+            'tabs': {},
+            'addresses': []
+          }),
+          200);
+    });
+    await http.runWithClient(() async {
+      await HomeownerService.instance.submitReview(
+          workOrderId: 555,
+          rating: 2,
+          text: 'The visit was late.',
+          tags: [],
+          hasExistingReview: true);
+      await HomeownerService.instance.syncInBackground();
+    }, () => client);
+    expect(calls.single['action'], 'update_review');
+    expect(calls.single['tags'], isEmpty);
+    expect(calls.single['rating'], 2);
+    expect(HomeownerService.instance.cachedReviewForWorkOrder(555)!['editedAt'],
+        '2026-09-26T12:00:00Z');
+  });
+  test('unselected rating never creates a review request', () async {
+    var called = false;
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance.submitReview(
+              workOrderId: 556, rating: 0, text: 'A neutral review.'),
+          throwsException);
+    },
+        () => MockClient((request) async {
+              called = true;
+              return http.Response('{}', 200);
+            }));
+    expect(called, isFalse);
+  });
+  test('legacy home-profile success cannot claim extended fields were saved',
+      () async {
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance.saveHomeProfile({
+            'addressId': 1,
+            'propertyDetails': {'bedrooms': 3},
+            'systems': [],
+            'accessNotes': {'text': 'Gate instructions'},
+            'documents': []
+          }),
+          throwsException);
+    },
+        () => MockClient((request) async => http.Response(
+            jsonEncode({
+              'success': true,
+              'homeProfile': {'addressId': 1, 'yearBuilt': 2000}
+            }),
+            200)));
+  });
+  test('deleting a review clears its cached metadata only after server success',
+      () async {
+    await http.runWithClient(() async {
+      await HomeownerService.instance.deleteReview(555);
+      await HomeownerService.instance.syncInBackground();
+    },
+        () => MockClient((request) async => http.Response(
+            jsonEncode(
+                {'success': true, 'ok': true, 'tabs': {}, 'addresses': []}),
+            200)));
+    expect(HomeownerService.instance.cachedReviewForWorkOrder(555), isNull);
+  });
+  test(
+      'receipt upload reserves metadata, PUTs bytes without JWT, then completes',
+      () async {
+    final paths = <String>[];
+    final bytes = [37, 80, 68, 70];
+    await http.runWithClient(() async {
+      final document = await HomeownerService.instance
+          .uploadWorkOrderReceipt(workOrderId: 101, file: {
+        'fileName': 'receipt.pdf',
+        'mimeType': 'application/pdf',
+        'fileBase64': base64Encode(bytes)
+      });
+      expect(document['id'], 80);
+    },
+        () => MockClient((request) async {
+              paths.add('${request.method} ${request.url.path}');
+              if (request.url.host == 'storage.example.com') {
+                expect(request.method, 'PUT');
+                expect(request.bodyBytes, bytes);
+                expect(request.headers.keys.map((e) => e.toLowerCase()),
+                    isNot(contains('authorization')));
+                return http.Response('{}', 200);
+              }
+              final body = jsonDecode(request.body) as Map;
+              if (request.url.path.endsWith('/upload-url')) {
+                expect(body, {
+                  'fileName': 'receipt.pdf',
+                  'mimeType': 'application/pdf',
+                  'sizeBytes': 4
+                });
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'document': {'id': 80},
+                      'uploadUrl':
+                          'https://storage.example.com/receipt?token=signed'
+                    }),
+                    201);
+              }
+              expect(body, {'documentId': 80});
+              return http.Response(
+                  jsonEncode({
+                    'success': true,
+                    'document': {'id': 80}
+                  }),
+                  200);
+            }));
+    expect(paths, [
+      'POST /homeowner/work-orders/101/receipt/upload-url',
+      'PUT /receipt',
+      'POST /homeowner/work-orders/101/receipt/complete'
+    ]);
+  });
+
+  test('failed storage upload never confirms a receipt', () async {
+    var completed = false;
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance
+              .uploadWorkOrderReceipt(workOrderId: 101, file: {
+            'fileName': 'receipt.pdf',
+            'mimeType': 'application/pdf',
+            'fileBase64': base64Encode([1])
+          }),
+          throwsException);
+    },
+        () => MockClient((request) async {
+              if (request.url.host == 'storage.example.com')
+                return http.Response('{}', 500);
+              if (request.url.path.endsWith('/complete')) completed = true;
+              return http.Response(
+                  jsonEncode({
+                    'success': true,
+                    'document': {'id': 80},
+                    'uploadUrl':
+                        'https://storage.example.com/receipt?token=signed'
+                  }),
+                  201);
+            }));
+    expect(completed, isFalse);
+  });
+
+  test('document open requests a fresh private download URL each time',
+      () async {
+    var calls = 0;
+    await http.runWithClient(() async {
+      expect(await HomeownerService.instance.homeDocumentDownloadUrl(80),
+          contains('token=1'));
+      expect(await HomeownerService.instance.homeDocumentDownloadUrl(80),
+          contains('token=2'));
+    },
+        () => MockClient((request) async {
+              expect(request.method, 'GET');
+              expect(request.url.path,
+                  endsWith('/homeowner/home-documents/80/download-url'));
+              calls++;
+              return http.Response(
+                  jsonEncode({
+                    'success': true,
+                    'downloadUrl':
+                        'https://storage.example.com/receipt?token=$calls'
+                  }),
+                  200);
+            }));
+  });
+
+  test(
+      'rich home profile saves property, note and system to dedicated endpoints',
+      () async {
+    final paths = <String>[];
+    await http.runWithClient(() async {
+      await HomeownerService.instance.saveHomeProfile({
+        'id': 7,
+        'addressId': 1,
+        'propertyDetails': {
+          'yearBuilt': 2000,
+          'squareFootage': 1200,
+          'bedrooms': 3,
+          'bathrooms': 2.5
+        },
+        'accessNotes': {'id': 8, 'text': 'Use side gate'},
+        'systems': [
+          {'id': 9, 'type': 'hvac', 'model': 'AC-1', 'location': 'Garage'}
+        ]
+      });
+    },
+        () => MockClient((request) async {
+              paths.add('${request.method} ${request.url.path}');
+              final body =
+                  request.body.isEmpty ? {} : jsonDecode(request.body) as Map;
+              if (request.url.path.endsWith('/property')) {
+                expect(body['squareFeet'], 1200);
+                expect(body['bathrooms'], 2.5);
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'home': {'id': 7}
+                    }),
+                    200);
+              }
+              if (request.url.path.endsWith('/home-profile-notes/8')) {
+                expect(body['body'], 'Use side gate');
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'note': {'id': 8}
+                    }),
+                    200);
+              }
+              if (request.url.path.endsWith('/home-systems/9')) {
+                expect(body['modelNumber'], 'AC-1');
+                expect(body['specifications']['location'], 'Garage');
+                expect(body.containsKey('lastServicedOn'), isFalse);
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'system': {'id': 9, 'type': 'hvac'}
+                    }),
+                    200);
+              }
+              return http.Response(
+                  jsonEncode({
+                    'success': true,
+                    'home': {'id': 7},
+                    'notes': [],
+                    'systems': [],
+                    'documents': []
+                  }),
+                  200);
+            }));
+    expect(paths.map((p) => p.split(' ').first),
+        ['PATCH', 'PATCH', 'PATCH', 'GET']);
+  });
+  test(
+      'all existing access notes are shown and clearing the field deletes every note',
+      () async {
+    final deleted = <String>[];
+    await http.runWithClient(() async {
+      final data = await HomeownerService.instance.fetchHomeProfiles();
+      final profile =
+          (data['homeProfiles'] as List).single as Map<String, dynamic>;
+      expect(profile['accessNotes']['text'], 'Side gate\n\nRing upstairs');
+      await HomeownerService.instance.saveHomeProfile(profile);
+      expect(deleted, isEmpty);
+      profile['accessNotes']['text'] = '';
+      await HomeownerService.instance.saveHomeProfile(profile);
+    },
+        () => MockClient((request) async {
+              final path = request.url.path;
+              if (request.method == 'DELETE') {
+                deleted.add(path);
+                return http.Response('{"success":true}', 200);
+              }
+              if (path.endsWith('/home-profiles')) {
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'homeProfiles': [
+                        {'id': 7, 'addressId': 1}
+                      ]
+                    }),
+                    200);
+              }
+              if (path.endsWith('/property'))
+                return http.Response('{"success":true,"home":{"id":7}}', 200);
+              if (path.endsWith('/home-profiles/7')) {
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'home': {'id': 7, 'addressId': 1},
+                      'notes': [
+                        {'id': 8, 'type': 'access', 'body': 'Side gate'},
+                        {'id': 10, 'type': 'access', 'body': 'Ring upstairs'},
+                        {'id': 11, 'type': 'pets', 'body': 'Cat indoors'}
+                      ],
+                      'systems': [],
+                      'documents': []
+                    }),
+                    200);
+              }
+              return http.Response('{"success":true,"addresses":[]}', 200);
+            }));
+    expect(deleted, [
+      '/homeowner/home-profile-notes/8',
+      '/homeowner/home-profile-notes/10'
+    ]);
+  });
+
+  test('a later system-save failure retains already-loaded photos and history',
+      () async {
+    final profile = <String, dynamic>{
+      'id': 7,
+      'addressId': 1,
+      'propertyDetails': {},
+      'accessNotes': {},
+      'systems': [
+        {
+          'id': 9,
+          'type': 'hvac',
+          'documents': [
+            {'id': 44}
+          ],
+          'serviceHistory': [
+            {'id': 55}
+          ]
+        },
+        {'id': 10, 'type': 'roof'}
+      ]
+    };
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance.saveHomeProfile(profile), throwsException);
+    },
+        () => MockClient((request) async {
+              if (request.url.path.endsWith('/property'))
+                return http.Response('{"success":true,"home":{"id":7}}', 200);
+              if (request.url.path.endsWith('/home-systems/9')) {
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'system': {
+                        'id': 9,
+                        'type': 'hvac',
+                        'documents': [],
+                        'serviceHistory': []
+                      }
+                    }),
+                    200);
+              }
+              return http.Response(
+                  '{"success":false,"error":"save_failed"}', 500);
+            }));
+    expect(profile['systems'][0]['documents'], [
+      {'id': 44}
+    ]);
+    expect(profile['systems'][0]['serviceHistory'], [
+      {'id': 55}
+    ]);
+  });
+  test('credit choice and intake token reach the real top-level booking API',
+      () async {
+    await http.runWithClient(() async {
+      await HomeownerService.instance.commitBooking(
+          contractorId: 'contractor-7',
+          action: 'commit',
+          urgency: 'standard',
+          startsAt: '2026-12-01T10:00:00Z',
+          endsAt: '2026-12-01T12:00:00Z',
+          booking: {
+            'service_credits_applied': 25.50,
+            'credit_request_id': '2337b617-b21d-4815-a2a6-a0e5a10bf784',
+            'intake_session_token': 'signed-session',
+            'service_category': 'HVAC'
+          });
+      await HomeownerService.instance.syncInBackground();
+    }, () => api);
+    expect(requests.single['applyServiceCredit'], true);
+    expect(requests.single['serviceCreditAmount'], '25.50');
+    expect(requests.single['creditRequestId'],
+        '2337b617-b21d-4815-a2a6-a0e5a10bf784');
+    expect(requests.single['intakeSessionToken'], 'signed-session');
+    expect(
+        (requests.single['booking'] as Map)
+            .containsKey('service_credits_applied'),
+        false);
+  });
+  test('profile details cannot silently change the sign-in email', () async {
+    await http.runWithClient(() async {
+      await HomeownerService.instance
+          .updateAccountDetails({'name': 'New name', 'phone': '5551234567'});
+      final result = await HomeownerService.instance
+          .changeAccountEmail('new@example.com', 'current-password');
+      expect(result['confirmationRequired'], true);
+    },
+        () => MockClient((request) async {
+              final body = jsonDecode(request.body) as Map;
+              if (request.method == 'PATCH') {
+                expect(request.url.path, '/homeowner/account/details');
+                expect(body.containsKey('email'), false);
+              } else {
+                expect(request.url.path, '/homeowner/account/change-email');
+                expect(body['newEmail'], 'new@example.com');
+                expect(body['currentPassword'], 'current-password');
+              }
+              return http.Response(
+                  '{"success":true,"confirmationRequired":true}', 200);
+            }));
+  });
+  test('rejected account closure is not treated as completed deletion',
+      () async {
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance.requestAccountClosure('CLOSE', 'password'),
+          throwsException);
+    },
+        () => MockClient((request) async {
+              expect(request.url.path, '/homeowner/account/close');
+              return http.Response(
+                  '{"success":false,"error":"active_jobs_block_closure"}', 409);
+            }));
+    expect(AuthService.instance.isAuthenticated, true);
+  });
 }

@@ -142,11 +142,11 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
         appBar: _appBar('Addresses'),
         body: _isLoading
             ? const Center(
-                child: CircularProgressIndicator(color: AppTheme.orange500),
+                child: CircularProgressIndicator(color: AppTheme.navy),
               )
             : RefreshIndicator(
                 onRefresh: _fetchAddresses,
-                color: AppTheme.orange500,
+                color: AppTheme.navy,
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -536,7 +536,7 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: _isDefault,
-                  activeColor: AppTheme.orange500,
+                  activeColor: AppTheme.navy,
                   title: const Text(
                     'Set as default address',
                     style: TextStyle(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
@@ -144,8 +145,9 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
         builder: (_) => ChatScreen(
           contractorId: contractorId,
           contractorName: _proName,
-          workOrderTitle: _serviceName,
-          workOrderStatus: _text(widget.workOrder?['status']),
+          jobReference: _workOrderId(widget.workOrder).isEmpty
+              ? null
+              : '$_serviceName · ${widget.workOrder?['woNumber'] ?? _workOrderId(widget.workOrder)}',
         ),
       ),
     );
@@ -227,7 +229,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: AppTheme.pageAlt,
+                          color: AppTheme.pageBackground,
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Column(
@@ -413,6 +415,12 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
   }
 
   String _formatSchedule(String startRaw, String endRaw) {
+    final tier = '${widget.workOrder?['priority'] ?? ''}'.toLowerCase();
+    final deadline =
+        DateTime.tryParse('${widget.workOrder?['slaArrivalTarget'] ?? ''}');
+    if ((tier == 'urgent' || tier == 'emergency') && deadline != null) {
+      return 'By ${DateFormat('EEE d MMM, h:mm a').format(deadline.toLocal())}';
+    }
     final start = DateTime.tryParse(startRaw)?.toLocal();
     final end = DateTime.tryParse(endRaw)?.toLocal();
     if (start == null) return startRaw.isEmpty ? 'To be scheduled' : startRaw;

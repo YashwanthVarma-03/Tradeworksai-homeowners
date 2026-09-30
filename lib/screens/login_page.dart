@@ -255,7 +255,7 @@ class _LoginPageState extends State<LoginPage> {
                                     ListTileControlAffinity.leading,
                                 contentPadding: EdgeInsets.zero,
                                 dense: true,
-                                activeColor: AppTheme.orange500,
+                                activeColor: AppTheme.navy,
                                 title: const Text('Remember me',
                                     style: TextStyle(
                                         color: AppTheme.ink, fontSize: 13)))),
@@ -268,7 +268,7 @@ class _LoginPageState extends State<LoginPage> {
                                         builder: (_) =>
                                             const PasswordResetPage())),
                             child: const Text('Forgot password?',
-                                style: TextStyle(color: AppTheme.orange500)))
+                                style: TextStyle(color: AppTheme.navy)))
                       ]),
                       const SizedBox(height: 4),
                       SizedBox(
@@ -343,7 +343,7 @@ class _LoginPageState extends State<LoginPage> {
                                 onTap: _loading ? null : _openSignup,
                                 child: const Text('Sign up',
                                     style: TextStyle(
-                                        color: AppTheme.orange500,
+                                        color: AppTheme.navy,
                                         fontWeight: FontWeight.w900)))
                           ]),
                     ])),

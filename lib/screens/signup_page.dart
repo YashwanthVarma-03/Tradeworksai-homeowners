@@ -90,6 +90,18 @@ class _SignupPageState extends State<SignupPage> {
     }
   }
 
+  Future<void> _openTermsOfService() async {
+    try {
+      final opened = await launchUrl(
+        Uri.parse('https://www.tradeworksai.com/terms/'),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) throw Exception('Could not open the Terms of Service.');
+    } catch (error) {
+      if (mounted) AppNotification.showError(context, error);
+    }
+  }
+
   Future<void> _submit() async {
     if (_loading || !_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
@@ -235,6 +247,9 @@ class _SignupPageState extends State<SignupPage> {
                                     obscureText: _obscure,
                                     decoration: _field('8+ characters',
                                         suffix: IconButton(
+                                            tooltip: _obscure
+                                                ? 'Show password'
+                                                : 'Hide password',
                                             icon: Icon(
                                                 _obscure
                                                     ? Icons
@@ -247,14 +262,31 @@ class _SignupPageState extends State<SignupPage> {
                                         ? 'Password must be at least 8 characters'
                                         : null),
                                 const SizedBox(height: 16),
-                                TextButton(
-                                  onPressed:
-                                      _loading ? null : _openPrivacyPolicy,
-                                  child: const Text('Read our Privacy Policy',
-                                      style: TextStyle(
-                                          color: AppTheme.navy700,
-                                          decoration:
-                                              TextDecoration.underline)),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    TextButton(
+                                      onPressed:
+                                          _loading ? null : _openTermsOfService,
+                                      child: const Text('Terms of Service',
+                                          style: TextStyle(
+                                              color: AppTheme.navy,
+                                              decoration:
+                                                  TextDecoration.underline)),
+                                    ),
+                                    const Text('·',
+                                        style: TextStyle(
+                                            color: AppTheme.textSecondary)),
+                                    TextButton(
+                                      onPressed:
+                                          _loading ? null : _openPrivacyPolicy,
+                                      child: const Text('Read our Privacy Policy',
+                                          style: TextStyle(
+                                              color: AppTheme.navy,
+                                              decoration:
+                                                  TextDecoration.underline)),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 8),
                                 SizedBox(
@@ -334,7 +366,7 @@ class _SignupPageState extends State<SignupPage> {
                                           onTap: _loading ? null : _openLogin,
                                           child: const Text('Log in',
                                               style: TextStyle(
-                                                  color: AppTheme.orange500,
+                                                  color: AppTheme.navy,
                                                   fontWeight: FontWeight.w900)))
                                     ])
                               ])))))));

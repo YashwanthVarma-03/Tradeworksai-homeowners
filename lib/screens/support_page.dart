@@ -19,13 +19,19 @@ class _SupportPageState extends State<SupportPage> {
       'cat': '🏡 Home & Search Page FAQs',
       'q': 'How does the TradeWorks One network work?',
       'a':
-          'You join for free, browse vetted and insured home service professionals across 31 categories, and see upfront pricing before you book. You book directly on their calendar, and you earn 3–7% cash back in service credits on every completed job.'
+          'You join for free, browse vetted and insured home service professionals across 31 categories, and see upfront pricing before you book. You book directly on their calendar, and you earn 3–8% back in service credits on what you pay.'
     },
     {
       'cat': '🏡 Home & Search Page FAQs',
       'q': 'How are contractors vetted?',
       'a':
           'Every contractor in the network is verified for active state licenses and general liability insurance before taking any job. We verify credentials so you don\'t have to chase proof of coverage.'
+    },
+    {
+      'cat': '🏡 Home & Search Page FAQs',
+      'q': 'What does Select-certified mean?',
+      'a':
+          'We vet every pro on TradeWorks ourselves — licence, insurance and workmanship — and hand-pick who gets listed. It isn\'t a rating and it isn\'t bought.'
     },
     {
       'cat': '🏡 Home & Search Page FAQs',
@@ -43,25 +49,25 @@ class _SupportPageState extends State<SupportPage> {
       'cat': '🏆 Rewards Page FAQs',
       'q': 'How do TradeWorks service credits work?',
       'a':
-          'Earn 3% → 5% → 7% back as you spend more in a year — each rate applies only to spend within its YTD band (no retroactive re-crediting). Credits are service credits that apply toward any booking (never count as new spend). They are non-cashable and non-transferable, and reset every January 1.'
+          'Qualifying customer-paid spend earns 3%, 4%, 5%, 6% and 8% across five marginal bands in your rewards year, which resets on your signup anniversary. Upload your paid receipt to unlock earnings. Applied credits do not earn more credits. Band earnings are capped at \$1,915 plus \$750 in milestones per rewards year. Credits have no cash value and cannot be transferred.'
     },
     {
       'cat': '🏆 Rewards Page FAQs',
       'q': 'Do my service credits expire?',
       'a':
-          'Yes, each service credit expires 24 months after you earn it. Check your Rewards Tab ledger to see credit-specific expiry logs.'
+          'Band credits expire after 24 months; milestone credits expire after 90 days. Your Rewards ledger shows the expiry date for each credit.'
     },
     {
       'cat': '🏆 Rewards Page FAQs',
-      'q': 'How do I redeem my service credits?',
+      'q': 'How do I use my service credits?',
       'a':
-          'Credits apply automatically to your next booking. To redeem, just reach out to support and we\'ll apply them for you. This feature is coming soon.'
+          'Your credits show on your account and on any booking. When you book, our team applies the credits you want to use — there are no codes, and nothing is applied without you asking. Credits come off what you pay your pro.'
     },
     {
       'cat': '👤 Profile & Home Profile FAQs',
       'q': 'How is my Home Profile information used?',
       'a':
-          'We use your home profile (square footage, year built, bedrooms, bathrooms, HVAC, water heater, roof ages) to suggest timely maintenance and pre-fill your bookings. It is kept secure and isn\'t shared beyond the specific pro you book.'
+          'Your home profile holds property details, systems and documents for a booked pro. Getting-in notes require a confirmed booking at that address and access ends when the job closes.'
     },
   ];
 
@@ -147,7 +153,7 @@ class _SupportPageState extends State<SupportPage> {
           // Search Box
           Container(
             decoration: BoxDecoration(
-              color: AppTheme.pageAlt,
+              color: AppTheme.pageBackground,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: AppTheme.line),
             ),
@@ -360,7 +366,7 @@ class _SupportPageState extends State<SupportPage> {
                 items: [
                   'Booking help',
                   'Billing',
-                  'Redeem service credits',
+                  'Service credits',
                   'Reschedule/Cancel',
                   'Other'
                 ]
@@ -425,7 +431,7 @@ class _SupportPageState extends State<SupportPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppTheme.pageAlt,
+              color: AppTheme.pageBackground,
               border:
                   Border.all(color: AppTheme.line, style: BorderStyle.solid),
               borderRadius: BorderRadius.circular(10),
@@ -566,7 +572,7 @@ class _SupportPageState extends State<SupportPage> {
               const SizedBox(width: 12),
               const Expanded(
                 child: Text(
-                  'For credit redemptions, support applies the credit to your booking once confirmed.',
+                  'You choose how much credit to apply when you book. Your pro receives the remaining payment directly.',
                   style: TextStyle(
                       color: AppTheme.ink, fontSize: 12.5, height: 1.4),
                 ),
@@ -576,15 +582,14 @@ class _SupportPageState extends State<SupportPage> {
           const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
+            child: TextButton(
               onPressed: () {
                 setState(() {
                   _viewIndex = 0;
                 });
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.orange500,
-                foregroundColor: AppTheme.navy700,
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.navy,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
@@ -640,7 +645,7 @@ class _SupportPageState extends State<SupportPage> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.orange500,
-                foregroundColor: AppTheme.navy700,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),

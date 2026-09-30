@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/arrival_check_state.dart';
+import 'work_orders/arrival_check.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
@@ -46,10 +49,40 @@ class _DashboardShellState extends State<DashboardShell>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (AuthService.instance.isAuthenticated) {
-        unawaited(HomeownerService.instance.primeAuthenticatedCache());
+        unawaited(_checkArrivalOnOpen());
         _startBackgroundSync();
       }
     });
+  }
+
+  Future<void> _checkArrivalOnOpen() async {
+    final uid = AuthService.instance.userId;
+    if (uid == null) return;
+    try {
+      final data =
+          await HomeownerService.instance.fetchWorkOrders(forceRefresh: true);
+      final tabs = data['tabs'];
+      if (tabs is! Map) return;
+      final prefs = await SharedPreferences.getInstance();
+      for (final rows in tabs.values.whereType<List>()) {
+        for (final row in rows.whereType<Map>()) {
+          final job = Map<String, dynamic>.from(row);
+          if (!ArrivalCheckState.pending(job)) continue;
+          final key =
+              'arrival_check_seen:$uid:${ArrivalCheckState.identity(job)}';
+          if (prefs.getBool(key) == true) continue;
+          if (!mounted ||
+              AuthService.instance.userId != uid ||
+              ModalRoute.of(context)?.isCurrent != true) return;
+          await prefs.setBool(key, true);
+          if (!mounted || AuthService.instance.userId != uid) return;
+          await openArrivalCheck(context, job);
+          return;
+        }
+      }
+    } catch (_) {
+      // The persistent Home and booking-detail cards remain available on retry.
+    }
   }
 
   @override
@@ -187,7 +220,7 @@ class _DashboardShellState extends State<DashboardShell>
           icon: Icons.card_giftcard_outlined,
           title: 'Sign in to earn rewards',
           message:
-              'Create an account to earn 3–7% back as service credits on every booking.',
+              'Create an account to earn 3–8% back as service credits on what you spend.',
           onCreateAccount: openSignup,
           onSignIn: openLogin,
         ),

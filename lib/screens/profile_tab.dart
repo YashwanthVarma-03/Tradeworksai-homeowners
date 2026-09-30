@@ -1,3 +1,4 @@
+import 'account/account_security.dart';
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
@@ -158,7 +159,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
       return const ColoredBox(
         color: _pageBackground,
         child: Center(
-          child: CircularProgressIndicator(color: AppTheme.orange500),
+          child: CircularProgressIndicator(color: AppTheme.navy),
         ),
       );
     }
@@ -176,7 +177,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
       color: _pageBackground,
       child: RefreshIndicator(
         onRefresh: _fetchProfileData,
-        color: AppTheme.orange500,
+        color: AppTheme.navy,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 110),
@@ -202,8 +203,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
             const SizedBox(height: 8),
             _settingsCard(
               icon: Icons.mail_outline_rounded,
-              title: 'Payment methods',
-              subtitle: _paymentSubtitle(),
+              title: 'Payment options',
+              subtitle: 'Pay your booked pro directly',
               onTap: _managePayments,
             ),
             const SizedBox(height: 18),
@@ -231,7 +232,18 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
               onTap: _openSupport,
             ),
             const SizedBox(height: 10),
+            _settingsCard(
+                icon: Icons.security_outlined,
+                title: 'Account security',
+                subtitle: 'Password and account closure',
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const AccountSecurityScreen()))),
+            const SizedBox(height: 10),
             _signOutButton(),
+            const SizedBox(height: 6),
+            _deleteAccountButton(),
           ],
         ),
       ),
@@ -334,15 +346,15 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
         child: Container(
           padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
           decoration: BoxDecoration(
-            color: AppTheme.orangeTint,
+            color: AppTheme.navyTint,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.orange500, width: 1),
+            border: Border.all(color: AppTheme.cardBorder, width: 1),
           ),
           child: Row(
             children: [
               const Icon(
                 Icons.card_giftcard_rounded,
-                color: AppTheme.orange500,
+                color: AppTheme.navy,
                 size: 25,
               ),
               const SizedBox(width: 12),
@@ -360,7 +372,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Redeem on your next eligible booking',
+                      'Apply at your next booking',
                       style: TextStyle(
                         color: _mutedText,
                         fontSize: 12,
@@ -376,7 +388,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                 child: Text(
                   _money(balance),
                   style: const TextStyle(
-                    color: AppTheme.orange500,
+                    color: AppTheme.navy,
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
                     height: 1,
@@ -517,6 +529,21 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     );
   }
 
+  Widget _deleteAccountButton() => Center(
+        child: TextButton.icon(
+          onPressed: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const AccountSecurityScreen())),
+          icon: const Icon(Icons.delete_outline, size: 18),
+          label: const Text('Delete account'),
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.red,
+            minimumSize: const Size(148, 44),
+            textStyle:
+                const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
+
   String _profileName() {
     final given = _string(_profileData?['givenName']) ??
         _string(AuthService.instance.givenName);
@@ -564,21 +591,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     final location = [street, city].whereType<String>().join(', ');
     final suffix = remaining > 0 ? ' · +$remaining more' : '';
     return location.isEmpty ? '$label$suffix' : '$label · $location$suffix';
-  }
-
-  String _paymentSubtitle() {
-    if (_paymentMethods.isEmpty) return 'No saved payment methods';
-    final defaultMethod = _paymentMethods.firstWhere(
-      (dynamic item) =>
-          item is Map &&
-          (item['isDefault'] == true || item['isDefault'] == 'true'),
-      orElse: () => _paymentMethods.first,
-    );
-    final method = _asMap(defaultMethod);
-    final brand = _string(method['brand']) ?? 'Card';
-    final last4 = _string(method['last4']);
-    if (last4 == null) return brand;
-    return '$brand ending $last4 · pay pro at booking';
   }
 
   String _homeProfileSubtitle() {

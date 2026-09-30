@@ -377,7 +377,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                       _isSubmitting || _isUploadingPhoto ? null : _submit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.orange500,
-                    foregroundColor: AppTheme.navy700,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -425,12 +425,12 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: _isListening
-                        ? AppTheme.orange500
+                        ? AppTheme.blue
                         : (_speechReady
-                            ? AppTheme.orangeTint
+                            ? AppTheme.blueTint
                             : AppTheme.pageBackground),
                     border: Border.all(
-                      color: AppTheme.orange500.withOpacity(
+                      color: AppTheme.blue.withOpacity(
                         _isListening ? 0.8 : (_speechReady ? 0.3 : 0.15),
                       ),
                       width: 3,
@@ -438,7 +438,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                     boxShadow: _isListening
                         ? [
                             BoxShadow(
-                              color: AppTheme.orange500.withOpacity(0.35),
+                              color: AppTheme.blue.withOpacity(0.35),
                               blurRadius: 24,
                               spreadRadius: 4,
                             )
@@ -450,7 +450,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                     size: 44,
                     color: _isListening
                         ? Colors.white
-                        : (_speechReady ? AppTheme.orange500 : AppTheme.gray),
+                        : (_speechReady ? AppTheme.blue : AppTheme.gray),
                   ),
                 ),
               );
@@ -467,7 +467,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                       ? 'Tap the microphone to start speaking'
                       : 'Type what you need help with')),
           style: TextStyle(
-            color: _isListening ? AppTheme.orange500 : AppTheme.navy700,
+            color: _isListening ? AppTheme.blue : AppTheme.navy700,
             fontSize: 14,
             fontWeight: FontWeight.w700,
           ),

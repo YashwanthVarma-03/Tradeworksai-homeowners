@@ -19,5 +19,6 @@ void main() {
     expect(tester.getTopLeft(find.text('Continue with Apple')).dy,
         lessThan(tester.getTopLeft(find.text('Continue with Google')).dy));
     expect(find.text('Read our Privacy Policy'), findsOneWidget);
+    expect(find.text('Terms of Service'), findsOneWidget);
   });
 }

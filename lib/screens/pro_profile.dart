@@ -1,3 +1,4 @@
+import '../widgets/review_annotations.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -10,16 +11,19 @@ import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
 import '../widgets/app_notification.dart';
+import '../widgets/select_certified_info.dart';
 import 'book_flow.dart';
 import 'chat_screen.dart';
 import 'login_page.dart';
 
 class ProProfileScreen extends StatefulWidget {
   final Map<String, dynamic> pro;
+  final String? initialDescription;
 
   const ProProfileScreen({
     super.key,
     required this.pro,
+    this.initialDescription,
   });
 
   @override
@@ -66,21 +70,6 @@ class _ProfileCredential {
   });
 }
 
-enum _ReviewSort { mostRelevant, highestRating, lowestRating }
-
-extension on _ReviewSort {
-  String get label {
-    switch (this) {
-      case _ReviewSort.mostRelevant:
-        return 'Most relevant';
-      case _ReviewSort.highestRating:
-        return 'Highest rating';
-      case _ReviewSort.lowestRating:
-        return 'Lowest rating';
-    }
-  }
-}
-
 class _FigmaProfileSurface extends StatelessWidget {
   // Values taken from the supplied ProProfile_Top Figma frame.
   static const Color _ink = AppTheme.navy;
@@ -120,7 +109,6 @@ class _FigmaProfileSurface extends StatelessWidget {
   final Map<int, double> ratingBreakdown;
   final List<Map<String, dynamic>> reviews;
   final String reviewQuery;
-  final _ReviewSort reviewSort;
   final String responseSummary;
   final bool loading;
   final bool bookActionLoading;
@@ -131,7 +119,6 @@ class _FigmaProfileSurface extends StatelessWidget {
   final VoidCallback onMessage;
   final VoidCallback onSeeAllReviews;
   final ValueChanged<String> onReviewQueryChanged;
-  final ValueChanged<_ReviewSort> onReviewSortChanged;
   final ScrollController scrollController;
   final GlobalKey _pricingKey = GlobalKey();
 
@@ -164,7 +151,6 @@ class _FigmaProfileSurface extends StatelessWidget {
     required this.ratingBreakdown,
     required this.reviews,
     required this.reviewQuery,
-    required this.reviewSort,
     required this.responseSummary,
     required this.loading,
     required this.bookActionLoading,
@@ -175,7 +161,6 @@ class _FigmaProfileSurface extends StatelessWidget {
     required this.onMessage,
     required this.onSeeAllReviews,
     required this.onReviewQueryChanged,
-    required this.onReviewSortChanged,
     required this.scrollController,
   });
 
@@ -191,7 +176,7 @@ class _FigmaProfileSurface extends StatelessWidget {
           children: [
             _topBar(),
             if (loading)
-              const LinearProgressIndicator(minHeight: 2, color: _orange),
+              const LinearProgressIndicator(minHeight: 2, color: AppTheme.navy),
             Expanded(
               child: ListView(
                 controller: scrollController,
@@ -310,21 +295,17 @@ class _FigmaProfileSurface extends StatelessWidget {
                   ),
                   if (selectCertified) ...[
                     const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppTheme.pageBackground,
-                        borderRadius: BorderRadius.circular(4),
+                    Builder(builder: (buttonContext) => TextButton.icon(
+                      onPressed: () => showSelectCertifiedInfo(buttonContext),
+                      icon: const Icon(Icons.info_outline, size: 14),
+                      label: const Text('Select-certified'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: _teal,
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        minimumSize: const Size(44, 44),
+                        textStyle: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800),
                       ),
-                      child: const Text(
-                        'Select-certified',
-                        style: TextStyle(
-                            color: _teal,
-                            fontSize: 7,
-                            fontWeight: FontWeight.w800),
-                      ),
-                    ),
+                    )),
                   ],
                 ],
               ),
@@ -340,7 +321,7 @@ class _FigmaProfileSurface extends StatelessWidget {
                             fontSize: 14,
                             fontWeight: FontWeight.w500)),
                   if (_hasRating) ...[
-                    const Icon(Icons.star_rounded, size: 15, color: _orange),
+                    const Icon(Icons.star_rounded, size: 15, color: AppTheme.gold),
                     Text('$reviewCount reviews ($rating)',
                         style: const TextStyle(
                             color: _muted,
@@ -914,26 +895,6 @@ class _FigmaProfileSurface extends StatelessWidget {
             ),
           ),
         ),
-        const Spacer(),
-        PopupMenuButton<_ReviewSort>(
-          tooltip: 'Sort reviews',
-          initialValue: reviewSort,
-          onSelected: onReviewSortChanged,
-          itemBuilder: (context) => _ReviewSort.values
-              .map(
-                (sort) => PopupMenuItem<_ReviewSort>(
-                  value: sort,
-                  child: Text(sort.label),
-                ),
-              )
-              .toList(),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text(reviewSort.label,
-                style: const TextStyle(color: _muted, fontSize: 12)),
-            const Icon(Icons.keyboard_arrow_down_rounded,
-                color: _muted, size: 17),
-          ]),
-        ),
       ]),
       if (reviews.isNotEmpty) ...[
         const SizedBox(height: 10),
@@ -983,11 +944,11 @@ class _FigmaProfileSurface extends StatelessWidget {
                       fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
               const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.star_rounded, color: _orange, size: 14),
-                Icon(Icons.star_rounded, color: _orange, size: 14),
-                Icon(Icons.star_rounded, color: _orange, size: 14),
-                Icon(Icons.star_rounded, color: _orange, size: 14),
-                Icon(Icons.star_rounded, color: _orange, size: 14)
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14),
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14),
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14),
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14),
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14)
               ]),
               const SizedBox(height: 4),
               Text('$reviewCount ratings',
@@ -1008,7 +969,7 @@ class _FigmaProfileSurface extends StatelessWidget {
                     child: LinearProgressIndicator(
                         value: (percent / 100).clamp(0, 1),
                         minHeight: 5,
-                        color: _orange,
+                        color: AppTheme.blue,
                         backgroundColor: AppTheme.cardBorder)),
                 const SizedBox(width: 7),
                 SizedBox(
@@ -1062,7 +1023,7 @@ class _FigmaProfileSurface extends StatelessWidget {
                       (index) => Icon(Icons.star_rounded,
                           size: 13,
                           color:
-                              index < stars ? _orange : AppTheme.cardBorder)))),
+                              index < stars ? AppTheme.gold : AppTheme.cardBorder)))),
         if (text.isNotEmpty)
           Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -1077,6 +1038,7 @@ class _FigmaProfileSurface extends StatelessWidget {
                       color: _blue,
                       fontSize: 11,
                       fontWeight: FontWeight.w700))),
+        ReviewAnnotations(review: review, businessName: businessName),
       ]),
     );
   }
@@ -1150,7 +1112,6 @@ class _AllReviewsScreen extends StatelessWidget {
   static const Color _ink = AppTheme.navy;
   static const Color _muted = AppTheme.textSecondary;
   static const Color _line = AppTheme.cardBorder;
-  static const Color _orange = AppTheme.orange;
 
   final String businessName;
   final String rating;
@@ -1209,7 +1170,7 @@ class _AllReviewsScreen extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.star_rounded, color: _orange, size: 20),
+                  const Icon(Icons.star_rounded, color: AppTheme.gold, size: 20),
                   const SizedBox(width: 6),
                   Text(
                     rating,
@@ -1306,7 +1267,7 @@ class _AllReviewsScreen extends StatelessWidget {
                 5,
                 (index) => Icon(
                   Icons.star_rounded,
-                  color: index < stars ? _orange : AppTheme.cardBorder,
+                  color: index < stars ? AppTheme.gold : AppTheme.cardBorder,
                   size: 15,
                 ),
               ),
@@ -1324,6 +1285,7 @@ class _AllReviewsScreen extends StatelessWidget {
               ),
             ),
           ],
+          ReviewAnnotations(review: review, businessName: businessName),
           if (tags.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -1348,7 +1310,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   bool _isStartingBooking = false;
   Map<String, dynamic>? _profile;
   String _reviewQuery = '';
-  _ReviewSort _reviewSort = _ReviewSort.mostRelevant;
   final ScrollController _profileScrollController = ScrollController();
 
   @override
@@ -2557,6 +2518,12 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         final author = _asMap(review['author'] ?? review['reviewer']);
         return <String, dynamic>{
           ...review,
+          'dateSort': review['created_at'] ??
+              review['createdAt'] ??
+              review['review_date'] ??
+              review['date'],
+          'editedAt': review['editedAt'] ?? review['edited_at'],
+          'proResponse': review['proResponse'] ?? review['pro_response'],
           'name': _text(
             review['name'],
             _text(
@@ -2597,7 +2564,9 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
             ),
           ),
           'tags': _text(
-            review['tags'],
+            review['tags'] is List
+                ? (review['tags'] as List).join(' · ')
+                : review['tags'],
             _text(
               review['jobLabel'],
               _text(
@@ -2634,26 +2603,14 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       return searchable.contains(query);
     }).toList();
 
-    switch (_reviewSort) {
-      case _ReviewSort.mostRelevant:
-        return reviews;
-      case _ReviewSort.highestRating:
-        reviews.sort(
-          (a, b) =>
-              (_number(b['rating']) ?? 0).compareTo(_number(a['rating']) ?? 0),
-        );
-        return reviews;
-      case _ReviewSort.lowestRating:
-        reviews.sort(
-          (a, b) =>
-              (_number(a['rating']) ?? 0).compareTo(_number(b['rating']) ?? 0),
-        );
-        return reviews;
-    }
+    reviews.sort((a, b) => (DateTime.tryParse('${b['dateSort']}') ??
+            DateTime(1900))
+        .compareTo(DateTime.tryParse('${a['dateSort']}') ?? DateTime(1900)));
+    return reviews;
   }
 
   void _openAllReviews() {
-    final reviews = _reviewsList();
+    final reviews = _visibleReviews();
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _AllReviewsScreen(
@@ -2690,6 +2647,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       final result = await navigator.push(
         MaterialPageRoute(
           builder: (context) => BookFlowScreen(
+            initialDescription: widget.initialDescription,
             pro: _displayPro,
           ),
         ),
@@ -2830,7 +2788,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       ratingBreakdown: _ratingBreakdown(),
       reviews: _visibleReviews(),
       reviewQuery: _reviewQuery,
-      reviewSort: _reviewSort,
       responseSummary: _responseSummary,
       loading: _isLoading,
       bookActionLoading: _isStartingBooking,
@@ -2846,9 +2803,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       onSeeAllReviews: _openAllReviews,
       onReviewQueryChanged: (query) {
         setState(() => _reviewQuery = query);
-      },
-      onReviewSortChanged: (sort) {
-        setState(() => _reviewSort = sort);
       },
       scrollController: _profileScrollController,
     );

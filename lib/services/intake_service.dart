@@ -21,8 +21,15 @@ class IntakeService {
     final bytes = List<int>.generate(16, (_) => random.nextInt(256));
     bytes[6] = (bytes[6] & 0x0f) | 0x40; // UUID version 4
     bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant RFC 4122
-    final hexDigits = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final hexDigits =
+        bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '${hexDigits.substring(0, 8)}-${hexDigits.substring(8, 12)}-${hexDigits.substring(12, 16)}-${hexDigits.substring(16, 20)}-${hexDigits.substring(20, 32)}';
+  }
+
+  Future<String> newSessionToken() async {
+    final token = _generateUuidV4();
+    await saveSessionToken(token);
+    return token;
   }
 
   Future<String> getSessionToken() async {
@@ -71,9 +78,7 @@ class IntakeService {
       }),
     );
 
-    if (response.statusCode >= 400 ||
-        (response.body.isNotEmpty &&
-            response.body.contains('invalid_session_token'))) {
+    if (photoRefs.isEmpty && response.body.contains('invalid_session_token')) {
       await resetSessionToken();
       resolvedSessionToken = await getSessionToken();
       response = await http.post(
@@ -118,7 +123,11 @@ class IntakeService {
     String? sessionToken,
   }) async {
     var resolvedSessionToken = sessionToken ?? await getSessionToken();
-    final contentType = _contentTypeForPath(file.path);
+    final contentType = file.mimeType ?? _contentTypeForPath(file.name);
+    if (!{'image/jpeg', 'image/png', 'image/webp'}.contains(contentType))
+      throw Exception('Choose a JPEG, PNG or WEBP photo.');
+    if (await file.length() > 10 * 1024 * 1024)
+      throw Exception('Choose a photo up to 10 MB.');
 
     var signResponse = await http.post(
       Uri.parse('${ApiConfig.baseUrl}$_uploadUrlPath'),
@@ -129,9 +138,7 @@ class IntakeService {
       }),
     );
 
-    if (signResponse.statusCode >= 400 ||
-        (signResponse.body.isNotEmpty &&
-            signResponse.body.contains('invalid_session_token'))) {
+    if (signResponse.body.contains('invalid_session_token')) {
       await resetSessionToken();
       resolvedSessionToken = await getSessionToken();
       signResponse = await http.post(

@@ -1,0 +1,594 @@
+--- a/v2-supabase-live/booking-commit-v2-supabase/main.py
++++ b/v2-supabase-live/booking-commit-v2-supabase/main.py
+@@ -1,3 +1,4 @@
++from request_auth import authenticated_user_id
+ """
+ booking-commit-v2-supabase
+ Phase 10 Step 6 — the booking-commit primitive (front half of Phase 16).
+@@ -79,7 +80,7 @@
+ _CORS = {
+     "Access-Control-Allow-Origin": "*",
+     "Access-Control-Allow-Methods": "POST, OPTIONS",
+-    "Access-Control-Allow-Headers": "Content-Type",
++    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+     "Access-Control-Max-Age": "3600",
+     "Content-Type": "application/json",
+ }
+@@ -168,7 +169,13 @@
+                 return _resp({"success": False, "error": "missing_slot"}, 400)
+             booking = b.get("booking") or {}
+             urgency = (b.get("urgency") or "standard").lower()
+-            requester_user_id = booking.get("requester_user_id")
++            requester_user_id = authenticated_user_id(sb, request)
++            booking["requester_user_id"] = requester_user_id
++            address_id = booking.get("address_id")
++            if address_id is not None:
++                owned = sb.table("homeowner_addresses").select("id").eq("id", address_id).eq("user_id", requester_user_id).eq("is_deleted", False).execute().data
++                if not owned:
++                    return _resp({"success": False, "error": "invalid_address"}, 403)
+ 
+             reason = _gate(sb, requester_user_id, urgency, check_cap=True)
+             if reason:
+@@ -186,6 +193,15 @@
+                 "p_booking": booking,
+             })
+             if (data or {}).get("ok"):
++                if address_id is not None and data.get("workOrderId"):
++                    try:
++                        sb.table("work_orders").update({"address_id": address_id}).eq("id", data["workOrderId"]).eq("requester_user_id", requester_user_id).execute()
++                        data["homeProfileLinked"] = True
++                    except Exception:
++                        # The booking is committed. Do not report a failed booking
++                        # (and invite duplicates) if this additive link failed.
++                        data["homeProfileLinked"] = False
++                        logging.exception("home-profile address link requires retry")
+                 _notify_booked(sb, data)
+             return _resp({"success": True, **(data or {})})
+ 
+@@ -193,7 +209,13 @@
+         if action == "quote_request":
+             booking = b.get("booking") or {}
+             urgency = (b.get("urgency") or "standard").lower()
+-            requester_user_id = booking.get("requester_user_id")
++            requester_user_id = authenticated_user_id(sb, request)
++            booking["requester_user_id"] = requester_user_id
++            address_id = booking.get("address_id")
++            if address_id is not None:
++                owned = sb.table("homeowner_addresses").select("id").eq("id", address_id).eq("user_id", requester_user_id).eq("is_deleted", False).execute().data
++                if not owned:
++                    return _resp({"success": False, "error": "invalid_address"}, 403)
+ 
+             reason = _gate(sb, requester_user_id, urgency, check_cap=True)
+             if reason:
+@@ -214,6 +236,7 @@
+                 "assigned_contractor_user_id": assigned_uid,
+                 "service_category": booking.get("service_category"),
+                 "service_description": booking.get("service_description"),
++                "address_id": address_id,
+                 "address_street": booking.get("address_street") or "TBD",
+                 "address_city": booking.get("address_city"),
+                 "address_state": booking.get("address_state"),
+--- /dev/null
++++ b/v2-supabase-live/booking-commit-v2-supabase/request_auth.py
+@@ -0,0 +1,11 @@
++def authenticated_user_id(sb, request):
++    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
++    if not token:
++        raise PermissionError("authentication_required")
++    user = sb.auth.get_user(token).user
++    if not user or not user.email or not user.email_confirmed_at:
++        raise PermissionError("verified_account_required")
++    users = sb.table("user_login_agent_details").select("id").eq("email", user.email.lower()).limit(2).execute().data or []
++    if len(users) != 1:
++        raise PermissionError("account_mapping_unavailable")
++    return users[0]["id"]
+--- a/v2-supabase-live/homeowner-review-action-v2-supabase/main.py
++++ b/v2-supabase-live/homeowner-review-action-v2-supabase/main.py
+@@ -1,3 +1,4 @@
++from request_auth import authenticated_user_id
+ """
+ homeowner-review-action-v2-supabase
+ Phase 18 §11 — verified review submission (D23).
+@@ -36,7 +37,7 @@
+ _CORS = {
+     "Access-Control-Allow-Origin": "*",
+     "Access-Control-Allow-Methods": "POST, OPTIONS",
+-    "Access-Control-Allow-Headers": "Content-Type",
++    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+     "Access-Control-Max-Age": "3600",
+     "Content-Type": "application/json",
+ }
+@@ -78,7 +79,7 @@
+         return None, "missing_params"
+     rows = (sb.table("work_orders").select(
+         "id, requester_user_id, assigned_contractor_user_id, status, "
+-        "service_category, completed_at, contractor_completed_at"
++        "service_category, completed_at, contractor_completed_at, invoice_amount, invoice_url"
+     ).eq("id", wo_id).limit(1).execute()).data
+     if not rows:
+         return None, "order_not_found"
+@@ -131,16 +132,26 @@
+         b = request.get_json(silent=True) or {}
+         action = (b.get("action") or "").strip()
+         sb = _client()
+-        wo, reason = _load_owned(sb, b.get("workOrderId"), b.get("requesterUserId"))
++        wo, reason = _load_owned(sb, b.get("workOrderId"), authenticated_user_id(sb, request))
+         if reason:
+-            return _resp({"success": True, "eligible": False, "reason": reason})
++            return _resp({"success": False, "eligible": False, "reason": reason}, 403)
+ 
+         if action == "get_review_eligibility":
+             elig, why = _eligibility(sb, wo)
+             return _resp({"success": True, "eligible": elig, "reason": why})
+ 
+-        if action == "submit_review":
+-            elig, why = _eligibility(sb, wo)
++        existing = (sb.table("contractor_reviews").select("*")
++                    .eq("work_order_id", wo["id"]).limit(1).execute()).data or []
++        if action == "get_review":
++            return _resp({"success": True, "review": existing[0] if existing else None})
++        if action == "deleteReview":
++            sb.table("contractor_reviews").delete().eq("work_order_id", wo["id"]).execute()
++            return _resp({"success": True, "ok": True, "deleted": True})
++        if action in ("submit_review", "update_review"):
++            if action == "update_review":
++                elig, why = bool(existing), "review_not_found"
++            else:
++                elig, why = _eligibility(sb, wo)
+             if not elig:
+                 return _resp({"success": True, "ok": False, "reason": why})
+ 
+@@ -155,6 +166,12 @@
+             if not (TEXT_MIN <= len(text) <= TEXT_MAX):
+                 return _resp({"success": True, "ok": False, "reason": "invalid_text_length"})
+ 
++            tags = b.get("tags", [])
++            allowed_tags = {"On time", "Professional", "Clean work", "Great communication", "Fair price", "Price stayed within the cap"}
++            if not isinstance(tags, list) or any(not isinstance(t, str) or t not in allowed_tags for t in tags):
++                return _resp({"success": False, "error": "invalid_tags"}, 400)
++            if "Price stayed within the cap" in tags and wo.get("invoice_amount") is None and not wo.get("invoice_url"):
++                return _resp({"success": False, "error": "invoice_required_for_cap_tag"}, 400)
+             cpid = _resolve_contractor_profile_id(sb, wo.get("assigned_contractor_user_id"))
+             if not cpid:
+                 return _resp({"success": True, "ok": False, "reason": "contractor_not_found"})
+@@ -170,6 +187,7 @@
+                 "reviewer_type": "homeowner",
+                 "rating": rating,
+                 "review_text": text,
++                "tags": list(dict.fromkeys(tags)),
+                 "service_performed": wo.get("service_category"),
+                 "review_date": date.today().isoformat(),
+                 "source": "verified",
+@@ -177,7 +195,13 @@
+                 "is_active": (not held),  # held -> not published until admin clears
+             }
+             try:
+-                ins = (sb.table("contractor_reviews").insert(row).execute()).data
++                if action == "update_review":
++                    # Do not change original date/source/author/response on edit.
++                    patch = {key: row[key] for key in ("rating", "review_text", "tags", "is_active")}
++                    patch["edited_at"] = _now().isoformat()
++                    ins = sb.table("contractor_reviews").update(patch).eq("id", existing[0]["id"]).execute().data
++                else:
++                    ins = (sb.table("contractor_reviews").insert(row).execute()).data
+             except Exception as e:
+                 # UNIQUE violation -> already reviewed (race)
+                 logging.warning("review insert failed: %s", e)
+@@ -185,10 +209,13 @@
+ 
+             return _resp({"success": True, "ok": True,
+                           "reviewId": ins[0]["id"] if ins else None,
+-                          "held": held, "published": (not held)})
++                          "held": held, "published": (not held), "review": ins[0] if ins else None,
++                          "editedAt": ins[0].get("edited_at") if ins else None, "tags": tags})
+ 
+         return _resp({"success": True, "ok": False, "reason": f"unknown_action: {action}"})
+ 
++    except PermissionError:
++        return _resp({"success": False, "error": "authentication_required"}, 403)
+     except Exception:
+         logging.exception("homeowner_review_action failed")
+         return _resp({"success": False, "error": "server_error"}, 500)
+\ No newline at end of file
+--- /dev/null
++++ b/v2-supabase-live/homeowner-review-action-v2-supabase/request_auth.py
+@@ -0,0 +1,11 @@
++def authenticated_user_id(sb, request):
++    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
++    if not token:
++        raise PermissionError("authentication_required")
++    user = sb.auth.get_user(token).user
++    if not user or not user.email or not user.email_confirmed_at:
++        raise PermissionError("verified_account_required")
++    users = sb.table("user_login_agent_details").select("id").eq("email", user.email.lower()).limit(2).execute().data or []
++    if len(users) != 1:
++        raise PermissionError("account_mapping_unavailable")
++    return users[0]["id"]
+--- a/v2-supabase-live/homeowner-work-orders-action-v2-supabase/main.py
++++ b/v2-supabase-live/homeowner-work-orders-action-v2-supabase/main.py
+@@ -1,3 +1,4 @@
++from request_auth import authenticated_user_id
+ """
+ homeowner-work-orders-action-v2-supabase
+ Phase 17 §10.4 — homeowner-initiated work-order actions (the modal backends).
+@@ -28,7 +29,7 @@
+ _CORS = {
+     "Access-Control-Allow-Origin": "*",
+     "Access-Control-Allow-Methods": "POST, OPTIONS",
+-    "Access-Control-Allow-Headers": "Content-Type",
++    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+     "Access-Control-Max-Age": "3600",
+     "Content-Type": "application/json",
+ }
+@@ -92,6 +93,7 @@
+         ruid = b.get("requesterUserId")
+         sb = _client()
+ 
++        ruid = authenticated_user_id(sb, request)
+         wo, reason = _load_owned(sb, wo_id, ruid)
+         if reason:
+             return _resp({"success": True, "ok": False, "reason": reason})
+@@ -208,17 +210,20 @@
+             }).eq("id", wo_id).execute()
+             return _resp({"success": True, "ok": True, "status": "disputed"})
+ 
+-        # ---- pro no-show ----
+-        if action == "pro_no_show":
+-            if st not in ("accepted", "en_route"):
+-                return _resp({"success": True, "ok": False, "reason": "not_no_show_eligible"})
+-            sb.table("work_orders").update({
+-                "status": "pro_no_show", "updated_at": now_iso,
+-            }).eq("id", wo_id).execute()
+-            return _resp({"success": True, "ok": True, "status": "pro_no_show"})
++        # Atomic, idempotent answers; silence never creates a report.
++        if action in ("confirm_arrival", "arrival_rescheduled", "pro_no_show"):
++            result = sb.rpc("resolve_arrival_check", {
++                "p_work_order_id": int(wo_id), "p_user_id": int(ruid),
++                "p_action": action, "p_note": b.get("note") or "",
++            }).execute().data or {}
++            if result.get("newCase"):
++                notify(sb, "arrival_reported", _fresh(sb, wo_id), {"caseId": result.get("caseId")})
++            return _resp({"success": True, **result})
+ 
+         return _resp({"success": True, "ok": False, "reason": f"unknown_action: {action}"})
+ 
++    except PermissionError:
++        return _resp({"success": False, "error": "authentication_required"}, 403)
+     except Exception:
+         logging.exception("homeowner_work_orders_action failed")
+         return _resp({"success": False, "error": "server_error"}, 500)
+\ No newline at end of file
+--- a/v2-supabase-live/homeowner-work-orders-action-v2-supabase/notify.py
++++ b/v2-supabase-live/homeowner-work-orders-action-v2-supabase/notify.py
+@@ -32,7 +32,7 @@
+ PRO_DASH = f"{SITE}/dashboard/contractor/"
+ 
+ CONTRACTOR_TEMPLATES = {
+-    "new_job_booked", "booking_cancelled", "reschedule_proposed", "reschedule_responded",
++    "new_job_booked", "booking_cancelled", "reschedule_proposed", "reschedule_responded", "arrival_reported",
+ }
+ 
+ 
+@@ -184,7 +184,14 @@
+             "body_html": _wrap(inner), "body_text": text}
+ 
+ 
++def _t_arrival_reported(sb, wo, ctx):
++    text = "A homeowner reported that you did not arrive. This private report is under review, not a public rating. You have a right to reply; contact support with the booking number."
++    return {"subject": "Private arrival report", "title": "Arrival report: reply requested",
++            "body_html": _wrap("<p>" + text + "</p>" + _btn("Open dashboard", PRO_DASH)), "body_text": text}
++
++
+ TEMPLATES = {
++    "arrival_reported": _t_arrival_reported,
+     "booking_confirmed": _t_booking_confirmed,
+     "new_job_booked": _t_new_job_booked,
+     "quote_ready": _t_quote_ready,
+--- /dev/null
++++ b/v2-supabase-live/homeowner-work-orders-action-v2-supabase/request_auth.py
+@@ -0,0 +1,11 @@
++def authenticated_user_id(sb, request):
++    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
++    if not token:
++        raise PermissionError("authentication_required")
++    user = sb.auth.get_user(token).user
++    if not user or not user.email or not user.email_confirmed_at:
++        raise PermissionError("verified_account_required")
++    users = sb.table("user_login_agent_details").select("id").eq("email", user.email.lower()).limit(2).execute().data or []
++    if len(users) != 1:
++        raise PermissionError("account_mapping_unavailable")
++    return users[0]["id"]
+--- a/v2-supabase-live/homeowner-work-orders-list-v2-supabase/main.py
++++ b/v2-supabase-live/homeowner-work-orders-list-v2-supabase/main.py
+@@ -1,3 +1,4 @@
++from request_auth import authenticated_user_id
+ """
+ homeowner-work-orders-list-v2-supabase
+ Phase 17 §10.2 — the homeowner Jobs list.
+@@ -36,7 +37,7 @@
+ _CORS = {
+     "Access-Control-Allow-Origin": "*",
+     "Access-Control-Allow-Methods": "POST, OPTIONS",
+-    "Access-Control-Allow-Headers": "Content-Type",
++    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+     "Access-Control-Max-Age": "3600",   # Priority 1 — CORS preflight cache
+     "Content-Type": "application/json",
+ }
+@@ -54,6 +55,18 @@
+ 
+ def _resp(body, status=200):
+     return (json.dumps(body, default=str), status, _CORS)
++
++
++def _arrival_pending(row):
++    if row.get("status") in {"completed", "cancelled", "customer_no_show", "pro_no_show", "disputed"}:
++        return False
++    if row.get("arrival_check_answer") and row.get("arrival_check_resolved_end") == row.get("scheduled_end"):
++        return False
++    try:
++        end = datetime.fromisoformat(str(row.get("scheduled_end")).replace("Z", "+00:00"))
++        return datetime.now(timezone.utc).timestamp() >= end.timestamp() + 7200
++    except (ValueError, TypeError):
++        return False
+ 
+ 
+ def _card(r):
+@@ -62,6 +75,11 @@
+         "workOrderId": r.get("id"),
+         "woNumber": r.get("wo_number"),
+         "status": r.get("status"),
++        "cancelledBy": r.get("cancelled_by"),
++        "arrivalCheckId": str(r.get("scheduled_end") or ""),
++        "arrivalCheckAnswer": r.get("arrival_check_answer") if r.get("arrival_check_resolved_end") == r.get("scheduled_end") else None,
++        "arrivalCheckResolvedAt": r.get("arrival_check_resolved_at") if r.get("arrival_check_resolved_end") == r.get("scheduled_end") else None,
++        "pendingArrivalCheck": _arrival_pending(r),
+         "workOrderType": r.get("work_order_type"),
+         "serviceCategory": r.get("service_category"),
+         "serviceDescription": r.get("service_description"),
+@@ -74,6 +92,7 @@
+             "state": r.get("address_state"), "zip": r.get("address_zip"),
+         },
+         "pro": {
++            "userId": r.get("assigned_contractor_user_id"),
+             "businessName": r.get("pro_business_name"),
+             "slug": r.get("pro_public_slug"),
+             "photoUrl": r.get("pro_profile_image_url"),
+@@ -124,6 +143,8 @@
+ 
+         # ONE round trip — RPC does user resolve + work_orders + contractor join
+         sb = _client()
++        p_user_id = authenticated_user_id(sb, request)
++        p_email = None
+         rpc_res = sb.rpc("homeowner_work_orders_list", {
+             "p_user_id": p_user_id,
+             "p_email": p_email,
+@@ -134,6 +155,12 @@
+             return _resp({"success": False, "error": "user_not_found"}, 404)
+ 
+         rows = payload.get("rows") or []
++        # The existing RPC projection omits new fields; enrich from owned rows.
++        extra = sb.table("work_orders").select("id,cancelled_by,assigned_contractor_user_id,arrival_check_answer,arrival_check_resolved_end,arrival_check_resolved_at").eq("requester_user_id", payload["user_id"]).execute().data or []
++        extra_by_id = {r["id"]: r for r in extra}
++        for row in rows:
++            row.update(extra_by_id.get(row["id"], {}))
++
+         now = datetime.now(timezone.utc)
+ 
+         active, scheduled, history = [], [], []
+@@ -176,6 +203,8 @@
+             "actionRequired": action_required,
+         })
+ 
++    except PermissionError:
++        return _resp({"success": False, "error": "authentication_required"}, 403)
+     except Exception:
+         logging.exception("homeowner_work_orders_list failed")
+         return _resp({"success": False, "error": "server_error"}, 500)
+\ No newline at end of file
+--- /dev/null
++++ b/v2-supabase-live/homeowner-work-orders-list-v2-supabase/request_auth.py
+@@ -0,0 +1,11 @@
++def authenticated_user_id(sb, request):
++    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
++    if not token:
++        raise PermissionError("authentication_required")
++    user = sb.auth.get_user(token).user
++    if not user or not user.email or not user.email_confirmed_at:
++        raise PermissionError("verified_account_required")
++    users = sb.table("user_login_agent_details").select("id").eq("email", user.email.lower()).limit(2).execute().data or []
++    if len(users) != 1:
++        raise PermissionError("account_mapping_unavailable")
++    return users[0]["id"]
+--- a/v2-supabase-live/public-contractor-profile-get-v2-supabase/main.py
++++ b/v2-supabase-live/public-contractor-profile-get-v2-supabase/main.py
+@@ -180,7 +180,7 @@
+ 
+         reviews = (
+             sb.table("contractor_reviews")
+-            .select("reviewer_name, reviewer_type, rating, review_text, service_performed, review_date, source, sort_order")
++            .select("reviewer_name, reviewer_type, rating, review_text, service_performed, review_date, source, sort_order, tags, edited_at, pro_response")
+             .eq("contractor_id", pid)
+             .eq("is_active", True)
+             .execute()
+@@ -213,7 +213,11 @@
+         verified, testimonials = [], []
+         for r in reviews:
+             entry = {
++                "review_date": r.get("review_date"),
+                 "reviewer_name": r.get("reviewer_name"),
++                "tags": r.get("tags") or [],
++                "editedAt": r.get("edited_at"),
++                "proResponse": r.get("pro_response"),
+                 "rating": r.get("rating"),
+                 "text": r.get("review_text"),
+                 "service_performed": r.get("service_performed"),
+@@ -224,7 +228,7 @@
+             else:
+                 testimonials.append(entry)
+ 
+-        verified.sort(key=lambda e: e["month_year"], reverse=True)  # newest-ish first
++        verified.sort(key=lambda e: e.get("review_date") or "", reverse=True)
+         verified_ratings = [v["rating"] for v in verified if v.get("rating") is not None]
+         verified_aggregate = None
+         if verified_ratings:
+--- a/v2-supabase-live/public-contractor-search-v2-supabase/main.py
++++ b/v2-supabase-live/public-contractor-search-v2-supabase/main.py
+@@ -253,17 +253,35 @@
+         cat_service_ids = [r["id"] for r in cat_rows]
+ 
+         # candidate pros: public + serves city
+-        pros = (sb.table("contractor_profiles")
+-                .select("id, user_id, public_slug, business_name, profile_image_url, service_cities, address_zip, "
+-                        "has_trade_license, has_gl_insurance, background_check_status, after_hours_availability")
+-                .eq("is_public", True).contains("service_cities", [city]).limit(CANDIDATE_CAP).execute()).data or []
++        # Page the complete eligible set in immutable ID order; never truncate a
++        # rating/distance-ranked prefix before the client gives equal visibility.
++        pros, cursor = [], 0
++        while True:
++            page = (sb.table("contractor_profiles")
++                    .select("id, user_id, public_slug, business_name, profile_image_url, service_cities, address_zip, "
++                            "has_trade_license, has_gl_insurance, background_check_status, after_hours_availability")
++                    .eq("is_public", True).contains("service_cities", [city])
++                    .gt("id", cursor).order("id").limit(500).execute()).data or []
++            if not page:
++                break
++            pros.extend(page)
++            cursor = page[-1]["id"]
+         if not pros:
+             return _resp({"success": True, "covered": False, "city": city, "state": state, "count": 0, "results": []})
+         pro_ids = [p["id"] for p in pros]
+ 
+         # which of them have an active service IN this category (+ min rate for "From $X")
+-        svc = (sb.table("contractor_services").select("contractor_id, rate_amount, rate_unit, is_active, service_id")
+-               .in_("contractor_id", pro_ids).in_("service_id", cat_service_ids).eq("is_active", True).execute()).data or []
++        svc = []
++        for start in range(0, len(pro_ids), 100):
++            offset = 0
++            while True:
++                page = (sb.table("contractor_services").select("id, contractor_id, rate_amount, rate_unit, is_active, service_id")
++                        .in_("contractor_id", pro_ids[start:start + 100]).in_("service_id", cat_service_ids).eq("is_active", True)
++                        .order("id").range(offset, offset + 499).execute()).data or []
++                svc.extend(page)
++                if len(page) < 500:
++                    break
++                offset += len(page)
+         offering = {}
+         for s in svc:
+             cid = s["contractor_id"]
+@@ -279,8 +297,18 @@
+             return _resp({"success": True, "covered": True, "city": city, "state": state, "count": 0, "results": []})
+ 
+         # verified review aggregate per contractor (source != 'manual')
+-        vr = (sb.table("contractor_reviews").select("contractor_id, rating, source")
+-              .in_("contractor_id", list(candidate_ids)).execute()).data or []
++        vr = []
++        candidate_list = sorted(candidate_ids)
++        for start in range(0, len(candidate_list), 100):
++            offset = 0
++            while True:
++                page = (sb.table("contractor_reviews").select("id, contractor_id, rating, source")
++                        .in_("contractor_id", candidate_list[start:start + 100]).eq("is_active", True)
++                        .order("id").range(offset, offset + 499).execute()).data or []
++                vr.extend(page)
++                if len(page) < 500:
++                    break
++                offset += len(page)
+         agg = {}
+         for r in vr:
+             if (r.get("source") or "manual") == "manual":
+@@ -331,14 +359,6 @@
+                 "distanceMiles": distance,
+             })
+ 
+-        # Sort (D8): rated pros first (rating desc, then distance asc), then new pros (distance asc).
+-        BIG = float("inf")
+-        results.sort(key=lambda r: (
+-            r["isNew"],                                            # rated block first
+-            -(r["verifiedRating"] or 0),                           # rating desc
+-            r["distanceMiles"] if r["distanceMiles"] is not None else BIG,  # distance asc, nulls last
+-        ))
+-
+         return _resp({"success": True, "covered": True, "city": city, "state": state,
+                       "count": len(results), "results": results})
+ 
+--- a/v2-supabase-live/stream-token-v2-supabase/main.py
++++ b/v2-supabase-live/stream-token-v2-supabase/main.py
+@@ -1,3 +1,4 @@
++from request_auth import authenticated_user_id
+ """
+ stream-token-v2-supabase   (entry: stream_token)
+ TradeWorks Messaging (Stream Chat) — issues a signed Stream user token for the
+@@ -35,7 +36,7 @@
+ _CORS = {
+     "Access-Control-Allow-Origin": "*",
+     "Access-Control-Allow-Methods": "POST, OPTIONS",
+-    "Access-Control-Allow-Headers": "Content-Type",
++    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+     "Access-Control-Max-Age": "3600",
+     "Content-Type": "application/json",
+ }
+@@ -103,6 +104,8 @@
+         with_user_id = b.get("withUserId")  # OPTIONAL counterparty to pre-provision
+ 
+         sb = _sb()
++        uid = authenticated_user_id(sb, request)
++        email = ""
+         # resolve the LOGGED-IN caller (need id + name for the Stream profile)
+         if uid:
+             u = _fetch_user_by_id(sb, uid)
+@@ -132,14 +135,26 @@
+         # upsert the caller into Stream so they exist with a display name before chatting
+         _upsert_stream_user(server_client, u)
+ 
+-        # OPTIONAL: also provision the counterparty so the channel can be created
+-        # even if they have never opened chat. Only if it's a different, valid user.
++        # Direct channels are created by this authenticated server only.
++        # Deploy with client CreateChannel/AddChannelMember grants disabled.
+         if with_user_id is not None and str(with_user_id) != stream_user_id:
+             other = _fetch_user_by_id(sb, with_user_id)
+-            if other:
++            if not other:
++                return _resp({"success": False, "error": "counterparty_not_found"}, 404)
++            pair = sorted([stream_user_id, str(other["id"])])
++            channel_id = "_".join(pair)
++            existing = server_client.query_channels({"cid": {"$eq": "messaging:" + channel_id}}, limit=1).get("channels", [])
++            if existing:
++                members = {str(m.get("user_id") or (m.get("user") or {}).get("id")) for m in existing[0].get("members", [])}
++                if not set(pair).issubset(members):
++                    return _resp({"success": False, "error": "invalid_direct_channel"}, 403)
++            else:
++                homeowner = sb.table("homeowner_profiles").select("id").eq("user_id", u["id"]).limit(1).execute().data
++                pro = sb.table("contractor_profiles").select("id").eq("user_id", other["id"]).eq("is_public", True).limit(1).execute().data
++                if not homeowner or not pro:
++                    return _resp({"success": False, "error": "homeowner_must_start_conversation"}, 403)
+                 _upsert_stream_user(server_client, other)
+-            else:
+-                logging.warning("withUserId=%s not found; skipping counterparty upsert", with_user_id)
++                server_client.channel("messaging", channel_id, {"members": pair}).create(stream_user_id)
+ 
+         # mint the user token (the frontend uses this to connectUser)
+         token = server_client.create_token(stream_user_id)
+@@ -153,6 +168,8 @@
+             "role": role,
+         })
+ 
++    except PermissionError:
++        return _resp({"success": False, "error": "authentication_required"}, 403)
+     except Exception:
+         logging.exception("stream_token failed")
+         return _resp({"success": False, "error": "server_error"}, 500)
+\ No newline at end of file
+--- /dev/null
++++ b/v2-supabase-live/stream-token-v2-supabase/request_auth.py
+@@ -0,0 +1,11 @@
++def authenticated_user_id(sb, request):
++    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
++    if not token:
++        raise PermissionError("authentication_required")
++    user = sb.auth.get_user(token).user
++    if not user or not user.email or not user.email_confirmed_at:
++        raise PermissionError("verified_account_required")
++    users = sb.table("user_login_agent_details").select("id").eq("email", user.email.lower()).limit(2).execute().data or []
++    if len(users) != 1:
++        raise PermissionError("account_mapping_unavailable")
++    return users[0]["id"]

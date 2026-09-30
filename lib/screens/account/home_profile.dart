@@ -1,625 +1,516 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:url_launcher/url_launcher.dart';
+import '../../services/homeowner_service.dart';
+import '../../services/document_upload.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
 import '../../widgets/transaction_guard.dart';
 
 class HomeProfileScreen extends StatefulWidget {
+  const HomeProfileScreen({super.key, required this.addresses});
   final List<dynamic> addresses;
-
-  const HomeProfileScreen({
-    super.key,
-    required this.addresses,
-  });
-
   @override
   State<HomeProfileScreen> createState() => _HomeProfileScreenState();
 }
 
 class _HomeProfileScreenState extends State<HomeProfileScreen> {
-  static const Color _pageBackground = AppTheme.pageBackground;
-  static const Color _inkStrong = AppTheme.navy;
-  static const Color _mutedText = AppTheme.textSecondary;
-  static const Color _lineSoft = AppTheme.cardBorder;
-
-  final Map<String, Map<String, TextEditingController>> _controllers = {};
-  final Map<String, List<Map<String, dynamic>>> _systemsByAddress = {};
-  bool _isLoading = true;
-  bool _isSaving = false;
-
+  List<Map<String, dynamic>> _addresses = [];
+  final Map<String, Map<String, dynamic>> _profiles = {};
+  bool _loading = true, _saving = false;
+  Object? _error;
   @override
   void initState() {
     super.initState();
-    _loadProfiles();
+    _load();
   }
 
-  @override
-  void dispose() {
-    for (final ctrls in _controllers.values) {
-      for (final ctrl in ctrls.values) {
-        ctrl.dispose();
-      }
-    }
-    super.dispose();
-  }
-
-  Future<void> _loadProfiles() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    for (final dynamic item in widget.addresses) {
-      final address = _asMap(item);
-      final addressId = _string(address['id']) ?? '';
-      if (addressId.isEmpty) continue;
-
-      final storedDataStr = prefs.getString('home_profile_$addressId');
-      Map<String, dynamic> storedData = const {};
-      if (storedDataStr != null && storedDataStr.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(storedDataStr);
-          storedData = _asMap(decoded);
-        } catch (_) {}
-      }
-
-      _controllers[addressId] = {
-        'sqft': TextEditingController(
-          text: _valueFor(address, storedData, const [
-            'sqft',
-            'squareFootage',
-            'square_footage',
-            'squareFeet',
-          ]),
-        ),
-        'yearBuilt': TextEditingController(
-          text: _valueFor(address, storedData, const [
-            'yearBuilt',
-            'year_built',
-          ]),
-        ),
-        'bedrooms': TextEditingController(
-          text: _valueFor(address, storedData, const ['bedrooms']),
-        ),
-        'bathrooms': TextEditingController(
-          text: _valueFor(address, storedData, const ['bathrooms']),
-        ),
-      };
-      _systemsByAddress[addressId] = _extractSystems(address);
-    }
-
-    if (mounted) setState(() => _isLoading = false);
-  }
-
-  Future<void> _saveAllProfiles() async {
-    if (_isSaving) return;
-    setState(() => _isSaving = true);
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final prefs = await SharedPreferences.getInstance();
-      for (final dynamic item in widget.addresses) {
-        final address = _asMap(item);
-        final addressId = _string(address['id']) ?? '';
-        if (addressId.isEmpty || !_controllers.containsKey(addressId)) continue;
-        final ctrls = _controllers[addressId]!;
-        await prefs.setString(
-          'home_profile_$addressId',
-          jsonEncode({
-            'sqft': ctrls['sqft']!.text.trim(),
-            'yearBuilt': ctrls['yearBuilt']!.text.trim(),
-            'bedrooms': ctrls['bedrooms']!.text.trim(),
-            'bathrooms': ctrls['bathrooms']!.text.trim(),
-          }),
-        );
-      }
+      final data = await HomeownerService.instance.fetchHomeProfiles();
+      final addresses = (data['addresses'] as List? ?? widget.addresses)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final profiles = (data['homeProfiles'] as List? ?? []).whereType<Map>();
+      if (!mounted) return;
+      setState(() {
+        _addresses = addresses;
+        for (final address in addresses) {
+          final id = '${address['id']}';
+          final found = profiles
+              .where((p) => '${p['addressId'] ?? p['address_id']}' == id);
+          final value = found.isEmpty
+              ? <String, dynamic>{}
+              : Map<String, dynamic>.from(found.first);
+          _profiles[id] = {
+            ...value,
+            'addressId': int.tryParse(id),
+            'propertyDetails':
+                Map<String, dynamic>.from(value['propertyDetails'] as Map? ??
+                    {
+                      'squareFootage': value['squareFeet'],
+                      'yearBuilt': value['yearBuilt'],
+                    }),
+            'systems': (value['systems'] as List? ?? [])
+                .whereType<Map>()
+                .toList()
+                .asMap()
+                .entries
+                .map((e) => <String, dynamic>{
+                      ...Map<String, dynamic>.from(e.value),
+                      'id': e.value['id'] ?? 'legacy-$id-${e.key}'
+                    })
+                .toList(),
+            'documents': (value['documents'] as List? ?? [])
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList(),
+            'accessNotes':
+                Map<String, dynamic>.from(value['accessNotes'] as Map? ?? {}),
+          };
+        }
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          _error = e;
+          _loading = false;
+        });
+    }
+  }
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Home profile saved'),
-          backgroundColor: AppTheme.success,
-        ),
-      );
-      Navigator.pop(context, true);
-    } catch (error) {
-      if (!mounted) return;
-      AppNotification.showError(
-        context,
-        error,
-        fallback: 'We couldn\'t save your home profile. Please try again.',
-      );
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      for (final profile in _profiles.values) {
+        final details = profile['propertyDetails'] as Map;
+        for (final key in details.keys) {
+          final raw = '${details[key] ?? ''}'.trim();
+          final number = raw.isEmpty ? null : num.tryParse(raw);
+          if (raw.isNotEmpty &&
+              (number == null || !number.isFinite || number < 0))
+            throw Exception('Enter a valid non-negative number for $key.');
+          if (key != 'bathrooms' &&
+              number != null &&
+              number != number.roundToDouble()) {
+            throw Exception('Enter a whole number for $key.');
+          }
+          if (key == 'yearBuilt' &&
+              number != null &&
+              (number < 1600 ||
+                  number > 2200 ||
+                  number != number.roundToDouble()))
+            throw Exception('Enter a valid year built.');
+          if (number != null &&
+              ((key == 'squareFootage' && (number < 1 || number > 10000000)) ||
+                  ((key == 'bedrooms' || key == 'bathrooms') &&
+                      number > 100))) {
+            throw Exception('Enter a valid value for $key.');
+          }
+          details[key] = number;
+        }
+        await HomeownerService.instance.saveHomeProfile(profile);
+      }
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) AppNotification.showError(context, e);
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _editSystem(Map<String, dynamic> profile,
+      [Map<String, dynamic>? system]) async {
+    final updated = await Navigator.push<Map<String, dynamic>>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => HomeSystemEditor(
+                  addressId: profile['addressId'] as int,
+                  system: system,
+                )));
+    if (updated == null || !mounted) return;
+    setState(() {
+      final systems = profile['systems'] as List;
+      final index = systems.indexOf(system);
+      if (index < 0) {
+        systems.add(updated);
+      } else {
+        systems[index] = updated;
+      }
+    });
+  }
+
+  Future<void> _uploadDocument(Map<String, dynamic> profile) async {
+    if (_saving) return;
+    String? systemId;
+    final systems = (profile['systems'] as List)
+        .whereType<Map>()
+        .where((s) => s['id'] != null)
+        .toList();
+    if (systems.isNotEmpty) {
+      final selected = await showDialog<String>(
+          context: context,
+          builder: (context) =>
+              SimpleDialog(title: const Text('Attach document to'), children: [
+                SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, ''),
+                    child: const Text('This home')),
+                for (final system in systems)
+                  SimpleDialogOption(
+                      onPressed: () =>
+                          Navigator.pop(context, '${system['id']}'),
+                      child:
+                          Text('${system['type']} · ${system['brand'] ?? ''}')),
+              ]));
+      if (selected == null) return;
+      systemId = selected.isEmpty ? null : selected;
+    }
+    if (!mounted) return;
+    setState(() => _saving = true);
+    try {
+      final file = await DocumentUpload.pick();
+      if (file == null) return;
+      // Save newly added systems first so attachments use server IDs.
+      for (final system in systems.cast<Map<String, dynamic>>()) {
+        if ('${system['id']}' != systemId ||
+            int.tryParse(systemId ?? '') != null) continue;
+        final saved = await HomeownerService.instance.saveHomeSystem(
+            addressId: profile['addressId'] as int, system: system);
+        system.addAll(saved);
+        systemId = '${saved['id']}';
+      }
+      final doc = await HomeownerService.instance.uploadHomeFile(
+          addressId: profile['addressId'] as int,
+          kind: 'document',
+          file: file,
+          systemId: systemId);
+      if (mounted) setState(() => (profile['documents'] as List).add(doc));
+    } catch (e) {
+      if (mounted) AppNotification.showError(context, e);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _openDocument(Map doc) async {
+    try {
+      final link = await HomeownerService.instance
+          .homeDocumentDownloadUrl(int.parse('${doc['id']}'));
+      final uri = Uri.tryParse(link);
+      if (uri == null ||
+          uri.scheme != 'https' ||
+          !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw Exception('This document could not be opened.');
+      }
+    } catch (e) {
+      if (mounted) AppNotification.showError(context, e);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return TransactionGuard(
-      isProcessing: _isSaving,
-      blockedMessage: 'Please wait while your home profile is being saved.',
+  Widget build(BuildContext context) => TransactionGuard(
+      isProcessing: _saving,
       child: Scaffold(
-        backgroundColor: _pageBackground,
-        appBar: _appBar('Home profile'),
-        body: widget.addresses.isEmpty
-            ? _emptyState()
-            : _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: AppTheme.orange500),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 124),
-                    children: widget.addresses
-                        .map((dynamic item) => _addressSection(_asMap(item)))
-                        .toList(),
-                  ),
-        bottomNavigationBar: widget.addresses.isEmpty ? null : _saveBar(),
-      ),
-    );
-  }
-
-  PreferredSizeWidget _appBar(String title) {
-    return AppBar(
-      toolbarHeight: 56,
-      backgroundColor: Colors.white,
-      elevation: 0,
-      leadingWidth: 54,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded, size: 25),
-        color: AppTheme.navy700,
-        onPressed: () => Navigator.pop(context),
-      ),
-      titleSpacing: 0,
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: AppTheme.navy700,
-          fontSize: 20,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      bottom: const PreferredSize(
-        preferredSize: Size.fromHeight(1),
-        child: Divider(height: 1, color: _lineSoft),
-      ),
-    );
-  }
-
-  Widget _addressSection(Map<String, dynamic> address) {
-    final addressId = _string(address['id']) ?? '';
-    final ctrls = _controllers[addressId];
-    if (ctrls == null) return const SizedBox.shrink();
-    final systems = _systemsByAddress[addressId] ?? const [];
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 26),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _propertyHero(address),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(child: _sectionLabel('PROPERTY DETAILS')),
-              TextButton(
-                onPressed: () {},
-                style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.teal500,
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
+        appBar: AppBar(title: const Text('Home profile')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Your home profile could not be loaded.'),
+                    TextButton(onPressed: _load, child: const Text('Try again'))
+                  ]))
+                : _addresses.isEmpty
+                    ? const Center(
+                        child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text(
+                                'Add a saved address in Profile to create your home profile.')))
+                    : ListView(padding: const EdgeInsets.all(16), children: [
+                        for (final address in _addresses) _address(address)
+                      ]),
+        bottomNavigationBar: _loading || _error != null || _addresses.isEmpty
+            ? null
+            : SafeArea(
+                child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: Text(_saving ? 'Saving…' : 'Save home profile'),
+                    ))),
+      ));
+  Widget _address(Map<String, dynamic> address) {
+    final profile = _profiles['${address['id']}']!;
+    final details = profile['propertyDetails'] as Map;
+    final notes = profile['accessNotes'] as Map;
+    final systems = profile['systems'] as List;
+    return Card(
+        child: Padding(
+            padding: const EdgeInsets.all(16),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                  '${address['label'] ?? address['street'] ?? address['line1'] ?? address['address_line1'] ?? 'Home'}',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              const Text('Property details',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              for (final field in {
+                'squareFootage': 'Square footage',
+                'yearBuilt': 'Year built',
+                'bedrooms': 'Bedrooms',
+                'bathrooms': 'Bathrooms'
+              }.entries)
+                Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: TextFormField(
+                      initialValue: '${details[field.key] ?? ''}',
+                      enabled: !_saving,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(labelText: field.value),
+                      onChanged: (value) => details[field.key] = value,
+                    )),
+              const SizedBox(height: 24),
+              const Text('Systems',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              if (systems.isEmpty)
+                const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child:
+                        Text('Add the systems you want to keep a record of.')),
+              for (final system in systems.cast<Map<String, dynamic>>())
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                      '${system['type'] ?? 'System'} · ${system['brand'] ?? ''}'),
+                  subtitle: Text(
+                      '${system['model'] ?? ''}\nLast serviced: ${system['lastServicedAt'] ?? 'No completed service recorded'}'),
+                  isThreeLine: true,
+                  trailing: IconButton(
+                      tooltip: 'Edit system',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed:
+                          _saving ? null : () => _editSystem(profile, system)),
                 ),
-                child: const Text('Edit'),
-              ),
-            ],
-          ),
-          _detailsGrid(ctrls),
-          const SizedBox(height: 14),
-          _sectionLabel('HOME SYSTEMS'),
-          const SizedBox(height: 8),
-          if (systems.isEmpty)
-            _noSystemsCard()
-          else
-            ...systems.map(
-              (system) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _systemCard(system),
-              ),
-            ),
-          _addSystemButton(),
-          const SizedBox(height: 12),
-          _infoCallout(),
-        ],
-      ),
-    );
+              TextButton.icon(
+                  onPressed: _saving ? null : () => _editSystem(profile),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add system')),
+              const SizedBox(height: 16),
+              TextFormField(
+                  initialValue: '${notes['text'] ?? ''}',
+                  enabled: !_saving,
+                  maxLines: 4,
+                  maxLength: 4000,
+                  decoration: const InputDecoration(
+                      labelText: 'Getting in',
+                      hintText: 'Door, gate or access instructions'),
+                  onChanged: (value) => notes['text'] = value),
+              const Text(
+                  'Only the pro with a confirmed booking at this address may see getting-in notes, until the job closes.',
+                  style: TextStyle(color: AppTheme.textSecondary)),
+              const SizedBox(height: 24),
+              const Text('Documents & warranties',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              for (final doc in (profile['documents'] as List).whereType<Map>())
+                ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.description_outlined),
+                    title: Text(
+                        '${doc['title'] ?? doc['fileName'] ?? 'Document'}'),
+                    subtitle: doc['homeSystemId'] == null
+                        ? null
+                        : const Text('Attached to a system'),
+                    onTap: () => _openDocument(doc)),
+              TextButton.icon(
+                  onPressed: _saving ? null : () => _uploadDocument(profile),
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text('Upload document')),
+              const Text(
+                  'PDF or image, up to 10 MB. Documents are separate from work-order attachments.',
+                  style: TextStyle(color: AppTheme.textSecondary)),
+            ])));
   }
+}
 
-  Widget _propertyHero(Map<String, dynamic> address) {
-    final label = _string(address['label']) ?? 'Home';
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(15, 15, 15, 15),
-      decoration: BoxDecoration(
-        color: AppTheme.navy700,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _string(address['street']) ?? label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _subtitleForAddress(address),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+class HomeSystemEditor extends StatefulWidget {
+  const HomeSystemEditor({super.key, required this.addressId, this.system});
+  final int addressId;
+  final Map<String, dynamic>? system;
+  @override
+  State<HomeSystemEditor> createState() => _HomeSystemEditorState();
+}
 
-  Widget _detailsGrid(Map<String, TextEditingController> ctrls) {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      childAspectRatio: 2.7,
-      mainAxisSpacing: 2,
-      crossAxisSpacing: 2,
-      children: [
-        _detailCell('Square footage', ctrls['sqft']!),
-        _detailCell('Year built', ctrls['yearBuilt']!),
-        _detailCell('Bedrooms', ctrls['bedrooms']!),
-        _detailCell('Bathrooms', ctrls['bathrooms']!),
-      ],
-    );
-  }
-
-  Widget _detailCell(String label, TextEditingController controller) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _lineSoft),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: _mutedText,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            maxLines: 1,
-            style: const TextStyle(
-              color: _inkStrong,
-              fontSize: 15.5,
-              fontWeight: FontWeight.w900,
-              height: 1,
-            ),
-            decoration: const InputDecoration(
-              isDense: true,
-              hintText: '-',
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.only(top: 4),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _systemCard(Map<String, dynamic> system) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _lineSoft),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: const BoxDecoration(
-              color: AppTheme.blueTint,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              _systemIcon(_string(system['type']) ?? _string(system['name'])),
-              color: AppTheme.teal500,
-              size: 21,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _string(system['name']) ??
-                      _string(system['title']) ??
-                      _string(system['type']) ??
-                      'Home system',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _inkStrong,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  _systemSubtitle(system),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _mutedText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () {},
-            style: TextButton.styleFrom(
-              foregroundColor: AppTheme.teal500,
-              textStyle: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            child: const Text('Edit'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _noSystemsCard() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _lineSoft),
-      ),
-      child: const Text(
-        'No home systems saved yet.',
-        style: TextStyle(
-          color: _mutedText,
-          fontSize: 12.5,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  Widget _addSystemButton() {
-    return TextButton(
-      onPressed: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Add system is not available yet.'),
-            backgroundColor: AppTheme.gray,
-          ),
-        );
-      },
-      style: TextButton.styleFrom(
-        alignment: Alignment.centerLeft,
-        foregroundColor: AppTheme.teal500,
-        padding: EdgeInsets.zero,
-        textStyle: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900),
-      ),
-      child: const Text('+ Add system'),
-    );
-  }
-
-  Widget _infoCallout() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
-      decoration: BoxDecoration(
-        color: AppTheme.blueTint,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.teal500),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.trending_up_rounded, color: AppTheme.teal500, size: 25),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'We use your home profile to suggest timely maintenance and pre-fill your bookings.',
-              style: TextStyle(
-                color: _inkStrong,
-                fontSize: 12.5,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: _mutedText,
-        fontSize: 11.5,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1.6,
-      ),
-    );
-  }
-
-  Widget _emptyState() {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.home_outlined, color: AppTheme.navy700, size: 42),
-            SizedBox(height: 12),
-            Text(
-              'No addresses added yet.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _inkStrong,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _saveBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: _lineSoft)),
-      ),
-      child: ElevatedButton(
-        onPressed: _isSaving ? null : _saveAllProfiles,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.orange500,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        child: _isSaving
-            ? const SizedBox(
-                width: 19,
-                height: 19,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : const Text(
-                'Save home profile',
-                style: TextStyle(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-      ),
-    );
-  }
-
-  String _subtitleForAddress(Map<String, dynamic> address) {
-    final type =
-        _string(address['propertyType']) ?? _string(address['homeType']);
-    final city = _string(address['city']);
-    final state = _string(address['state']);
-    final zip = _string(address['zip']);
-    final location = [city, state, zip].whereType<String>().join(', ');
-    return [type, location].whereType<String>().join(' · ');
-  }
-
-  String _systemSubtitle(Map<String, dynamic> system) {
-    final parts = <String>[
-      if (_string(system['age']) != null) '~${_string(system['age'])}',
-      if (_string(system['lastService']) != null)
-        'last service ${_string(system['lastService'])}',
-      if (_string(system['capacity']) != null) _string(system['capacity'])!,
-      if (_string(system['fuel']) != null) _string(system['fuel'])!,
-    ];
-    return parts.isEmpty ? 'Saved system' : parts.join(' · ');
-  }
-
-  IconData _systemIcon(String? value) {
-    final lower = value?.toLowerCase() ?? '';
-    if (lower.contains('water')) return Icons.water_drop_outlined;
-    if (lower.contains('roof')) return Icons.home_outlined;
-    if (lower.contains('heat') || lower.contains('hvac')) {
-      return Icons.air_outlined;
-    }
-    return Icons.home_repair_service_outlined;
-  }
-
-  List<Map<String, dynamic>> _extractSystems(Map<String, dynamic> address) {
-    final raw = address['systems'] ??
-        address['homeSystems'] ??
-        address['home_systems'] ??
-        _asMap(address['propertyProfile'])['systems'] ??
-        _asMap(address['property_profile'])['systems'];
-    if (raw is! List) return const [];
-    return raw
+class _HomeSystemEditorState extends State<HomeSystemEditor> {
+  late Map<String, dynamic> _value;
+  bool _uploading = false;
+  @override
+  void initState() {
+    super.initState();
+    _value = {...?widget.system};
+    _value.putIfAbsent(
+        'id', () => 'system-${DateTime.now().microsecondsSinceEpoch}');
+    final photos = (_value['documents'] as List? ?? [])
         .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
+        .where((d) => d['type'] == 'system_photo');
+    if (photos.isNotEmpty) {
+      _value['dataPlateDocumentId'] = photos.first['id'];
+      _refreshPhoto();
+    }
   }
 
-  String _valueFor(
-    Map<String, dynamic> address,
-    Map<String, dynamic> stored,
-    List<String> keys,
-  ) {
-    for (final key in keys) {
-      final storedValue = _string(stored[key]);
-      if (storedValue != null) return storedValue;
+  Future<void> _photo() async {
+    setState(() => _uploading = true);
+    try {
+      final file = await DocumentUpload.pick(imageOnly: true);
+      if (file == null) return;
+      final saved = await HomeownerService.instance
+          .saveHomeSystem(addressId: widget.addressId, system: _value);
+      _value.addAll(saved);
+      final doc = await HomeownerService.instance.uploadHomeFile(
+          addressId: widget.addressId,
+          kind: 'data_plate',
+          file: file,
+          systemId: '${_value['id']}');
+      _value['dataPlateDocumentId'] = doc['id'];
+      final url = await HomeownerService.instance
+          .homeDocumentDownloadUrl(int.parse('${doc['id']}'));
+      if (mounted) setState(() => _value['dataPlatePhotoUrl'] = url);
+    } catch (e) {
+      if (mounted) AppNotification.showError(context, e);
+    } finally {
+      if (mounted) setState(() => _uploading = false);
     }
-    for (final key in keys) {
-      final addressValue = _string(address[key]);
-      if (addressValue != null) return addressValue;
-    }
-    return '';
   }
 
-  Map<String, dynamic> _asMap(dynamic value) {
-    if (value is Map<String, dynamic>) return value;
-    if (value is Map) return Map<String, dynamic>.from(value);
-    return const {};
+  Future<void> _refreshPhoto() async {
+    try {
+      final id = _value['dataPlateDocumentId'];
+      if (id == null) return;
+      final url = await HomeownerService.instance
+          .homeDocumentDownloadUrl(int.parse('$id'));
+      if (mounted) setState(() => _value['dataPlatePhotoUrl'] = url);
+    } catch (e) {
+      if (mounted) AppNotification.showError(context, e);
+    }
   }
 
-  String? _string(dynamic value) {
-    final text = value?.toString().trim();
-    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
-      return null;
+  void _done() {
+    if ('${_value['type'] ?? ''}'.trim().isEmpty) {
+      AppNotification.showInfo(context, 'Enter a system type.');
+      return;
     }
-    return text;
+    final raw =
+        '${_value['installedYear'] ?? _value['installed_year'] ?? ''}'.trim();
+    final year = int.tryParse(raw);
+    if (raw.isNotEmpty && (year == null || year < 1600 || year > 2200)) {
+      AppNotification.showInfo(context, 'Enter a valid installation year.');
+      return;
+    }
+    _value['installedYear'] = year;
+    _value['installed_year'] = year;
+    Navigator.pop(context, _value);
   }
+
+  @override
+  Widget build(BuildContext context) => TransactionGuard(
+      isProcessing: _uploading,
+      child: Scaffold(
+          appBar: AppBar(
+              title:
+                  Text(widget.system == null ? 'Add system' : 'Edit system')),
+          body: ListView(padding: const EdgeInsets.all(20), children: [
+            DropdownButtonFormField<String>(
+              value: const [
+                'hvac',
+                'water_heater',
+                'plumbing',
+                'electrical',
+                'roof',
+                'appliances',
+                'windows',
+                'insulation',
+                'solar',
+                'pool',
+                'other'
+              ].contains(_value['type'])
+                  ? _value['type'] as String
+                  : null,
+              decoration: const InputDecoration(labelText: 'System type'),
+              items: [
+                for (final type in const [
+                  'hvac',
+                  'water_heater',
+                  'plumbing',
+                  'electrical',
+                  'roof',
+                  'appliances',
+                  'windows',
+                  'insulation',
+                  'solar',
+                  'pool',
+                  'other'
+                ])
+                  DropdownMenuItem(
+                      value: type,
+                      child: Text(
+                          type == 'hvac' ? 'HVAC' : type.replaceAll('_', ' ')))
+              ],
+              onChanged: _uploading
+                  ? null
+                  : (value) => setState(() => _value['type'] = value),
+            ),
+            const SizedBox(height: 16),
+            for (final field in {
+              'brand': 'Brand',
+              'model': 'Model',
+              'installedYear': 'Year installed',
+              'location': 'Location in your home',
+              'notes': 'Notes'
+            }.entries)
+              Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: TextFormField(
+                    initialValue:
+                        '${_value[field.key] ?? (field.key == 'installedYear' ? _value['installed_year'] : null) ?? ''}',
+                    enabled: !_uploading,
+                    maxLength: field.key == 'notes' ? 2000 : 200,
+                    maxLines: field.key == 'notes' ? 3 : 1,
+                    keyboardType: field.key == 'installedYear'
+                        ? TextInputType.number
+                        : TextInputType.text,
+                    decoration: InputDecoration(labelText: field.value),
+                    onChanged: (text) => _value[field.key] = text.trim(),
+                  )),
+            Text(
+                'Last serviced: ${_value['lastServicedAt'] ?? 'No completed service recorded'}'),
+            const Text('Service dates come from completed work orders.'),
+            const SizedBox(height: 20),
+            if (_value['dataPlatePhotoUrl'] != null)
+              Image.network('${_value['dataPlatePhotoUrl']}',
+                  height: 180,
+                  errorBuilder: (_, __, ___) => TextButton(
+                      onPressed: _refreshPhoto,
+                      child: const Text('Reload photo preview'))),
+            OutlinedButton.icon(
+                onPressed: _uploading ? null : _photo,
+                icon: const Icon(Icons.add_a_photo_outlined),
+                label: Text(
+                    _uploading ? 'Uploading…' : 'Upload data-plate photo')),
+            const Text(
+                'Uploading saves this system first. Keep the sticker as a record and enter its details manually.'),
+            const SizedBox(height: 24),
+            FilledButton(
+                onPressed: _uploading ? null : _done,
+                child: const Text('Use these details')),
+            const Text(
+                'Save the home profile to finish saving system changes.'),
+          ])));
 }

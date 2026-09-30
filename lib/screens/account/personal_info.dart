@@ -25,6 +25,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -32,8 +33,6 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
   String _originalName = '';
   String _originalPhone = '';
   String _originalEmail = '';
-  String _preferredContact = 'email';
-  bool _marketingConsent = false;
 
   bool get _hasChanges =>
       _nameController.text.trim() != _originalName ||
@@ -54,6 +53,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -63,8 +63,8 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
       _errorMessage = null;
     });
     try {
-      final resp = await HomeownerService.instance.fetchProfile();
-      final profile = _asMap(resp['profile']);
+      final resp = await HomeownerService.instance.fetchAccount();
+      final profile = _asMap(resp['account']?['details']);
       final given = _string(profile['givenName']) ??
           _string(AuthService.instance.givenName) ??
           '';
@@ -86,8 +86,6 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
         _originalName = name;
         _originalPhone = phone;
         _originalEmail = email;
-        _preferredContact = _string(profile['preferredContact']) ?? 'email';
-        _marketingConsent = profile['marketingConsent'] == true;
         _nameController.text = name;
         _phoneController.text = phone;
         _emailController.text = email;
@@ -115,24 +113,29 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
       final email = _emailController.text.trim();
       final userName = _nameController.text.trim();
 
-      await HomeownerService.instance.updateProfile(
-        givenName: givenName,
-        familyName: familyName,
-        phone: phone,
-        email: email,
-        userName: userName,
-        preferredContact: _preferredContact,
-        marketingConsent: _marketingConsent,
-      );
+      final emailChanged = email.toLowerCase() != _originalEmail.toLowerCase();
+      if (emailChanged) {
+        await HomeownerService.instance
+            .changeAccountEmail(email, _passwordController.text);
+      }
+      await HomeownerService.instance.updateAccountDetails({
+        'name': userName,
+        'givenName': givenName,
+        'familyName': familyName,
+        'phone': phone,
+      });
       await AuthService.instance.updateCachedProfile(
         givenName: givenName,
         familyName: familyName,
         phone: phone,
-        email: email,
+        email: _originalEmail,
         userName: userName,
       );
 
       if (!mounted) return;
+      if (emailChanged)
+        AppNotification.showInfo(context,
+            'Check your email to confirm the change. Your sign-in email stays the same until confirmation.');
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -152,7 +155,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
     if (_isLoading) {
       return _shell(
         child: const Center(
-          child: CircularProgressIndicator(color: AppTheme.orange500),
+          child: CircularProgressIndicator(color: AppTheme.navy),
         ),
       );
     }
@@ -194,10 +197,20 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
               controller: _phoneController,
               keyboardType: TextInputType.phone,
             ),
+            if (_emailController.text.trim() != _originalEmail) ...[
+              const SizedBox(height: 16),
+              TextFormField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(
+                      labelText: 'Current password (password accounts)')),
+            ],
             const SizedBox(height: 20),
             _infoCallout(
               text:
-                  'Contact support to change your sign-in email. Email-change verification is not available here yet.',
+                  'Email changes require confirmation. Password accounts must enter their current password; Apple and Google accounts may need to sign in again.',
             ),
           ],
         ),
@@ -303,15 +316,15 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
       decoration: BoxDecoration(
-        color: AppTheme.orangeTint,
+        color: AppTheme.navyTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.orange500),
+        border: Border.all(color: AppTheme.cardBorder),
       ),
       child: Row(
         children: [
           const Icon(
             Icons.trending_up_rounded,
-            color: AppTheme.orange500,
+            color: AppTheme.navy,
             size: 25,
           ),
           const SizedBox(width: 12),

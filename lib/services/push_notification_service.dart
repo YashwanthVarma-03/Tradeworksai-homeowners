@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'homeowner_service.dart';
 import 'notification_preferences.dart';
 import 'push_notification_config.dart';
+import '../widgets/main_bottom_navigation.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebasePushBackgroundHandler(RemoteMessage message) async {
@@ -40,6 +41,7 @@ class PushNotificationService {
       FlutterLocalNotificationsPlugin();
   StreamSubscription<RemoteMessage>? _foregroundSubscription;
   StreamSubscription<String>? _tokenRefreshSubscription;
+  StreamSubscription<RemoteMessage>? _openedSubscription;
   NotificationPreferences? _preferences;
   String? _activeUserId;
   bool _initialized = false;
@@ -65,7 +67,10 @@ class PushNotificationService {
             requestSoundPermission: false,
           ),
         );
-        await _localNotifications.initialize(settings);
+        await _localNotifications.initialize(settings,
+            onDidReceiveNotificationResponse: (response) {
+          _routeNotification(response.payload);
+        });
         final android =
             _localNotifications.resolvePlatformSpecificImplementation<
                 AndroidFlutterLocalNotificationsPlugin>();
@@ -80,6 +85,9 @@ class PushNotificationService {
       );
       _foregroundSubscription =
           FirebaseMessaging.onMessage.listen(_showForeground);
+      _openedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
+          (message) => _routeNotification(
+              message.data['notification_type']?.toString()));
       _tokenRefreshSubscription =
           FirebaseMessaging.instance.onTokenRefresh.listen(
         (token) {
@@ -178,7 +186,12 @@ class PushNotificationService {
           priority: Priority.high,
         ),
       ),
+      payload: message.data['notification_type']?.toString(),
     );
+  }
+
+  void _routeNotification(String? type) {
+    if (type == 'expiring_soon') AppTabNavigation.request(3);
   }
 
   bool _shouldPresent(RemoteMessage message) {
@@ -191,6 +204,7 @@ class PushNotificationService {
         return preferences.pushMessages;
       case 'credit':
       case 'reward':
+      case 'expiring_soon':
         return preferences.pushCredits;
       case 'promotion':
         return preferences.pushPromos;
@@ -202,8 +216,10 @@ class PushNotificationService {
   Future<void> dispose() async {
     await _foregroundSubscription?.cancel();
     await _tokenRefreshSubscription?.cancel();
+    await _openedSubscription?.cancel();
     _foregroundSubscription = null;
     _tokenRefreshSubscription = null;
+    _openedSubscription = null;
     _initialized = false;
     _activeUserId = null;
     _preferences = null;

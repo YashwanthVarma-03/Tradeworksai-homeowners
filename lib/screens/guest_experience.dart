@@ -55,10 +55,12 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
       _GuestCategory('Electrical', Icons.bolt_outlined, AppTheme.amberTint),
       _GuestCategory(
           'Cleaning', Icons.auto_awesome_outlined, AppTheme.greenTint),
-      _GuestCategory('Roofing', Icons.roofing_outlined, Color(0xFFFFEBEE)),
+      _GuestCategory(
+          'Roofing', Icons.roofing_outlined, AppTheme.categoryRoofing),
       _GuestCategory('Lawn', Icons.content_cut_outlined, AppTheme.greenTint),
-      _GuestCategory('Handyman', Icons.handyman_outlined, Color(0xFFF3E5F5)),
-      _GuestCategory('All 31', Icons.grid_view_rounded, AppTheme.orange500,
+      _GuestCategory(
+          'Handyman', Icons.handyman_outlined, AppTheme.categoryHandyman),
+      _GuestCategory('All 31', Icons.grid_view_rounded, AppTheme.navy,
           isAccent: true),
     ];
     return ColoredBox(
@@ -148,7 +150,7 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
                     borderRadius: BorderRadius.circular(18),
                     child: const CircleAvatar(
                       radius: 14,
-                      backgroundColor: AppTheme.orange500,
+                      backgroundColor: AppTheme.navy,
                       child: Icon(Icons.arrow_forward,
                           color: Colors.white, size: 18),
                     ),
@@ -228,13 +230,13 @@ class _GuestHomeTabState extends State<GuestHomeTab> {
                 decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.orange500)),
+                    border: Border.all(color: AppTheme.cardBorder)),
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('CREATE YOUR ACCOUNT',
                           style: TextStyle(
-                              color: AppTheme.orange500,
+                              color: AppTheme.navy,
                               fontSize: 11,
                               letterSpacing: .5,
                               fontWeight: FontWeight.w900)),
@@ -372,7 +374,7 @@ class _ZipEntryDialogState extends State<_ZipEntryDialog> {
                       decoration: InputDecoration(
                           counterText: '',
                           prefixIcon: const Icon(Icons.location_on_outlined,
-                              color: AppTheme.orange500),
+                              color: AppTheme.navy),
                           errorText: error,
                           border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
