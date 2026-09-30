@@ -1,3 +1,5 @@
+import '../utils/lazy_results.dart';
+import '../widgets/loading_skeleton.dart';
 import '../utils/session_pro_order.dart';
 import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
@@ -86,12 +88,16 @@ class _SearchTabState extends State<SearchTab> {
   String _selectedCategory = 'All';
   String _selectedZip = '';
   String? _committedQuery;
+  bool _isInitializing = true;
   bool _isLoadingResults = false;
   bool _isLoadingCoverage = false;
   bool _suppressLocationReset = false;
   String? _resultsError;
   int _availabilityHydrationToken = 0;
   int _prosRequestToken = 0;
+  LazyResults<_BrowsePro>? _proPages;
+  bool _isLoadingMore = false;
+  String? _loadMoreError;
 
   @override
   void initState() {
@@ -250,38 +256,43 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Future<void> _loadLocationAndResults() async {
-    await _loadSharedLocationOverride();
-    await _loadLocationFromProfile();
-    if (_selectedZip.isEmpty) {
-      final hasPendingSearch = (_committedQuery != null &&
-              _committedQuery!.isNotEmpty) ||
-          (widget.initialCategory != null && widget.initialCategory != 'All');
-      if (!hasPendingSearch || !await _requestZipIfNeeded()) return;
-    }
-    await _refreshZipCoverage();
-    _locationController.text = _normalizeLocationText(_locationController.text);
-    if (!mounted) return;
+    try {
+      await _loadSharedLocationOverride();
+      await _loadLocationFromProfile();
+      if (_selectedZip.isEmpty) {
+        final hasPendingSearch = (_committedQuery != null &&
+                _committedQuery!.isNotEmpty) ||
+            (widget.initialCategory != null && widget.initialCategory != 'All');
+        if (!hasPendingSearch || !await _requestZipIfNeeded()) return;
+      }
+      await _refreshZipCoverage();
+      _locationController.text =
+          _normalizeLocationText(_locationController.text);
+      if (!mounted) return;
 
-    if (_committedQuery != null && _committedQuery!.isNotEmpty) {
-      await _runQuerySearch(_committedQuery!);
-      return;
-    }
+      if (_committedQuery != null && _committedQuery!.isNotEmpty) {
+        await _runQuerySearch(_committedQuery!);
+        return;
+      }
 
-    if (widget.initialCategory != null && widget.initialCategory != 'All') {
-      await _runCategorySearch(widget.initialCategory!);
-      return;
-    }
+      if (widget.initialCategory != null && widget.initialCategory != 'All') {
+        await _runCategorySearch(widget.initialCategory!);
+        return;
+      }
 
-    if (_selectedCategory == 'All' && !widget.initialAllShowsCategories) {
-      await _runAllServicesSearch();
-      return;
-    }
+      if (_selectedCategory == 'All' && !widget.initialAllShowsCategories) {
+        await _runAllServicesSearch();
+        return;
+      }
 
-    if (_selectedCategory == 'All') {
-      return;
-    }
+      if (_selectedCategory == 'All') {
+        return;
+      }
 
-    await _runCategorySearch(_selectedCategory);
+      await _runCategorySearch(_selectedCategory);
+    } finally {
+      if (mounted) setState(() => _isInitializing = false);
+    }
   }
 
   Future<void> _loadLocationFromProfile({
@@ -388,6 +399,9 @@ class _SearchTabState extends State<SearchTab> {
         unawaited(_restorePrimaryLocation());
       } else if (_selectedZip.isNotEmpty) {
         setState(() {
+          _prosRequestToken++;
+          _availabilityHydrationToken++;
+          _proPages = null;
           _selectedZip = '';
           _applyLocationLabel('Enter ZIP code', '');
           _livePros.clear();
@@ -409,6 +423,9 @@ class _SearchTabState extends State<SearchTab> {
 
     if (mounted) {
       setState(() {
+        _prosRequestToken++;
+        _availabilityHydrationToken++;
+        _proPages = null;
         _selectedZip = '';
         _applyLocationLabel('Enter ZIP code', '');
         _livePros.clear();
@@ -501,6 +518,7 @@ class _SearchTabState extends State<SearchTab> {
 
     try {
       final coverage = await HomeownerService.instance.getZipCoverage(zip: zip);
+      if (!mounted || zip != _selectedZip) return;
       final categories = (coverage['categories'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
@@ -547,18 +565,6 @@ class _SearchTabState extends State<SearchTab> {
           .join(', ');
       final returnedZip = _readText(coverage['zip']) ?? zip;
 
-      if (!mounted) {
-        _categoryCounts
-          ..clear()
-          ..addAll(nextCounts);
-        _categoryCoverage
-          ..clear()
-          ..addAll(nextCoverage);
-        _selectedZip = returnedZip;
-        _applyLocationLabel(resolvedLocation, returnedZip);
-        return;
-      }
-
       setState(() {
         _categoryCounts
           ..clear()
@@ -571,7 +577,7 @@ class _SearchTabState extends State<SearchTab> {
         _isLoadingCoverage = false;
       });
     } catch (_) {
-      if (!mounted) {
+      if (!mounted || zip != _selectedZip) {
         return;
       }
       setState(() => _isLoadingCoverage = false);
@@ -684,11 +690,15 @@ class _SearchTabState extends State<SearchTab> {
       _isLoadingResults = true;
       _resultsError = null;
       _prosRequestToken++;
+      _availabilityHydrationToken++;
+      _proPages = null;
+      _isLoadingMore = false;
+      _loadMoreError = null;
     });
     await _saveSharedLocationOverride(nextZip, cityLabel);
     await _refreshZipCoverage();
 
-    if (!refreshResults) return;
+    if (!mounted || nextZip != _selectedZip || !refreshResults) return;
 
     if (_committedQuery != null && _committedQuery!.isNotEmpty) {
       await _runQuerySearch(_committedQuery!);
@@ -820,7 +830,8 @@ class _SearchTabState extends State<SearchTab> {
     // Keep the catalogue visible while nearby-pro data refreshes. Previously,
     // the async completion replaced this route with the default Browse view.
     final keepAllServicesListVisible = _view == _BrowseView.allCategories;
-    final categories = _categoriesWithLivePros;
+    final categories = SessionProOrder.instance.arrange(
+        _categoriesWithLivePros, (category) => 'category:${category.name}');
     final requestToken = ++_prosRequestToken;
     final requestedZip = _selectedZip;
     if (!mounted) return;
@@ -836,92 +847,15 @@ class _SearchTabState extends State<SearchTab> {
     });
     _searchFocusNode.unfocus();
 
-    final mergedPros = <_BrowsePro>[];
-    final seen = <String>{};
-    String? firstError;
-
-    for (final category in categories) {
-      final slug = _categorySlugForName(category.name);
-      if (slug == null) continue;
-      try {
-        final response = await HomeownerService.instance.searchPros(
-          zip: requestedZip,
-          categorySlug: slug,
-        );
-        final results = (response['results'] as List? ?? const [])
-            .whereType<Map>()
-            .map((result) => _BrowsePro.fromApi(
-                  Map<String, dynamic>.from(result),
-                  category: category.name,
-                ));
-        for (final pro in results) {
-          final key = [
-            pro.contractorId,
-            pro.slug,
-            pro.category,
-            pro.name,
-          ].where((part) => part.trim().isNotEmpty).join('|').toLowerCase();
-          if (seen.add(key)) {
-            mergedPros.add(pro);
-          }
-        }
-      } catch (e) {
-        final message = e.toString().replaceAll('Exception: ', '');
-        firstError ??= message;
-        if (AppErrorUtils.isNetworkError(e) ||
-            message == AppErrorUtils.webFetchMessage ||
-            message == AppErrorUtils.noInternetMessage) {
-          break;
-        }
-      }
-    }
-
-    if (!mounted ||
-        requestToken != _prosRequestToken ||
-        requestedZip != _selectedZip) {
-      return;
-    }
-    setState(() {
-      final discoveredCounts = <String, int>{
-        for (final category in _allCategories) category.name: 0,
-      };
-      final discoveredCoverage = <String, bool>{
-        for (final category in _allCategories) category.name: false,
-      };
-      for (final pro in mergedPros) {
-        final categoryName = _categoryNameForLivePro(pro.category);
-        if (categoryName == null) continue;
-        discoveredCounts[categoryName] =
-            (discoveredCounts[categoryName] ?? 0) + 1;
-        discoveredCoverage[categoryName] = true;
-      }
-      _livePros
-        ..clear()
-        ..addAll(mergedPros);
-      _liveNextSlotLabels.clear();
-      _categoryCounts.addAll(discoveredCounts);
-      _categoryCoverage.addAll(discoveredCoverage);
-      _isLoadingResults = false;
-      _resultsError = mergedPros.isEmpty ? firstError : null;
-      _view = keepAllServicesListVisible
-          ? _BrowseView.allCategories
-          : mergedPros.isEmpty
-              ? _BrowseView.noCoverage
-              : _BrowseView.browse;
-    });
-    unawaited(_hydrateNextAvailability(mergedPros));
+    _startProPages([
+      for (final category in categories)
+        if (_categorySlugForName(category.name) != null)
+          () => _fetchProCategory(category.name,
+              _categorySlugForName(category.name)!, requestedZip, requestToken),
+    ]);
+    await _loadProPage(requestToken,
+        initial: true, keepCatalogue: keepAllServicesListVisible);
     _queueSelectedRailVisibility();
-  }
-
-  String? _categoryNameForLivePro(String rawCategory) {
-    final normalized =
-        _normalizeCoverageCategoryName(rawCategory) ?? rawCategory;
-    for (final category in _allCategories) {
-      if (category.name.toLowerCase() == normalized.toLowerCase()) {
-        return category.name;
-      }
-    }
-    return null;
   }
 
   _BrowseView _resolveSearchView(String query) {
@@ -941,6 +875,11 @@ class _SearchTabState extends State<SearchTab> {
       return;
     }
     if (!mounted) return;
+    final token = ++_prosRequestToken;
+    _availabilityHydrationToken++;
+    _proPages = null;
+    _isLoadingMore = false;
+    _loadMoreError = null;
     setState(() {
       _isLoadingResults = true;
       _resultsError = null;
@@ -951,6 +890,7 @@ class _SearchTabState extends State<SearchTab> {
         text: query,
         zip: _selectedZip,
       );
+      if (!mounted || token != _prosRequestToken) return;
       final resolution = IntakeResolution.fromApi(intakeData);
 
       if (resolution.outcome == 'life_safety') {
@@ -995,6 +935,7 @@ class _SearchTabState extends State<SearchTab> {
         forcedSlug: resolution.categorySlug,
       );
     } catch (e) {
+      if (!mounted || token != _prosRequestToken) return;
       final resolvedCategory = _resolveSearchCategory(query);
       if (resolvedCategory == null) {
         if (!mounted) return;
@@ -1050,53 +991,143 @@ class _SearchTabState extends State<SearchTab> {
       _view = overrideQuery == null ? _BrowseView.browse : _BrowseView.results;
     });
 
-    try {
-      final response = await HomeownerService.instance.searchPros(
-        zip: requestedZip,
-        categorySlug: slug,
-        urgency: urgency,
-      );
-      final results = (response['results'] as List? ?? const [])
-          .whereType<Map>()
-          .map((result) => _BrowsePro.fromApi(
-                Map<String, dynamic>.from(result),
-                category: category,
-              ))
-          .toList();
+    _startProPages([
+      () => _fetchProCategory(category, slug, requestedZip, requestToken,
+          urgency: urgency),
+    ]);
+    await _loadProPage(requestToken, initial: true);
+  }
 
-      if (!mounted ||
-          requestToken != _prosRequestToken ||
-          requestedZip != _selectedZip) {
-        return;
-      }
+  Future<List<_BrowsePro>> _fetchProCategory(
+      String category, String slug, String zip, int token,
+      {String urgency = 'standard'}) async {
+    if (!mounted || token != _prosRequestToken) return [];
+    final response = await HomeownerService.instance
+        .searchPros(zip: zip, categorySlug: slug, urgency: urgency);
+    if (!mounted || token != _prosRequestToken) return [];
+    final results = (response['results'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => _BrowsePro.fromApi(Map<String, dynamic>.from(item),
+            category: category))
+        .toList();
+    _categoryCounts[category] = response['count'] is num
+        ? (response['count'] as num).toInt()
+        : results.length;
+    _categoryCoverage[category] =
+        response['covered'] == true || results.isNotEmpty;
+    return _shuffledBrowsePros(results);
+  }
+
+  void _startProPages(List<Future<List<_BrowsePro>> Function()> sources) {
+    _availabilityHydrationToken++;
+    _proPages = LazyResults(
+        sources: sources,
+        keyOf: (pro) => '${_proAvailabilityKey(pro)}|${pro.category}');
+    _livePros.clear();
+    _liveNextSlotLabels.clear();
+    _isLoadingMore = false;
+    _loadMoreError = null;
+  }
+
+  Future<void> _loadProPage(int token,
+      {bool initial = false, bool keepCatalogue = false}) async {
+    final pages = _proPages;
+    if (pages == null || _isLoadingMore || token != _prosRequestToken) return;
+    setState(() {
+      _isLoadingMore = true;
+      _loadMoreError = null;
+    });
+    try {
+      final pros = await pages.nextPage();
+      if (!mounted || token != _prosRequestToken || pages != _proPages) return;
       setState(() {
-        _livePros
-          ..clear()
-          ..addAll(results);
-        _liveNextSlotLabels.clear();
-        _categoryCounts[category] = response['count'] is num
-            ? (response['count'] as num).toInt()
-            : results.length;
-        _categoryCoverage[category] =
-            response['covered'] == true || results.isNotEmpty;
+        _livePros.addAll(pros);
         _isLoadingResults = false;
-        _resultsError = null;
-        _view = results.isEmpty ? _BrowseView.noCoverage : _view;
+        _isLoadingMore = false;
+        if (initial && !keepCatalogue && _livePros.isEmpty) {
+          _view = _BrowseView.noCoverage;
+        }
       });
-      unawaited(_hydrateNextAvailability(results));
+      unawaited(_hydrateNextAvailability(pros));
     } catch (e) {
-      if (!mounted ||
-          requestToken != _prosRequestToken ||
-          requestedZip != _selectedZip) {
-        return;
-      }
+      if (!mounted || token != _prosRequestToken || pages != _proPages) return;
       setState(() {
-        _livePros.clear();
         _isLoadingResults = false;
-        _resultsError = e.toString().replaceAll('Exception: ', '');
-        _view = _BrowseView.noCoverage;
+        _isLoadingMore = false;
+        _loadMoreError = AppErrorUtils.friendlyMessage(e,
+            fallback: 'Unable to load more pros. Please try again.');
       });
     }
+  }
+
+  Widget _proList(
+      {required List<Widget> header,
+      required List<_BrowsePro> pros,
+      required String emptyMessage}) {
+    final hasMore = _proPages?.hasMore ?? false;
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification.depth == 0 &&
+            notification.metrics.axis == Axis.vertical &&
+            notification.metrics.extentAfter < 400 &&
+            hasMore &&
+            !_isLoadingResults &&
+            !_isLoadingMore &&
+            _loadMoreError == null) {
+          unawaited(_loadProPage(_prosRequestToken));
+        }
+        return false;
+      },
+      child: CustomScrollView(
+        key: ValueKey('pros-$_prosRequestToken'),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            sliver: SliverToBoxAdapter(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: header)),
+          ),
+          if (_isLoadingResults)
+            const SliverToBoxAdapter(
+                child: LoadingSkeleton(label: 'Loading pros'))
+          else if (_resultsError != null)
+            SliverToBoxAdapter(child: _buildInlineState(_resultsError!))
+          else ...[
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                      (context, index) => Padding(
+                          key: ValueKey(
+                              '${_proAvailabilityKey(pros[index])}|${pros[index].category}'),
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildBrowseCard(pros[index])),
+                      childCount: pros.length)),
+            ),
+            if (_isLoadingMore)
+              const SliverToBoxAdapter(
+                  child:
+                      LoadingSkeleton(itemCount: 1, label: 'Loading more pros'))
+            else if (_loadMoreError != null || hasMore)
+              SliverToBoxAdapter(
+                  child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(children: [
+                        if (_loadMoreError != null) Text(_loadMoreError!),
+                        TextButton(
+                            onPressed: () => _loadProPage(_prosRequestToken),
+                            child: Text(_loadMoreError == null
+                                ? 'Load more pros'
+                                : 'Retry loading pros')),
+                      ]))),
+            if (pros.isEmpty && !hasMore && _loadMoreError == null)
+              SliverToBoxAdapter(child: _buildInlineState(emptyMessage)),
+          ],
+          const SliverToBoxAdapter(child: SizedBox(height: 18)),
+        ],
+      ),
+    );
   }
 
   Future<void> _hydrateNextAvailability(List<_BrowsePro> pros) async {
@@ -1106,7 +1137,7 @@ class _SearchTabState extends State<SearchTab> {
     if (!AuthService.instance.isAuthenticated) {
       return;
     }
-    final token = ++_availabilityHydrationToken;
+    final token = _availabilityHydrationToken;
     final now = DateTime.now();
     final fromDate = DateFormat('yyyy-MM-dd').format(now);
     final toDate =
@@ -1932,11 +1963,15 @@ class _SearchTabState extends State<SearchTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isInitializing) {
+      return const SkeletonPage(label: 'Loading nearby services');
+    }
+
     if (_selectedZip.isEmpty) {
       return _buildZipRequired();
     }
 
-    final visiblePros = _shuffledBrowsePros(_livePros);
+    final visiblePros = _livePros;
     final searchQuery = _searchController.text.trim();
     final activeTypeAhead = _matchesQuery(searchQuery);
 
@@ -1959,10 +1994,13 @@ class _SearchTabState extends State<SearchTab> {
         break;
       case _BrowseView.browse:
       default:
-        body =
-            (visiblePros.isEmpty && !_isLoadingResults && _resultsError == null)
-                ? _buildNoCoverage()
-                : _buildBrowseDefault(visiblePros);
+        body = (visiblePros.isEmpty &&
+                !_isLoadingResults &&
+                _resultsError == null &&
+                _loadMoreError == null &&
+                !(_proPages?.hasMore ?? false))
+            ? _buildNoCoverage()
+            : _buildBrowseDefault(visiblePros);
         break;
     }
 
@@ -2025,28 +2063,23 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildBrowseDefault(List<_BrowsePro> visiblePros) {
-    final sortedPros = _shuffledBrowsePros(visiblePros);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-      children: [
+    return _proList(
+      pros: visiblePros,
+      emptyMessage: 'No live contractors were returned for $_selectedZip.',
+      header: [
         _buildSearchInputPill(),
         const SizedBox(height: 8),
         _buildCompactLocationChip(),
         const SizedBox(height: 12),
         _buildRail(_allCategories),
         const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '${visiblePros.length} pros cover $_selectedZip',
-              style: const TextStyle(
-                color: AppTheme.navy,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
+        Text(
+          '${visiblePros.length} pros loaded for $_selectedZip',
+          style: const TextStyle(
+            color: AppTheme.navy,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         const SizedBox(height: 8),
         const Text(
@@ -2054,23 +2087,6 @@ class _SearchTabState extends State<SearchTab> {
             style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
         const SizedBox(height: 12),
         _compareTray(),
-        if (_isLoadingResults)
-          const Padding(
-            padding: EdgeInsets.only(top: 28),
-            child: Center(
-              child: CircularProgressIndicator(color: AppTheme.navy),
-            ),
-          )
-        else if (_resultsError != null)
-          _buildInlineState(_resultsError!)
-        else if (visiblePros.isEmpty)
-          _buildInlineState(
-              'No live contractors were returned for $_selectedZip.')
-        else
-          ...sortedPros.map((pro) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _buildBrowseCard(pro),
-              )),
       ],
     );
   }
@@ -2277,37 +2293,22 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildResults(List<_BrowsePro> matches) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-      children: [
+    return _proList(
+      pros: matches,
+      emptyMessage: 'No live contractors matched this search.',
+      header: [
         _buildSearchInputPill(),
         const SizedBox(height: 12),
         if (!_isLoadingResults &&
             _resultsError == null &&
             matches.isNotEmpty) ...[
-          Text('${matches.length} pros cover $_selectedZip'),
+          Text('${matches.length} pros loaded for $_selectedZip'),
           const SizedBox(height: 6),
           const Text(
               "Pros appear in a random order. TradeWorks does not rank them."),
           const SizedBox(height: 12),
           _compareTray(),
         ],
-        if (_isLoadingResults)
-          const Padding(
-            padding: EdgeInsets.only(top: 40),
-            child: Center(
-              child: CircularProgressIndicator(color: AppTheme.navy),
-            ),
-          )
-        else if (_resultsError != null)
-          _buildInlineState(_resultsError!)
-        else if (matches.isEmpty)
-          _buildInlineState('No live contractors matched this search.')
-        else
-          ...matches.map((pro) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _buildBrowseCard(pro),
-              )),
       ],
     );
   }
@@ -2505,7 +2506,7 @@ class _SearchTabState extends State<SearchTab> {
     ];
 
     return SizedBox(
-      height: 80,
+      height: 64 + MediaQuery.textScalerOf(context).scale(24),
       child: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(
           dragDevices: const {
@@ -3281,6 +3282,8 @@ class _RailChip extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 meta,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color:
                       active ? Colors.white.withOpacity(0.82) : AppTheme.gray,

@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/homeowner_service.dart';
@@ -98,8 +99,7 @@ class _RewardTabState extends State<RewardTab> {
   @override
   Widget build(BuildContext context) {
     if (_data == null && _loading)
-      return const Center(
-          child: CircularProgressIndicator(color: AppTheme.navy));
+      return const SkeletonPage(layout: SkeletonLayout.cards);
     if (_data == null && _error != null)
       return OfflineState(onRetry: () => _load(refresh: true));
     final d = _data ?? {};

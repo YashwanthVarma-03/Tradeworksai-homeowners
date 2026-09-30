@@ -1,3 +1,4 @@
+import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
@@ -154,9 +155,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return _shell(
-        child: const Center(
-          child: CircularProgressIndicator(color: AppTheme.navy),
-        ),
+        child: const SkeletonPage(layout: SkeletonLayout.form),
       );
     }
     if (_errorMessage != null) {

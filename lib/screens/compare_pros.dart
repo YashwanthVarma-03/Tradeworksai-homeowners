@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 
 import '../services/homeowner_service.dart';
@@ -138,7 +139,7 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.navy))
+          ? const SkeletonPage(layout: SkeletonLayout.cards)
           : _error != null
               ? OfflineState(onRetry: _load, message: _error)
               : _table(),

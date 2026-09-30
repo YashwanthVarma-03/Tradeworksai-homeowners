@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import '../widgets/review_annotations.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -175,66 +176,68 @@ class _FigmaProfileSurface extends StatelessWidget {
         child: Column(
           children: [
             _topBar(),
-            if (loading)
-              const LinearProgressIndicator(minHeight: 2, color: AppTheme.navy),
             Expanded(
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
-                children: [
-                  _identity(),
-                  const SizedBox(height: 20),
-                  _priceCard(),
-                  const SizedBox(height: 16),
-                  _requestCard(),
-                  if (_hasAboutContent) ...[
-                    const SizedBox(height: 18),
-                    _section('About this pro', _about()),
-                  ],
-                  if (mediaUrls.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _mediaSection(),
-                  ],
-                  if (overview.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _section('Overview', _factsPanel()),
-                  ],
-                  if (hours.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _section('Business Hours', _hoursPanel()),
-                  ],
-                  if (responseTimes.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _section('Response Times', _responsePanel(),
-                        trailing: 'Set by $businessName'),
-                  ],
-                  if (pricing.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      key: _pricingKey,
-                      child: _section('Upfront Pricing', _pricingList()),
+              child: loading
+                  ? const SkeletonPage(
+                      layout: SkeletonLayout.profile,
+                      label: 'Loading pro profile')
+                  : ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
+                      children: [
+                        _identity(),
+                        const SizedBox(height: 20),
+                        _priceCard(),
+                        const SizedBox(height: 16),
+                        _requestCard(),
+                        if (_hasAboutContent) ...[
+                          const SizedBox(height: 18),
+                          _section('About this pro', _about()),
+                        ],
+                        if (mediaUrls.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _mediaSection(),
+                        ],
+                        if (overview.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _section('Overview', _factsPanel()),
+                        ],
+                        if (hours.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _section('Business Hours', _hoursPanel()),
+                        ],
+                        if (responseTimes.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _section('Response Times', _responsePanel(),
+                              trailing: 'Set by $businessName'),
+                        ],
+                        if (pricing.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            key: _pricingKey,
+                            child: _section('Upfront Pricing', _pricingList()),
+                          ),
+                        ],
+                        if (services.isNotEmpty) ...[
+                          const SizedBox(height: 18),
+                          _section('Services & rates', _servicesSection()),
+                        ],
+                        if (_hasRating) ...[
+                          const SizedBox(height: 16),
+                          _reviewSection(),
+                        ],
+                        if (credentials.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _section('Credentials', _credentialsSection()),
+                        ],
+                        if (serviceCities.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _section('Service area', _serviceAreaSection()),
+                        ],
+                      ],
                     ),
-                  ],
-                  if (services.isNotEmpty) ...[
-                    const SizedBox(height: 18),
-                    _section('Services & rates', _servicesSection()),
-                  ],
-                  if (_hasRating) ...[
-                    const SizedBox(height: 16),
-                    _reviewSection(),
-                  ],
-                  if (credentials.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _section('Credentials', _credentialsSection()),
-                  ],
-                  if (serviceCities.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _section('Service area', _serviceAreaSection()),
-                  ],
-                ],
-              ),
             ),
-            _bottomBar(),
+            if (!loading) _bottomBar(),
           ],
         ),
       ),
@@ -295,17 +298,21 @@ class _FigmaProfileSurface extends StatelessWidget {
                   ),
                   if (selectCertified) ...[
                     const SizedBox(width: 6),
-                    Builder(builder: (buttonContext) => TextButton.icon(
-                      onPressed: () => showSelectCertifiedInfo(buttonContext),
-                      icon: const Icon(Icons.info_outline, size: 14),
-                      label: const Text('Select-certified'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: _teal,
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                        minimumSize: const Size(44, 44),
-                        textStyle: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800),
-                      ),
-                    )),
+                    Builder(
+                        builder: (buttonContext) => TextButton.icon(
+                              onPressed: () =>
+                                  showSelectCertifiedInfo(buttonContext),
+                              icon: const Icon(Icons.info_outline, size: 14),
+                              label: const Text('Select-certified'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: _teal,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 2),
+                                minimumSize: const Size(44, 44),
+                                textStyle: const TextStyle(
+                                    fontSize: 9, fontWeight: FontWeight.w800),
+                              ),
+                            )),
                   ],
                 ],
               ),
@@ -321,7 +328,8 @@ class _FigmaProfileSurface extends StatelessWidget {
                             fontSize: 14,
                             fontWeight: FontWeight.w500)),
                   if (_hasRating) ...[
-                    const Icon(Icons.star_rounded, size: 15, color: AppTheme.gold),
+                    const Icon(Icons.star_rounded,
+                        size: 15, color: AppTheme.gold),
                     Text('$reviewCount reviews ($rating)',
                         style: const TextStyle(
                             color: _muted,
@@ -1022,8 +1030,9 @@ class _FigmaProfileSurface extends StatelessWidget {
                       5,
                       (index) => Icon(Icons.star_rounded,
                           size: 13,
-                          color:
-                              index < stars ? AppTheme.gold : AppTheme.cardBorder)))),
+                          color: index < stars
+                              ? AppTheme.gold
+                              : AppTheme.cardBorder)))),
         if (text.isNotEmpty)
           Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -1170,7 +1179,8 @@ class _AllReviewsScreen extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.star_rounded, color: AppTheme.gold, size: 20),
+                  const Icon(Icons.star_rounded,
+                      color: AppTheme.gold, size: 20),
                   const SizedBox(width: 6),
                   Text(
                     rating,

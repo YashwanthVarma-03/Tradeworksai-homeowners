@@ -1,3 +1,4 @@
+import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
@@ -235,8 +236,7 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
         body: SafeArea(
           top: false,
           child: _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: AppTheme.navy))
+              ? const SkeletonPage(layout: SkeletonLayout.cards)
               : _error != null
                   ? _ErrorState(message: _error!, onRetry: _loadAvailability)
                   : dates.isEmpty

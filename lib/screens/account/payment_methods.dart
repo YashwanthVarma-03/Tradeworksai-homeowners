@@ -1,3 +1,4 @@
+import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 import '../../services/homeowner_service.dart';
 import '../../services/stream_service.dart';
@@ -101,7 +102,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Payment methods')),
         body: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const SkeletonPage(layout: SkeletonLayout.cards)
             : _error != null
                 ? Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [

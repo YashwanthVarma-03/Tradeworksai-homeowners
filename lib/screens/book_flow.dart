@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import 'dart:io';
 import 'package:intl/intl.dart';
 import '../utils/booking_timing.dart';
@@ -1263,8 +1264,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                   borderRadius: BorderRadius.circular(16)),
               title: const Row(
                 children: [
-                  Icon(Icons.shield_outlined,
-                      color: AppTheme.navy, size: 28),
+                  Icon(Icons.shield_outlined, color: AppTheme.navy, size: 28),
                   SizedBox(width: 8),
                   Text(
                     'Verify Email',
@@ -2198,10 +2198,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         ),
         const SizedBox(height: 12),
         if (_isLoadingSlots)
-          const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                  child: CircularProgressIndicator(color: AppTheme.navy)))
+          const LoadingSkeleton(
+              layout: SkeletonLayout.form, label: 'Loading arrival windows')
         else if (_slotsError != null)
           Text(_slotsError!,
               style: const TextStyle(color: AppTheme.error, fontSize: 13))

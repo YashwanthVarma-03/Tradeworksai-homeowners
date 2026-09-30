@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
@@ -75,9 +76,7 @@ class _InboxTabState extends State<InboxTab> {
   }
 
   Widget _messages() {
-    if (_connecting)
-      return const Center(
-          child: CircularProgressIndicator(color: AppTheme.navy));
+    if (_connecting) return const SkeletonPage(layout: SkeletonLayout.cards);
     if (_chatError != null || _channels == null)
       return OfflineState(
           title: 'Messaging unavailable',
@@ -87,6 +86,8 @@ class _InboxTabState extends State<InboxTab> {
         client: StreamService.instance.client!,
         child: StreamChannelListView(
           controller: _channels!,
+          loadingBuilder: (_) =>
+              const SkeletonPage(label: 'Loading conversations'),
           emptyBuilder: (_) => const Center(
               child: Padding(
                   padding: EdgeInsets.all(24),
@@ -220,9 +221,7 @@ class _BookingActivityViewState extends State<BookingActivityView> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
-      return const Center(
-          child: CircularProgressIndicator(color: AppTheme.navy));
+    if (_loading) return const SkeletonPage(layout: SkeletonLayout.cards);
     if (_error != null)
       return OfflineState(onRetry: () => _load(refresh: true));
     return RefreshIndicator(

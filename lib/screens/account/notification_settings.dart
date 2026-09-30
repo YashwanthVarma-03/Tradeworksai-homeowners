@@ -1,3 +1,4 @@
+import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/homeowner_service.dart';
@@ -178,9 +179,7 @@ class _NotificationSettingsScreenState
         backgroundColor: _pageBackground,
         appBar: _appBar('Notifications'),
         body: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: AppTheme.navy),
-              )
+            ? const SkeletonPage(layout: SkeletonLayout.form)
             : RefreshIndicator(
                 onRefresh: _loadSettings,
                 color: AppTheme.navy,

@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
@@ -68,9 +69,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isCreating) {
       return Scaffold(
         appBar: _buildAppBar(),
-        body: const Center(
-          child: CircularProgressIndicator(color: AppTheme.navy),
-        ),
+        body: const SkeletonPage(layout: SkeletonLayout.chat),
       );
     }
 
@@ -111,7 +110,10 @@ class _ChatScreenState extends State<ChatScreen> {
           appBar: _buildAppBar(),
           body: Column(
             children: [
-              Expanded(child: StreamMessageListView(
+              Expanded(
+                  child: StreamMessageListView(
+                loadingBuilder: (_) => const SkeletonPage(
+                    layout: SkeletonLayout.chat, label: 'Loading messages'),
                 messageBuilder: (context, details, messages, defaultWidget) {
                   final reference = details.message.extraData['jobReference'];
                   return Column(

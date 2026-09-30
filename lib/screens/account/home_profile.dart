@@ -1,3 +1,4 @@
+import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/homeowner_service.dart';
@@ -219,7 +220,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
       child: Scaffold(
         appBar: AppBar(title: const Text('Home profile')),
         body: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const SkeletonPage(layout: SkeletonLayout.form)
             : _error != null
                 ? Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [

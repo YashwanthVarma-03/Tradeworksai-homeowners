@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import '../utils/arrival_check_state.dart';
 import 'work_orders/arrival_check.dart';
 import 'dart:async';
@@ -1266,22 +1267,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       backgroundColor: _pageBackground,
       body: SunriseBackground(
         child: SafeArea(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CircularProgressIndicator(color: AppTheme.navy),
-                SizedBox(height: 12),
-                Text(
-                  'Loading your home',
-                  style: TextStyle(
-                    color: AppTheme.navy700,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          child: const SkeletonPage(label: 'Loading your home'),
         ),
       ),
     );
@@ -1330,8 +1316,8 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                     child: Card(
                         child: ListTile(
-                      leading: const Icon(Icons.help_outline,
-                          color: AppTheme.amber),
+                      leading:
+                          const Icon(Icons.help_outline, color: AppTheme.amber),
                       title: const Text('Did your pro arrive?'),
                       subtitle: Text(
                           '${raw['serviceCategory'] ?? 'Booking'} · Answer when you are ready'),

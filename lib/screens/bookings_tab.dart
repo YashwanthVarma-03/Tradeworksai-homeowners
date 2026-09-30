@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import '../widgets/review_annotations.dart';
 import 'dart:async';
 
@@ -656,17 +657,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
 
   Widget _buildJobsList() {
     if (_isLoading) {
-      return const CustomScrollView(
-        physics: AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: Center(
-              child: CircularProgressIndicator(color: AppTheme.navy),
-            ),
-          ),
-        ],
-      );
+      return const SkeletonPage(label: 'Loading bookings');
     }
 
     if (_errorMessage != null) {
@@ -1396,8 +1387,11 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: AppTheme.navy),
+      builder: (context) => const AlertDialog(
+        content: LoadingSkeleton(
+            itemCount: 1,
+            layout: SkeletonLayout.form,
+            label: 'Checking review availability'),
       ),
     );
 

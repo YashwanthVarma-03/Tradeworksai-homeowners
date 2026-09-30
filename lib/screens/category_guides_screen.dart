@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -55,9 +56,7 @@ class _CategoryGuidesScreenState extends State<CategoryGuidesScreen> {
         future: _articlesFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppTheme.navy),
-            );
+            return const SkeletonPage(layout: SkeletonLayout.cards);
           }
           if (snapshot.hasError || !snapshot.hasData) {
             return Center(

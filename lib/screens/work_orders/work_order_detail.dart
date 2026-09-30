@@ -1,3 +1,4 @@
+import '../../widgets/loading_skeleton.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/document_upload.dart';
 import '../../utils/arrival_check_state.dart';
@@ -777,14 +778,10 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: AppTheme.cardBorder),
         ),
-        child: const SizedBox(
-          width: 17,
-          height: 17,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: AppTheme.navy700,
-          ),
-        ),
+        child: Semantics(
+            label: 'Loading review',
+            liveRegion: true,
+            child: const SkeletonBlock(width: 160, height: 20)),
       );
     }
 

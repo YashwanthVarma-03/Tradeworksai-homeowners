@@ -1,3 +1,4 @@
+import '../widgets/loading_skeleton.dart';
 import 'account/account_security.dart';
 import 'package:flutter/material.dart';
 
@@ -158,9 +159,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     if (_isLoading) {
       return const ColoredBox(
         color: _pageBackground,
-        child: Center(
-          child: CircularProgressIndicator(color: AppTheme.navy),
-        ),
+        child: SkeletonPage(layout: SkeletonLayout.profile),
       );
     }
     if (_errorMessage != null) {

@@ -1,3 +1,4 @@
+import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/homeowner_service.dart';
@@ -141,9 +142,7 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
         backgroundColor: _pageBackground,
         appBar: _appBar('Addresses'),
         body: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: AppTheme.navy),
-              )
+            ? const SkeletonPage(layout: SkeletonLayout.cards)
             : RefreshIndicator(
                 onRefresh: _fetchAddresses,
                 color: AppTheme.navy,
