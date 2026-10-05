@@ -16,7 +16,13 @@ import '../widgets/ai_intake_sheet.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/offline_state.dart';
 import '../widgets/service_search_bar.dart';
+import '../utils/waiting_on_you.dart';
+import '../utils/work_order_labels.dart';
+import '../widgets/alert_row.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/service_zip_entry_dialog.dart';
+import 'work_orders/cap_approval.dart';
+import 'work_orders/work_order_detail.dart';
 
 class HomeTab extends StatefulWidget {
   final VoidCallback onBookTap;
@@ -63,14 +69,14 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     'Handyman',
   ];
 
-  static const Map<String, Color> _categoryBackgrounds = {
-    'HVAC': AppTheme.blueTint,
-    'Plumbing': AppTheme.blueTint,
-    'Electrical': AppTheme.amberTint,
-    'Cleaning': AppTheme.greenTint,
-    'Roofing': AppTheme.categoryRoofing,
-    'Lawn': AppTheme.greenTint,
-    'Handyman': AppTheme.categoryHandyman,
+  static const Map<String, IconData> _homeCategoryIcons = {
+    'HVAC': Icons.ac_unit_rounded,
+    'Plumbing': Icons.water_drop_outlined,
+    'Electrical': Icons.bolt_outlined,
+    'Cleaning': Icons.auto_awesome_outlined,
+    'Roofing': Icons.roofing_outlined,
+    'Lawn': Icons.grass,
+    'Handyman': Icons.build_outlined,
   };
 
   static const Color _pageBackground = AppTheme.pageBackground;
@@ -78,14 +84,10 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   static const Color _mutedText = AppTheme.textSecondary;
   static const Color _lineSoft = AppTheme.cardBorder;
   static const double _searchPlaceholderFontSize = 14;
-  static const double _searchTickerHeight = 18;
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
-  late final PageController _tickerPageController;
-  Timer? _serviceTicker;
-  int _serviceTickerIndex = 0;
   bool _isLoading = true;
   bool _isRefreshing = false;
   String? _errorMessage;
@@ -106,10 +108,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     _searchFocusNode.addListener(_refreshInputs);
     ServiceLocation.selected.addListener(_handleSharedLocationChanged);
 
-    // Initialize PageController starting from a high initial page for infinite smooth scrolling
-    _tickerPageController =
-        PageController(initialPage: 1000 * _serviceNames.length);
-    _startServiceTicker();
     _loadSharedLocationOverride();
     if (widget.isGuest) {
       _isLoading = false;
@@ -133,8 +131,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       HomeownerService.instance.syncVersion
           .removeListener(_refreshFromSharedSync);
     }
-    _tickerPageController.dispose();
-    _serviceTicker?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _searchController
       ..removeListener(_refreshInputs)
@@ -154,23 +150,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     if (mounted) {
       setState(() {});
     }
-  }
-
-  void _startServiceTicker() {
-    _serviceTicker?.cancel();
-    _serviceTicker = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!mounted ||
-          !_tickerPageController.hasClients ||
-          _searchController.text.trim().isNotEmpty ||
-          _searchFocusNode.hasFocus) {
-        return;
-      }
-
-      _tickerPageController.nextPage(
-        duration: const Duration(milliseconds: 750),
-        curve: Curves.fastOutSlowIn, // Smoother physics-based curve
-      );
-    });
   }
 
   bool get _hasHomeContent =>
@@ -545,92 +524,17 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     return candidates;
   }
 
-  List<Map<String, dynamic>> get _capPendingJobs {
-    final jobs = _quoteSourceJobs.isEmpty
-        ? <dynamic>[..._activeJobs, ..._upcomingJobs]
-        : _quoteSourceJobs;
-    final matches = <Map<String, dynamic>>[];
+  bool _respondingToProposal = false;
 
-    for (final dynamic item in jobs) {
-      if (item is! Map) continue;
-      final job = Map<String, dynamic>.from(item);
-      final status = _statusOf(job).replaceAll('-', '_').replaceAll(' ', '_');
-      final quoteStatus = _text(
-        job['quoteStatus'] ??
-            job['quote_status'] ??
-            job['approvalStatus'] ??
-            job['approval_status'],
-      ).toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
-      final requiredAction = _text(
-        job['requiredAction'] ??
-            job['required_action'] ??
-            job['nextAction'] ??
-            job['next_action'] ??
-            job['action'],
-      ).toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
-      final needsQuoteApproval = job['needsQuoteApproval'] == true ||
-          job['needs_quote_approval'] == true ||
-          job['requiresQuoteApproval'] == true ||
-          job['requires_quote_approval'] == true ||
-          job['requiresCapApproval'] == true ||
-          job['requires_cap_approval'] == true ||
-          job['hasQuote'] == true ||
-          job['has_quote'] == true ||
-          job['quoteReady'] == true ||
-          job['quote_ready'] == true ||
-          job['estimateReady'] == true ||
-          job['estimate_ready'] == true;
-      final hasQuoteData = _hasMeaningfulValue(job['quote']) ||
-          _hasMeaningfulValue(job['quoteDetails']) ||
-          _hasMeaningfulValue(job['quote_details']) ||
-          _hasMeaningfulValue(job['quoteAmount']) ||
-          _hasMeaningfulValue(job['quote_amount']) ||
-          _hasMeaningfulValue(job['nteAmount']) ||
-          _hasMeaningfulValue(job['nte_amount']) ||
-          _hasMeaningfulValue(job['totalNTE']) ||
-          _hasMeaningfulValue(job['total_nte']) ||
-          _hasMeaningfulValue(job['capAmount']) ||
-          _hasMeaningfulValue(job['cap_amount']) ||
-          _hasMeaningfulValue(job['quoteCap']) ||
-          _hasMeaningfulValue(job['quote_cap']) ||
-          _hasMeaningfulValue(job['notToExceed']) ||
-          _hasMeaningfulValue(job['not_to_exceed']) ||
-          _hasMeaningfulValue(job['estimate']) ||
-          _hasMeaningfulValue(job['estimateAmount']) ||
-          _hasMeaningfulValue(job['estimate_amount']);
-      final timeline = job['timeline'];
-      final hasAcceptedTimeline =
-          timeline is Map && _hasMeaningfulValue(timeline['acceptedAt']);
-      final isPastOrCommitted = status.contains('complete') ||
-          status.contains('cancel') ||
-          status.contains('decline') ||
-          status == 'en_route' ||
-          status == 'arrived' ||
-          status == 'in_progress';
-      if (isPastOrCommitted) continue;
-      if (status.contains('quote') ||
-          status.contains('cap_pending') ||
-          status.contains('estimate') ||
-          status.contains('approval') ||
-          status.contains('review') ||
-          quoteStatus.contains('pending') ||
-          quoteStatus.contains('ready') ||
-          quoteStatus.contains('review') ||
-          requiredAction.contains('quote') ||
-          requiredAction.contains('cap') ||
-          requiredAction.contains('approve') ||
-          requiredAction.contains('review') ||
-          needsQuoteApproval ||
-          hasQuoteData ||
-          (status == 'active' && hasAcceptedTimeline)) {
-        matches.add(job);
-      }
-    }
-    return matches;
-  }
-
-  String _statusOf(Map<String, dynamic> job) =>
-      _text(job['status']).toLowerCase();
+  /// Everything on Home that is waiting on the homeowner (A01–A03): a pro's
+  /// reschedule proposal, a cap or estimate at any non-terminal state, the
+  /// receipt on a completed job (Oct 1, G-46). `_quoteSourceJobs` includes
+  /// history, which the receipt needs.
+  List<WaitingItem> get _waitingItems => WaitingOnYou.itemsFrom(
+        _quoteSourceJobs.isEmpty
+            ? <dynamic>[..._activeJobs, ..._upcomingJobs]
+            : _quoteSourceJobs,
+      );
 
   String _text(dynamic value, [String fallback = '']) {
     final text = value?.toString().trim() ?? '';
@@ -639,12 +543,10 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   String get _displayedService {
     final typed = _searchController.text.trim();
-    return typed.isNotEmpty ? typed : _serviceNames[_serviceTickerIndex];
+    return typed.isNotEmpty ? typed : _serviceNames.first;
   }
 
-  int get _serviceCount => _serviceNames.length;
-
-  String get _allServicesLabel => 'All $_serviceCount';
+  String get _allServicesLabel => 'All 22';
 
   void _openSearch([String? value]) {
     final query = (value ?? _displayedService).trim();
@@ -726,17 +628,8 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   Widget _buildHomeHero() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 20),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.bottomLeft,
-          end: Alignment.topRight,
-          colors: [
-            AppTheme.navy,
-            AppTheme.blue,
-          ],
-        ),
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      color: AppTheme.pageBackground,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -756,7 +649,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                         children: [
                           const Icon(
                             Icons.location_on,
-                            color: Colors.white,
+                            color: AppTheme.navy,
                             size: 16,
                           ),
                           const SizedBox(width: 6),
@@ -766,16 +659,16 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                               _locationLabel,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
+                                color: AppTheme.navy,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
                           const SizedBox(width: 2),
                           const Icon(
                             Icons.keyboard_arrow_down_rounded,
-                            color: Colors.white,
+                            color: AppTheme.navy,
                             size: 18,
                           ),
                         ],
@@ -791,7 +684,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(
                   Icons.help,
-                  color: Colors.white,
+                  color: AppTheme.navy,
                   size: 21,
                 ),
               ),
@@ -805,7 +698,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(
                         Icons.mail,
-                        color: Colors.white,
+                        color: AppTheme.navy,
                         size: 21,
                       ),
                     ),
@@ -813,13 +706,13 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           const Text(
             'What do you need done?',
             style: TextStyle(
-              color: Colors.white,
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
+              color: AppTheme.navy,
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
               height: 1.2,
             ),
           ),
@@ -847,48 +740,27 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       onVoiceTap: () => _openAiLayer('voice'),
       borderColor: AppTheme.cardBorder,
       showShadow: true,
-      emptyOverlay: Row(
-        children: [
-          Text(
-            'Search a service ',
-            style: GoogleFonts.inter(
-              color: AppTheme.textTertiary,
-              fontSize: _searchPlaceholderFontSize,
-              fontWeight: FontWeight.w400,
-              letterSpacing: -0.1,
-              height: 1,
-            ),
+      emptyOverlay: Text.rich(
+        TextSpan(
+          text: 'Search a service ',
+          style: GoogleFonts.inter(
+            color: AppTheme.textTertiary,
+            fontSize: _searchPlaceholderFontSize,
+            fontWeight: FontWeight.w400,
+            height: 1,
           ),
-          Expanded(
-            child: SizedBox(
-              height: _searchTickerHeight,
-              child: PageView.builder(
-                controller: _tickerPageController,
-                scrollDirection: Axis.vertical,
-                physics: const NeverScrollableScrollPhysics(),
-                itemBuilder: (context, index) {
-                  final serviceName =
-                      _serviceNames[index % _serviceNames.length];
-                  return Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      serviceName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        color: AppTheme.navy700,
-                        fontSize: _searchPlaceholderFontSize,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: -0.1,
-                        height: 1,
-                      ),
-                    ),
-                  );
-                },
+          children: const [
+            TextSpan(
+              text: 'AC repair',
+              style: TextStyle(
+                color: AppTheme.navy,
+                fontWeight: FontWeight.w500,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -904,7 +776,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 'Browse by category',
                 style: TextStyle(
                   color: _inkStrong,
-                  fontSize: 16,
+                  fontSize: 20,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -912,10 +784,10 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             GestureDetector(
               onTap: () => widget.onCategorySelected('All'),
               child: Text(
-                'See all $_serviceCount ›',
+                'See all 22',
                 style: const TextStyle(
-                  color: AppTheme.teal500,
-                  fontSize: 13,
+                  color: AppTheme.blue,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -931,41 +803,36 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             crossAxisCount: 4,
             mainAxisSpacing: 12,
             crossAxisSpacing: 8,
-            childAspectRatio: 1.15,
+            childAspectRatio: 1.05,
           ),
           itemBuilder: (context, index) {
             final isAll = index == _homeCategories.length;
             final label = isAll ? _allServicesLabel : _homeCategories[index];
-            final token = isAll
-                ? TradeWorksCategoryTokens.fallback
-                : TradeWorksCategoryTokens.forName(label);
             return InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: () => widget.onCategorySelected(isAll ? 'All' : label),
               child: Container(
                 decoration: BoxDecoration(
-                  color: isAll
-                      ? AppTheme.navy
-                      : _categoryBackgrounds[label] ?? AppTheme.navyTint,
+                  color: isAll ? AppTheme.subtle : AppTheme.pageBackground,
                   borderRadius: BorderRadius.circular(12),
                   border: isAll ? null : Border.all(color: _lineSoft),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    ServiceCategoryIcon(
-                      category: isAll ? 'All' : label,
-                      size: 32,
-                      fallbackIcon:
-                          isAll ? Icons.grid_view_rounded : token.icon,
-                      fallbackColor: isAll ? Colors.white : _inkStrong,
+                    Icon(
+                      isAll
+                          ? Icons.grid_view_rounded
+                          : _homeCategoryIcons[label],
+                      size: 30,
+                      color: _inkStrong,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       label,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: isAll ? Colors.white : _inkStrong,
+                        color: _inkStrong,
                         fontSize: 11,
                         fontWeight: isAll ? FontWeight.w700 : FontWeight.w600,
                       ),
@@ -1010,7 +877,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           'Sign up',
           style: TextStyle(
             color: _inkStrong,
-            fontSize: 16,
+            fontSize: 20,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -1027,28 +894,18 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'CREATE YOUR ACCOUNT',
-                style: TextStyle(
-                  color: AppTheme.navy,
-                  fontSize: 11,
-                  letterSpacing: .5,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
                 'Create an account to book services, save your home details, earn rewards, and get personalized recommendations.',
                 style: TextStyle(
                   color: _inkStrong,
-                  fontSize: 13.5,
-                  height: 1.35,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                  height: 1.5,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
               const SizedBox(height: 8),
               const Text(
                 'It only takes a minute to get started',
-                style: TextStyle(color: _mutedText, fontSize: 11),
+                style: TextStyle(color: _mutedText, fontSize: 14),
               ),
               const SizedBox(height: 12),
               SizedBox(
@@ -1088,16 +945,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'YOUR HOME PROFILE',
-            style: TextStyle(
-              color: eyebrowColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-            ),
-          ),
-          const SizedBox(height: 8),
           const Text(
             'Tell us about your home',
             style: TextStyle(
@@ -1145,121 +992,239 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildCapPendingStrip(Map<String, dynamic> job, int totalCount) {
-    final service = _text(
-      job['serviceCategory'] ??
-          job['service_category'] ??
-          job['serviceName'] ??
-          job['service_name'] ??
-          job['title'],
-      'Work order',
-    );
-    final proName = _text(
-      job['pro']?['businessName'] ??
-          job['pro']?['business_name'] ??
-          job['businessName'] ??
-          job['proName'],
-      'Your pro',
-    );
-    final rawId = _text(job['workOrderId'] ?? job['id']);
-    final idLabel = rawId.isEmpty
-        ? ''
-        : rawId.startsWith('TW-')
-            ? ' · #$rawId'
-            : ' · #TW-$rawId';
-    final moreCount = totalCount - 1;
+  /// Blue text action, left-aligned with the sentence above it.
+  ButtonStyle get _linkStyle => TextButton.styleFrom(
+        foregroundColor: AppTheme.blue,
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(0, 44),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      );
 
-    return Material(
-      color: AppTheme.amberTint,
-      child: InkWell(
-        onTap: () => widget.onJobTap(job),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          decoration: const BoxDecoration(
-            border: Border(
-              top: BorderSide(color: AppTheme.amber),
-              bottom: BorderSide(color: AppTheme.amber),
-            ),
-          ),
-          child: Row(
+  IconData _waitingIcon(WaitingKind kind) => switch (kind) {
+        WaitingKind.reschedule => Icons.event_repeat_outlined,
+        WaitingKind.cap => Icons.description_outlined,
+        WaitingKind.estimate => Icons.description_outlined,
+        WaitingKind.receipt => Icons.receipt_long_outlined,
+      };
+
+  /// One "Waiting on you" alert row for the first item and "+N more" for the
+  /// rest (A01, A03). A pro's reschedule proposal is answered in place with
+  /// Accept / Decline; until then the original window stands (Sep 30).
+  Widget _buildWaitingStrip(List<WaitingItem> items) {
+    final item = items.first;
+    final more = items.length - 1;
+    final moreLink = more > 0
+        ? TextButton(
+            onPressed: () => _showAllWaiting(items),
+            style: _linkStyle,
+            child: Text('+$more more'),
+          )
+        : null;
+
+    final Widget footer;
+    if (item.kind == WaitingKind.reschedule) {
+      footer = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 10),
+          Row(
             children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: const BoxDecoration(
-                  color: AppTheme.amber,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.priority_high_rounded,
-                  color: Colors.white,
-                  size: 25,
-                ),
-              ),
-              const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'YOUR PRO SENT A CAP — REVIEW IT',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppTheme.amber,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      service,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _inkStrong,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '$proName$idLabel',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _mutedText,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                child: ElevatedButton(
+                  onPressed: _respondingToProposal
+                      ? null
+                      : () => _respondToProposal(item, accept: true),
+                  child: const Text('Accept'),
                 ),
               ),
-              const SizedBox(width: 8),
-              if (moreCount > 0)
-                Text(
-                  '+$moreCount more ›',
-                  style: const TextStyle(
-                    color: AppTheme.teal500,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                )
-              else
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppTheme.teal500,
-                  size: 24,
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _respondingToProposal
+                      ? null
+                      : () => _respondToProposal(item, accept: false),
+                  child: const Text('Decline'),
                 ),
+              ),
             ],
           ),
+          if (moreLink != null)
+            Align(alignment: Alignment.centerRight, child: moreLink),
+        ],
+      );
+    } else {
+      footer = Row(
+        children: [
+          TextButton(
+            onPressed: () => _openWaitingItem(item),
+            style: _linkStyle,
+            child: Text(item.action),
+          ),
+          const Spacer(),
+          if (moreLink != null) moreLink,
+        ],
+      );
+    }
+
+    return AlertRow(
+      icon: _waitingIcon(item.kind),
+      eyebrow: const WaitingOnYouMark(),
+      title: item.title,
+      body: item.detail,
+      footer: footer,
+    );
+  }
+
+  /// A02: only while the job is still Booked after its window (Batch 19 B1).
+  /// No pop-up — this row and the work order's button are the only prompts.
+  Widget _buildNoShowRow(Map<String, dynamic> job) {
+    final start = jobVisitStart(job);
+    final line = [
+      '${jobServiceName(job)} with ${jobProName(job, 'your pro')}',
+      if (start != null)
+        visitPhrase(start, jobVisitEnd(job), relativeDay: true),
+      workOrderLabel(job),
+    ].where((part) => part.isNotEmpty).join(' · ');
+    return AlertRow(
+      icon: Icons.schedule_rounded,
+      title: 'Your visit window has passed',
+      body: '$line. Not started by your pro.',
+      footer: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton(
+          style: _linkStyle,
+          onPressed: () async {
+            if (await openArrivalCheck(context, job) && mounted) {
+              await _fetchHomeData(showLoading: false, forceRefresh: true);
+            }
+          },
+          child: const Text('Report a no-show'),
         ),
       ),
     );
+  }
+
+  /// Each item opens its own work order; a cap opens the cap screen, a
+  /// receipt opens the work order at Job money.
+  Future<void> _openWaitingItem(WaitingItem item) async {
+    await Navigator.push<dynamic>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => item.kind == WaitingKind.cap
+            ? CapApprovalScreen(job: item.job)
+            : WorkOrderDetailScreen(
+                job: item.job,
+                focusMoney: item.kind == WaitingKind.receipt,
+              ),
+      ),
+    );
+    if (!mounted) return;
+    await _fetchHomeData(showLoading: false, forceRefresh: true);
+  }
+
+  /// Accept / Decline a pro's proposed window. A decline (or no answer) keeps
+  /// the original time (Sep 30). Needs backend G-28: `respond_reschedule`.
+  Future<void> _respondToProposal(WaitingItem item,
+      {required bool accept}) async {
+    final id = workOrderDbId(item.job);
+    if (id == null || _respondingToProposal) return;
+    setState(() => _respondingToProposal = true);
+    try {
+      await HomeownerService.instance.performWorkOrderAction(
+        workOrderId: id,
+        action: 'respond_reschedule',
+        extra: {
+          'response': accept ? 'accept' : 'decline',
+          if (item.proposalId != null) 'proposalId': item.proposalId,
+        },
+      );
+      if (!mounted) return;
+      AppNotification.showSuccess(
+        context,
+        accept
+            ? 'Your visit has moved to the new time.'
+            : 'Your original time stands.',
+      );
+      await _fetchHomeData(showLoading: false, forceRefresh: true);
+    } catch (e) {
+      if (mounted) AppNotification.showError(context, e);
+    } finally {
+      if (mounted) setState(() => _respondingToProposal = false);
+    }
+  }
+
+  /// "+N more": every waiting item as a hairline list; a row opens its job.
+  Future<void> _showAllWaiting(List<WaitingItem> items) async {
+    final picked = await showModalBottomSheet<WaitingItem>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text(
+              'Waiting on you',
+              style: GoogleFonts.outfit(
+                color: _inkStrong,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final item in items)
+              InkWell(
+                onTap: () => Navigator.pop(sheetContext, item),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 44),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: _lineSoft)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.title,
+                              style: const TextStyle(
+                                color: _inkStrong,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              item.detail,
+                              style: const TextStyle(
+                                color: _mutedText,
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.chevron_right_rounded,
+                          color: AppTheme.textTertiary),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked != null && mounted) await _openWaitingItem(picked);
   }
 
   Widget _buildLoading() {
@@ -1267,7 +1232,10 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       backgroundColor: _pageBackground,
       body: SunriseBackground(
         child: SafeArea(
-          child: const SkeletonPage(label: 'Loading your home'),
+          child: const SkeletonPage(
+            layout: SkeletonLayout.home,
+            label: 'Loading your home',
+          ),
         ),
       ),
     );
@@ -1294,8 +1262,14 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     if (_isLoading) return _buildLoading();
     if (_errorMessage != null) return _buildError();
 
-    final quoteReadyJobs = _capPendingJobs;
-    final quoteReadyJob = quoteReadyJobs.isEmpty ? null : quoteReadyJobs.first;
+    final waiting = widget.isGuest ? const <WaitingItem>[] : _waitingItems;
+    final noShowJobs = widget.isGuest
+        ? const <Map<String, dynamic>>[]
+        : _quoteSourceJobs
+            .whereType<Map>()
+            .map((raw) => Map<String, dynamic>.from(raw))
+            .where((job) => ArrivalCheckState.pending(job))
+            .toList();
 
     return ColoredBox(
       color: _pageBackground,
@@ -1309,32 +1283,16 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           padding: const EdgeInsets.only(bottom: 120),
           children: [
             _buildHomeHero(),
-            if (!widget.isGuest)
-              for (final raw in _quoteSourceJobs.whereType<Map>())
-                if (ArrivalCheckState.pending(Map<String, dynamic>.from(raw)))
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                    child: Card(
-                        child: ListTile(
-                      leading:
-                          const Icon(Icons.help_outline, color: AppTheme.amber),
-                      title: const Text('Did your pro arrive?'),
-                      subtitle: Text(
-                          '${raw['serviceCategory'] ?? 'Booking'} · Answer when you are ready'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () async {
-                        if (await openArrivalCheck(
-                                context, Map<String, dynamic>.from(raw)) &&
-                            mounted) {
-                          await _fetchHomeData();
-                        }
-                      },
-                    )),
-                  ),
-            if (!widget.isGuest && quoteReadyJob != null) ...[
-              const SizedBox(height: 14),
-              _buildCapPendingStrip(quoteReadyJob, quoteReadyJobs.length),
-            ],
+            for (final job in noShowJobs)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: _buildNoShowRow(job),
+              ),
+            if (waiting.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: _buildWaitingStrip(waiting),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               child: Column(

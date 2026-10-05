@@ -4,6 +4,9 @@ import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
+import 'package:intl/intl.dart';
+
+import '../../utils/work_order_labels.dart';
 import '../../widgets/transaction_guard.dart';
 
 class LeaveReviewScreen extends StatefulWidget {
@@ -87,7 +90,8 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
         text: reviewText,
         displayName: _publishingName,
         tags: _tags
-            .where((tag) => tag != 'Price stayed within the cap' || _hasInvoice)
+            .where(
+                (tag) => tag != 'Price stayed within the cap' || _isCapApproval)
             .toList(),
         hasExistingReview: widget.hasExistingReview,
       );
@@ -98,8 +102,8 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
           'rating': _rating.roundToDouble(),
           'reviewText': reviewText,
           'tags': _tags
-              .where(
-                  (tag) => tag != 'Price stayed within the cap' || _hasInvoice)
+              .where((tag) =>
+                  tag != 'Price stayed within the cap' || _isCapApproval)
               .toList(),
         });
       }
@@ -120,13 +124,19 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     return name == null || name.isEmpty ? 'TradeWorks Customer' : name;
   }
 
-  bool get _hasInvoice {
-    final amount = widget.job['invoiceAmount'] ?? widget.job['invoice_amount'];
-    final number =
-        amount is num ? amount.toDouble() : double.tryParse('$amount');
-    final url =
-        _readString(widget.job['invoiceUrl'] ?? widget.job['invoice_url']);
-    return (number != null && number.isFinite && number >= 0) || url != null;
+  /// "Price stayed within the cap" is offered only on Cap Approval work
+  /// orders (Oct 1, G-50). Keyed on the work-order type; a job that carries
+  /// an approved cap counts when the type is missing.
+  bool get _isCapApproval {
+    final type = _readString(
+            widget.job['workOrderType'] ?? widget.job['work_order_type'])
+        ?.toLowerCase();
+    if (type != null) return type == 'nte' || type.contains('cap');
+    return _readString(widget.job['approvedCap'] ??
+            widget.job['approved_cap'] ??
+            widget.job['capAmount'] ??
+            widget.job['cap_amount']) !=
+        null;
   }
 
   Future<void> _delete() async {
@@ -183,26 +193,13 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
                     Center(
                       child: Column(
                         children: [
-                          const Text(
+                          Text(
                             'How was your experience?',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: AppTheme.ink,
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w900,
-                            ),
+                            style: Theme.of(context).textTheme.headlineMedium,
                           ),
                           const SizedBox(height: 10),
                           _stars(),
-                          const SizedBox(height: 8),
-                          Text(
-                            _ratingLabel(),
-                            style: const TextStyle(
-                              color: AppTheme.navy,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -240,9 +237,35 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 22),
-                    _smallLabel('QUICK TAGS'),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'At least 10 characters',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Quick tags',
+                            style: Theme.of(context).textTheme.headlineMedium,
+                          ),
+                        ),
+                        const Text(
+                          'Optional',
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 10,
@@ -252,71 +275,90 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
                         'Clean work',
                         'Great communication',
                         'Fair price',
-                        'Price stayed within the cap',
+                        if (_isCapApproval) 'Price stayed within the cap',
                       ].map(_tagChip).toList(),
                     ),
-                    const SizedBox(height: 26),
-                    if (!_hasInvoice)
-                      const Text(
-                          'Price stayed within the cap: available once your invoice arrives.'),
-                    Text('This will publish as $_publishingName.',
-                        style: const TextStyle(
-                            color: AppTheme.textSecondary, fontSize: 12)),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _isSubmitting ? null : _submit,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.orange500,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        child: _isSubmitting
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Text(widget.hasExistingReview
-                                ? 'Save changes'
-                                : 'Submit review'),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    const Text(
-                        'Your credits come from what you spend, not from leaving a review.',
-                        style: TextStyle(
-                            color: AppTheme.textSecondary, fontSize: 12)),
-                    if (widget.hasExistingReview)
-                      TextButton(
+                    if (widget.hasExistingReview) ...[
+                      const SizedBox(height: 20),
+                      Center(
+                        child: TextButton(
                           onPressed: _isSubmitting ? null : _delete,
-                          child: const Text('Delete your review',
-                              style: TextStyle(color: AppTheme.red))),
-                    const Center(
-                      child: Text(
-                        'Your review will be public and tied to this work order',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppTheme.gray,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppTheme.red,
+                            minimumSize: const Size(44, 44),
+                          ),
+                          child: const Text(
+                            'Delete your review',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
+              ),
+            ),
+            _bottomBar(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// E06: who the review publishes as, the one primary action, and the
+  /// disclosure that credits never depend on a review — in a sticky bar.
+  Widget _bottomBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppTheme.cardBorder)),
+        boxShadow: AppTheme.floatShadow,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'This will publish as $_publishingName and is tied to this work order.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _isSubmitting ? null : _submit,
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppTheme.onOrange,
+                        ),
+                      )
+                    : Text(widget.hasExistingReview
+                        ? 'Save changes'
+                        : 'Submit review'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Your credits come from what you spend, not from leaving a review.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 13,
+                height: 19 / 13,
               ),
             ),
           ],
@@ -346,28 +388,16 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
         'Service';
   }
 
-  String _dateLabel() {
-    final completed = _readString(widget.job['completedAt']) ??
-        _readString(widget.job['completed_at']) ??
-        _readString(widget.job['scheduledStart']);
-    if (completed == null) return '';
-    final parsed = DateTime.tryParse(completed);
-    if (parsed == null) return completed;
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[parsed.month - 1]} ${parsed.day}';
+  /// "Completed Mon, Oct 5" — the completion date only, never the visit time.
+  String? _completedLabel() {
+    final timeline = widget.job['timeline'];
+    final completed = DateTime.tryParse(
+        _readString(widget.job['completedAt']) ??
+            _readString(widget.job['completed_at']) ??
+            (timeline is Map ? _readString(timeline['completedAt']) : null) ??
+            '');
+    if (completed == null) return null;
+    return 'Completed ${DateFormat('EEE, MMM d').format(completed.toLocal())}';
   }
 
   String? _readString(dynamic value) {
@@ -388,15 +418,6 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
         .take(2)
         .join()
         .toUpperCase();
-  }
-
-  String _ratingLabel() {
-    if (_rating == 0) return '';
-    if (_rating >= 5) return 'Excellent';
-    if (_rating >= 4) return 'Great';
-    if (_rating >= 3) return 'Okay';
-    if (_rating >= 2) return 'Poor';
-    return 'Bad';
   }
 
   Widget _screenHeader(String title) {
@@ -436,17 +457,27 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
 
   Widget _proHeader() {
     final proName = _proName();
+    final meta = [
+      _serviceName(),
+      workOrderLabel(widget.job),
+      _completedLabel(),
+    ].whereType<String>().where((part) => part.isNotEmpty).join(' · ');
     return Row(
       children: [
-        CircleAvatar(
-          radius: 28,
-          backgroundColor: AppTheme.teal500,
+        Container(
+          width: 56,
+          height: 56,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppTheme.navy,
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+          ),
           child: Text(
             _initials(proName),
-            style: const TextStyle(
+            style: AppTheme.headingStyle.copyWith(
               color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
+              fontSize: 19,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -467,13 +498,12 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                '${_serviceName()} · ${_dateLabel()}',
-                maxLines: 1,
+                meta,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
                 ),
               ),
             ],
@@ -505,8 +535,7 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
 
   Widget _tagChip(String label) {
     final selected = _tags.contains(label);
-    final enabled = !_isSubmitting &&
-        (label != 'Price stayed within the cap' || _hasInvoice);
+    final enabled = !_isSubmitting;
     return FilterChip(
       label: Text(label),
       selected: selected,
@@ -532,18 +561,6 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-    );
-  }
-
-  Widget _smallLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: AppTheme.gray,
-        fontSize: 11.5,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1.7,
-      ),
     );
   }
 }

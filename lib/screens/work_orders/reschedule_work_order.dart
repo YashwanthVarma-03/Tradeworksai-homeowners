@@ -1,23 +1,64 @@
-import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
+import '../../utils/display_format.dart';
+import '../../utils/waiting_on_you.dart';
+import '../../utils/work_order_labels.dart';
+import '../../utils/work_order_status.dart';
 import '../../widgets/app_notification.dart';
+import '../../widgets/loading_skeleton.dart';
 import '../../widgets/transaction_guard.dart';
+import 'reschedule_proposal.dart';
 
-/// Opens the one rescheduling experience used by every booking surface.
-///
-/// The caller only supplies the work-order payload; contractor resolution,
-/// availability, and submitting the proposal live here so entry points cannot
-/// drift into different rescheduling behavior or UI.
+/// The job's response level as the homeowner booked it: "Standard",
+/// "Urgent" or "Emergency" (decisions §5).
+String jobUrgencyLevel(Map<String, dynamic> job) {
+  final raw =
+      '${job['priority'] ?? job['urgency'] ?? job['urgencyLevel'] ?? job['urgency_level'] ?? job['serviceLevel'] ?? job['service_level'] ?? ''}'
+          .toLowerCase();
+  if (raw.contains('emergency')) return 'Emergency';
+  if (raw.contains('urgent')) return 'Urgent';
+  return 'Standard';
+}
+
+/// Opens rescheduling for a work order — the one entry point every booking
+/// surface uses. Only Standard work orders, and only while Booked (Sep 30):
+/// Urgent and Emergency are a 24-hour / 4-hour commitment. A pending proposal
+/// from the pro opens for an answer (E02); otherwise the homeowner proposes a
+/// new 2-hour window (E03).
 Future<bool> openRescheduleWorkOrder(
     BuildContext context, Map<String, dynamic> job) async {
   final workOrderId = _workOrderId(job);
   if (workOrderId == 0) {
     AppNotification.showInfo(context, 'This booking cannot be rescheduled.');
     return false;
+  }
+  if (jobUrgencyLevel(job) != 'Standard') {
+    AppNotification.showInfo(
+      context,
+      'Urgent and Emergency bookings can\'t be rescheduled — they\'re a '
+      '24-hour or 4-hour commitment.',
+    );
+    return false;
+  }
+  if (WorkOrderStatus.fromJob(job).state != WorkOrderState.booked) {
+    AppNotification.showInfo(
+        context, 'Only a booked visit can be rescheduled.');
+    return false;
+  }
+
+  final proposal = WaitingOnYou.rescheduleProposal(job);
+  if (proposal != null) {
+    return (await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) =>
+                RescheduleProposalScreen(job: job, proposal: proposal),
+          ),
+        )) ??
+        false;
   }
 
   var contractorId = _contractorId(job);
@@ -89,14 +130,19 @@ class RescheduleWorkOrderScreen extends StatefulWidget {
     required this.workOrderId,
     required this.contractorId,
     this.selectSlotOnly = false,
+    this.capAmount,
   });
 
   final Map<String, dynamic> job;
   final int workOrderId;
   final String contractorId;
 
-  /// Reuse availability selection for cap approval without sending a reschedule.
+  /// Cap approval (E01b): pick the repair window and hand it back. Nothing is
+  /// sent from here — the cap screen sends it with the approval (Oct 1, G-49).
   final bool selectSlotOnly;
+
+  /// The cap being approved, for E01b's summary card. Null hides the line.
+  final double? capAmount;
 
   @override
   State<RescheduleWorkOrderScreen> createState() =>
@@ -104,14 +150,19 @@ class RescheduleWorkOrderScreen extends StatefulWidget {
 }
 
 class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
-  final TextEditingController _reasonController =
-      TextEditingController(text: 'Homeowner requested reschedule');
+  /// Up to four 2-hour options per day (decisions §5).
+  static const int _windowsPerDay = 4;
+
+  final TextEditingController _reasonController = TextEditingController();
   final Map<String, List<Map<String, dynamic>>> _slotsByDate = {};
   bool _isLoading = true;
   bool _isSubmitting = false;
   String? _error;
   String? _selectedDate;
   Map<String, dynamic>? _selectedSlot;
+
+  Map<String, dynamic> get _job => widget.job;
+  String get _pro => jobProName(_job);
 
   @override
   void initState() {
@@ -138,22 +189,33 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
         fromDate: _dateKey(now),
         toDate: _dateKey(now.add(const Duration(days: 7))),
       );
+      final booked = jobVisitStart(_job);
       final grouped = <String, List<Map<String, dynamic>>>{};
       for (final rawSlot in availability['slots'] as List? ?? const []) {
         if (rawSlot is! Map) continue;
         final slot = Map<String, dynamic>.from(rawSlot);
-        final start = slot['start']?.toString() ?? '';
-        if (widget.selectSlotOnly) {
-          final startTime = DateTime.tryParse(start);
-          final endTime = DateTime.tryParse(slot['end']?.toString() ?? '');
-          if (startTime == null ||
-              endTime == null ||
-              !endTime.isAfter(startTime) ||
-              !startTime.isAfter(now)) continue;
+        final start = DateTime.tryParse('${slot['start'] ?? ''}');
+        final end = DateTime.tryParse('${slot['end'] ?? ''}');
+        // A window is a real reservation on the pro's calendar: both ends,
+        // in the future. The booked window itself is not an option.
+        if (start == null ||
+            end == null ||
+            !end.isAfter(start) ||
+            !start.isAfter(now)) {
+          continue;
         }
-        final date = start.split('T').first;
-        if (DateTime.tryParse(date) == null) continue;
-        grouped.putIfAbsent(date, () => []).add(slot);
+        if (!widget.selectSlotOnly &&
+            booked != null &&
+            start.isAtSameMomentAs(booked)) {
+          continue;
+        }
+        grouped.putIfAbsent(_dateKey(start.toLocal()), () => []).add(slot);
+      }
+      for (final day in grouped.values) {
+        day.sort((a, b) => '${a['start']}'.compareTo('${b['start']}'));
+        if (day.length > _windowsPerDay) {
+          day.removeRange(_windowsPerDay, day.length);
+        }
       }
       if (!mounted) return;
       final dates = grouped.keys.toList()..sort();
@@ -162,14 +224,14 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
           ..clear()
           ..addAll(grouped);
         _selectedDate = dates.isEmpty ? null : dates.first;
-        _selectedSlot = dates.isEmpty ? null : grouped[dates.first]!.first;
+        _selectedSlot = null;
         _isLoading = false;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _error = 'We couldn\'t load alternate times. Please try again.';
+        _error = 'We couldn\'t load $_pro\'s open times. Please try again.';
       });
     }
   }
@@ -185,6 +247,7 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
       return;
     }
     setState(() => _isSubmitting = true);
+    final reason = _reasonController.text.trim();
     try {
       await HomeownerService.instance.performWorkOrderAction(
         workOrderId: widget.workOrderId,
@@ -192,14 +255,17 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
         extra: {
           'proposedStart': slot['start']?.toString() ?? '',
           'proposedEnd': slot['end']?.toString() ?? '',
-          'reason': _reasonController.text.trim().isEmpty
-              ? 'Homeowner requested reschedule'
-              : _reasonController.text.trim(),
+          // Optional (E03): sent only when the homeowner wrote one.
+          if (reason.isNotEmpty) 'reason': reason,
           'contractorId': widget.contractorId,
           'requester_user_id': AuthService.instance.userId,
         },
       );
       if (!mounted) return;
+      AppNotification.showSuccess(
+        context,
+        'Proposal sent. Your booked time stands until $_pro accepts.',
+      );
       Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
@@ -207,7 +273,7 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
       AppNotification.showError(
         context,
         error,
-        fallback: 'We couldn\'t send the reschedule request. Please try again.',
+        fallback: 'We couldn\'t send your proposal. Please try again.',
       );
     }
   }
@@ -218,20 +284,27 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
     final slots = _selectedDate == null
         ? const <Map<String, dynamic>>[]
         : _slotsByDate[_selectedDate] ?? const <Map<String, dynamic>>[];
+    final ready = !_isLoading && _error == null && dates.isNotEmpty;
     return TransactionGuard(
       isProcessing: _isSubmitting,
-      blockedMessage:
-          'Please wait while your reschedule request is being sent.',
+      blockedMessage: 'Please wait while your proposal is being sent.',
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
-          foregroundColor: AppTheme.navy700,
+          scrolledUnderElevation: 0,
+          centerTitle: true,
+          foregroundColor: AppTheme.navy,
           title: Text(
-              widget.selectSlotOnly ? 'Choose a time' : 'Reschedule booking',
-              style:
-                  const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+            widget.selectSlotOnly ? 'Choose a time' : 'Reschedule booking',
+            style: AppTheme.headingStyle
+                .copyWith(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Divider(height: 1, color: AppTheme.cardBorder),
+          ),
         ),
         body: SafeArea(
           top: false,
@@ -242,134 +315,345 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
                   : dates.isEmpty
                       ? _ErrorState(
                           message:
-                              'No alternate times are available in the next 7 days.',
+                              'No open times in the next 7 days. Message $_pro to find another time.',
                           onRetry: _loadAvailability,
                         )
                       : ListView(
-                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                          children: [
-                            Text(
-                              _serviceName(widget.job),
-                              style: const TextStyle(
-                                color: AppTheme.navy700,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                                widget.selectSlotOnly
-                                    ? 'Choose a time to include with your cap approval.'
-                                    : 'Choose a new time, then send your request.',
-                                style: const TextStyle(
-                                    color: AppTheme.gray, fontSize: 13)),
-                            const SizedBox(height: 24),
-                            const Text('Select date', style: _labelStyle),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              height: 44,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: dates.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 8),
-                                itemBuilder: (_, index) {
-                                  final date = dates[index];
-                                  final selected = date == _selectedDate;
-                                  return ChoiceChip(
-                                    label: Text(_dateLabel(date)),
-                                    selected: selected,
-                                    selectedColor: AppTheme.navy,
-                                    backgroundColor: AppTheme.pageBackground,
-                                    labelStyle: TextStyle(
-                                      color: selected
-                                          ? Colors.white
-                                          : AppTheme.navy700,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                    onSelected: (_) => setState(() {
-                                      _selectedDate = date;
-                                      _selectedSlot = _slotsByDate[date]!.first;
-                                    }),
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            const Text('Select time', style: _labelStyle),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: slots.map((slot) {
-                                final selected = identical(
-                                        slot, _selectedSlot) ||
-                                    (slot['start'] == _selectedSlot?['start']);
-                                return ChoiceChip(
-                                  label: Text(_timeLabel(
-                                      slot['start']?.toString() ?? '')),
-                                  selected: selected,
-                                  selectedColor: AppTheme.navy,
-                                  backgroundColor: AppTheme.pageBackground,
-                                  labelStyle: TextStyle(
-                                    color: selected
-                                        ? Colors.white
-                                        : AppTheme.navy700,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                  onSelected: (_) =>
-                                      setState(() => _selectedSlot = slot),
-                                );
-                              }).toList(),
-                            ),
-                            if (!widget.selectSlotOnly) ...[
-                              const SizedBox(height: 24),
-                              const Text('Reason for rescheduling',
-                                  style: _labelStyle),
-                              const SizedBox(height: 10),
-                              TextField(
-                                controller: _reasonController,
-                                maxLines: 3,
-                                textCapitalization:
-                                    TextCapitalization.sentences,
-                                decoration: InputDecoration(
-                                  hintText:
-                                      'Tell the pro why you need another time',
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 28),
-                            SizedBox(
-                              height: 52,
-                              child: ElevatedButton(
-                                onPressed:
-                                    _selectedSlot == null || _isSubmitting
-                                        ? null
-                                        : _submit,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.orange500,
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: _isSubmitting
-                                    ? const SizedBox(
-                                        height: 22,
-                                        width: 22,
-                                        child: CircularProgressIndicator(
-                                            color: Colors.white,
-                                            strokeWidth: 2),
-                                      )
-                                    : Text(
-                                        widget.selectSlotOnly
-                                            ? 'Use this time'
-                                            : 'Send reschedule request',
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.w800)),
-                              ),
-                            ),
-                          ],
+                          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                          children: widget.selectSlotOnly
+                              ? _repairWindowContent(dates, slots)
+                              : _proposalContent(dates, slots),
                         ),
+        ),
+        bottomNavigationBar: ready ? _actionBar() : null,
+      ),
+    );
+  }
+
+  /// E03: propose a new window for a Standard, Booked visit.
+  List<Widget> _proposalContent(
+      List<String> dates, List<Map<String, dynamic>> slots) {
+    final bookedStart = jobVisitStart(_job)?.toLocal();
+    final bookedEnd = jobVisitEnd(_job)?.toLocal();
+    final title = [jobServiceName(_job), workOrderLabel(_job)]
+        .where((part) => part.isNotEmpty)
+        .join(' · ');
+    return [
+      Text(title, style: _titleStyle),
+      const SizedBox(height: 4),
+      Text(
+        'Choose a new 2-hour window from $_pro’s open time, then send your proposal.',
+        style: _metaStyle,
+      ),
+      if (bookedStart != null) ...[
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.subtle,
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your booked time',
+                style: TextStyle(
+                  color: AppTheme.body,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(formatVisit(bookedStart, bookedEnd), style: _titleStyle),
+              const SizedBox(height: 4),
+              Text(
+                'It stands until $_pro accepts your new time.',
+                style: const TextStyle(
+                  color: AppTheme.body,
+                  fontSize: 14,
+                  height: 20 / 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+      const SizedBox(height: 28),
+      Text('Select date', style: Theme.of(context).textTheme.headlineMedium),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: 44,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: dates.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (_, index) {
+            final date = dates[index];
+            return _choice(
+              selected: date == _selectedDate,
+              height: 44,
+              radius: 22,
+              onTap: () => _selectDate(date),
+              child: Text(_dateLabel(date),
+                  style: _choiceStyle(date == _selectedDate)),
+            );
+          },
+        ),
+      ),
+      const SizedBox(height: 28),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Expanded(
+            child: Text('Select time',
+                style: Theme.of(context).textTheme.headlineMedium),
+          ),
+          const Text(
+            '2-hour windows',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      _windowGrid(slots),
+      const SizedBox(height: 12),
+      Text(
+        'Times come from $_pro’s calendar. Pick another day to see more.',
+        style: const TextStyle(
+          color: AppTheme.textSecondary,
+          fontSize: 13,
+          height: 19 / 13,
+        ),
+      ),
+      const SizedBox(height: 28),
+      const Text('Reason for rescheduling (optional)', style: _labelStyle),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _reasonController,
+        minLines: 3,
+        maxLines: 5,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(
+          hintText: 'Tell the pro why you need another time',
+        ),
+      ),
+    ];
+  }
+
+  /// E01b: approving the cap books the repair window in the same step
+  /// (Oct 1, G-49).
+  List<Widget> _repairWindowContent(
+      List<String> dates, List<Map<String, dynamic>> slots) {
+    final cap = widget.capAmount;
+    final service = jobServiceName(_job);
+    final meta = [
+      workOrderLabel(_job),
+      if (cap != null) 'Cap ${formatUsd(cap)} not-to-exceed',
+    ].where((part) => part.isNotEmpty).join(' · ');
+    return [
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppTheme.cardBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                _ProTile(name: _pro),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('$service · $_pro', style: _titleStyle),
+                      if (meta.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(meta, style: _metaStyle),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (cap != null) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: AppTheme.cardBorder),
+              const SizedBox(height: 12),
+              Text(
+                'You’re approving a cap of ${formatUsd(cap)}',
+                style: const TextStyle(
+                  color: AppTheme.navy,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      const SizedBox(height: 24),
+      Text(
+        'Pick a 2-hour window for the repair. It’s booked on $_pro’s calendar.',
+        style: const TextStyle(color: AppTheme.body, fontSize: 16, height: 1.5),
+      ),
+      const SizedBox(height: 20),
+      const Text('Day', style: _labelStyle),
+      const SizedBox(height: 10),
+      SizedBox(
+        height: 60,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: dates.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (_, index) {
+            final date = dates[index];
+            final day = DateTime.parse(date);
+            final selected = date == _selectedDate;
+            return _choice(
+              selected: selected,
+              width: 92,
+              height: 60,
+              onTap: () => _selectDate(date),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    DateFormat('EEE').format(day),
+                    style: const TextStyle(
+                        color: AppTheme.textSecondary, fontSize: 13),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(DateFormat('MMM d').format(day),
+                      style: _choiceStyle(selected)),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+      const SizedBox(height: 20),
+      if (_selectedDate != null)
+        Text('Window · ${_dateLabel(_selectedDate!)}', style: _labelStyle),
+      const SizedBox(height: 10),
+      _windowGrid(slots),
+    ];
+  }
+
+  void _selectDate(String date) => setState(() {
+        _selectedDate = date;
+        _selectedSlot = null;
+      });
+
+  /// Two columns of "8:00–10:00 AM" windows; nothing preselected.
+  Widget _windowGrid(List<Map<String, dynamic>> slots) {
+    if (slots.isEmpty) {
+      return const Text('No open windows on this day.', style: _metaStyle);
+    }
+    final rows = <Widget>[];
+    for (var i = 0; i < slots.length; i += 2) {
+      rows.add(Padding(
+        padding: EdgeInsets.only(bottom: i + 2 < slots.length ? 10 : 0),
+        child: Row(
+          children: [
+            Expanded(child: _windowTile(slots[i])),
+            const SizedBox(width: 10),
+            Expanded(
+              child: i + 1 < slots.length
+                  ? _windowTile(slots[i + 1])
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      ));
+    }
+    return Column(children: rows);
+  }
+
+  Widget _windowTile(Map<String, dynamic> slot) {
+    final start = DateTime.parse('${slot['start']}').toLocal();
+    final end = DateTime.parse('${slot['end']}').toLocal();
+    final selected = slot['start'] == _selectedSlot?['start'];
+    return _choice(
+      selected: selected,
+      onTap: () => setState(() => _selectedSlot = slot),
+      child: Text(formatWindow(start, end), style: _choiceStyle(selected)),
+    );
+  }
+
+  /// v3.3 selection: blue border and tint when selected, grey border
+  /// otherwise (design standard rule 4).
+  Widget _choice({
+    required bool selected,
+    required VoidCallback onTap,
+    required Widget child,
+    double height = 48,
+    double? width,
+    double radius = 12,
+  }) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: _isSubmitting ? null : onTap,
+        borderRadius: BorderRadius.circular(radius),
+        child: Container(
+          width: width,
+          height: height,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.blueTint : Colors.white,
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: selected ? AppTheme.blue : AppTheme.border,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  TextStyle _choiceStyle(bool selected) => TextStyle(
+        color: AppTheme.navy,
+        fontSize: 15,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+      );
+
+  Widget _actionBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppTheme.cardBorder)),
+        boxShadow: AppTheme.floatShadow,
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: _selectedSlot == null || _isSubmitting ? null : _submit,
+            child: _isSubmitting
+                ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(
+                        color: AppTheme.onOrange, strokeWidth: 2),
+                  )
+                : Text(widget.selectSlotOnly
+                    ? 'Approve cap and book'
+                    : 'Send proposal'),
+          ),
         ),
       ),
     );
@@ -377,10 +661,57 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
 }
 
 const _labelStyle = TextStyle(
-  color: AppTheme.navy700,
-  fontWeight: FontWeight.w800,
+  color: AppTheme.navy,
+  fontWeight: FontWeight.w600,
   fontSize: 14,
 );
+
+const _titleStyle = TextStyle(
+  color: AppTheme.navy,
+  fontWeight: FontWeight.w600,
+  fontSize: 16,
+);
+
+const _metaStyle = TextStyle(
+  color: AppTheme.textSecondary,
+  fontSize: 14,
+  height: 20 / 14,
+);
+
+/// Pro initials on a navy tile, 12px radius (design standard rule 10).
+class _ProTile extends StatelessWidget {
+  const _ProTile({required this.name});
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = name
+        .split(RegExp(r'\s+'))
+        .where((part) =>
+            part.isNotEmpty && RegExp(r'[A-Za-z0-9]').hasMatch(part[0]))
+        .map((part) => part[0])
+        .take(2)
+        .join()
+        .toUpperCase();
+    return Container(
+      width: 48,
+      height: 48,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppTheme.navy,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+      ),
+      child: Text(
+        initials.isEmpty ? 'P' : initials,
+        style: AppTheme.headingStyle.copyWith(
+          color: Colors.white,
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
 
 class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.message, required this.onRetry});
@@ -393,12 +724,14 @@ class _ErrorState extends StatelessWidget {
           padding: const EdgeInsets.all(28),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.event_busy_outlined,
-                size: 40, color: AppTheme.gray),
+                size: 40, color: AppTheme.textSecondary),
             const SizedBox(height: 12),
             Text(message,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                    color: AppTheme.navy700, fontWeight: FontWeight.w600)),
+                    color: AppTheme.navy,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600)),
             const SizedBox(height: 16),
             OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
           ]),
@@ -406,41 +739,11 @@ class _ErrorState extends StatelessWidget {
       );
 }
 
-String _dateKey(DateTime date) => date.toIso8601String().split('T').first;
+/// "2026-10-14", in the phone's local time.
+String _dateKey(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
 
-String _dateLabel(String value) {
-  final date = DateTime.tryParse(value);
-  if (date == null) return value;
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec'
-  ];
-  return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
+/// "Wed, Oct 14".
+String _dateLabel(String key) {
+  final date = DateTime.tryParse(key);
+  return date == null ? key : DateFormat('EEE, MMM d').format(date);
 }
-
-String _timeLabel(String value) {
-  final time = DateTime.tryParse(value);
-  if (time == null) return value;
-  final hour =
-      time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
-  final minute = time.minute.toString().padLeft(2, '0');
-  return '$hour:$minute ${time.hour >= 12 ? 'PM' : 'AM'}';
-}
-
-String _serviceName(Map<String, dynamic> job) => (job['serviceCategory'] ??
-        job['service_category'] ??
-        job['serviceName'] ??
-        job['service_name'] ??
-        'Your service')
-    .toString();

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
+import '../utils/display_format.dart';
 import '../widgets/app_notification.dart';
 import '../widgets/main_bottom_navigation.dart';
 import 'chat_screen.dart';
@@ -74,7 +75,44 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
         _addressText(_asMap(widget.workOrder?['address'])),
       );
 
-  String get _price => _text(widget.price, _workOrderPrice(widget.workOrder));
+  String get _price {
+    final raw = _text(widget.price, _workOrderPrice(widget.workOrder));
+    final amount = readAmount(raw);
+    return amount == null ? raw : formatUsd(amount);
+  }
+
+  double? get _creditsApplied => readAmount(
+        widget.workOrder?['creditsApplied'] ??
+            widget.workOrder?['credits_applied'] ??
+            widget.workOrder?['serviceCreditsApplied'] ??
+            widget.workOrder?['service_credits_applied'],
+      );
+
+  /// Only an Upfront-price booking knows its total when it's booked.
+  double? get _youPay {
+    final type = _text(widget.workOrder?['work_order_type'],
+        _text(widget.workOrder?['workOrderType'], 'rate_card'));
+    if (type != 'rate_card') return null;
+    final amount = readAmount(_price);
+    if (amount == null) return null;
+    final due = amount - (_creditsApplied ?? 0);
+    return due < 0 ? 0 : due;
+  }
+
+  /// The job's real level (Oct 1): Standard, Urgent or Emergency.
+  String get _urgencyLabel {
+    final p =
+        '${widget.workOrder?['priority'] ?? widget.workOrder?['urgency'] ?? ''}'
+            .toLowerCase();
+    if (p.contains('emergency')) return 'Emergency';
+    if (p.contains('urgent')) return 'Urgent';
+    return 'Standard';
+  }
+
+  String get _woNumber {
+    final value = widget.woNumber?.trim() ?? '';
+    return value.startsWith('#') ? value.substring(1) : value;
+  }
 
   String get _start => _text(
         widget.scheduledStart,
@@ -169,13 +207,9 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
           backgroundColor: Colors.white,
           elevation: 0,
           leading: IconButton(
-            tooltip: 'Back to browse',
+            tooltip: 'Back to search',
             onPressed: _finishToBrowse,
             icon: const Icon(Icons.arrow_back_rounded),
-          ),
-          title: const Text(
-            'Booking confirmed',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
         ),
         bottomNavigationBar: MainBottomNavigation(
@@ -204,24 +238,21 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
-                        'Booking confirmed!',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppTheme.navy700,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
                       Text(
-                        widget.woNumber?.trim().isNotEmpty == true
-                            ? 'Your work order #${widget.woNumber} has been created.'
+                        'Booking confirmed',
+                        textAlign: TextAlign.center,
+                        style: AppTheme.headingStyle.copyWith(fontSize: 26),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _woNumber.isNotEmpty
+                            ? 'Your work order $_woNumber has been created.'
                             : 'Your work order has been created.',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
-                          color: AppTheme.gray,
-                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                          fontSize: 15,
+                          height: 1.47,
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -237,46 +268,67 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                           children: [
                             Row(
                               children: [
-                                Expanded(
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.navy,
+                                    borderRadius:
+                                        BorderRadius.circular(AppTheme.radius),
+                                  ),
                                   child: Text(
-                                    _proName,
-                                    style: const TextStyle(
-                                      color: AppTheme.navy700,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
+                                    _proName
+                                        .split(RegExp(r'\s+'))
+                                        .where((part) => part.isNotEmpty)
+                                        .take(2)
+                                        .map((part) => part[0].toUpperCase())
+                                        .join(),
+                                    style: AppTheme.headingStyle.copyWith(
+                                      color: Colors.white,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ),
-                                if (trade.isNotEmpty)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.tealTint,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      trade,
-                                      style: const TextStyle(
-                                        color: AppTheme.teal500,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _proName,
+                                        style: AppTheme.headingStyle.copyWith(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
-                                    ),
+                                      if (trade.isNotEmpty)
+                                        Text(
+                                          trade,
+                                          style: const TextStyle(
+                                            color: AppTheme.body,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                    ],
                                   ),
+                                ),
                               ],
                             ),
                             const Divider(
-                                height: 25, color: AppTheme.cardBorder),
-                            _detailBlock('SERVICE', _serviceName),
-                            const SizedBox(height: 12),
+                                height: 29, color: AppTheme.cardBorder),
+                            _detailBlock('Service', _serviceName),
+                            const SizedBox(height: 14),
                             _detailBlock(
-                                'SCHEDULED', _formatSchedule(_start, _end)),
+                              'Scheduled',
+                              _formatSchedule(_start, _end),
+                              meta: _urgencyLabel,
+                            ),
                             if (_address.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              _detailBlock('LOCATION', _address),
+                              const SizedBox(height: 14),
+                              _detailBlock('Location', _address),
                             ],
                             const Divider(
                                 height: 25, color: AppTheme.cardBorder),
@@ -302,30 +354,81 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                                 ),
                               ],
                             ),
+                            if ((_creditsApplied ?? 0) > 0) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Credits applied',
+                                      style: TextStyle(
+                                        color: AppTheme.purple,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '−${formatUsd(_creditsApplied!)}',
+                                    style: const TextStyle(
+                                      color: AppTheme.purple,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (_youPay != null) ...[
+                              const SizedBox(height: 14),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'You pay $_proName',
+                                      style: const TextStyle(
+                                        color: AppTheme.navy,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    formatUsd(_youPay!),
+                                    style: AppTheme.headingStyle
+                                        .copyWith(fontSize: 22),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                (_creditsApplied ?? 0) > 0
+                                    ? 'You pay your pro directly. TradeWorks funds the ${formatUsd(_creditsApplied!)} credit.'
+                                    : 'You pay your pro directly. TradeWorks adds no markup and takes no fee.',
+                                style: const TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 13,
+                                  height: 1.38,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
                         height: 44,
                         child: ElevatedButton(
                           onPressed:
                               _isOpeningWorkOrder ? null : _openWorkOrder,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.navy700,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
                           child: _isOpeningWorkOrder
                               ? const SizedBox(
                                   width: 20,
                                   height: 20,
                                   child: CircularProgressIndicator(
-                                    color: Colors.white,
+                                    color: AppTheme.onOrange,
                                     strokeWidth: 2,
                                   ),
                                 )
@@ -345,13 +448,6 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                         child: OutlinedButton(
                           onPressed:
                               _contractorId.isEmpty ? null : _openMessage,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppTheme.teal500,
-                            side: const BorderSide(color: AppTheme.teal500),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
                           child: Text(
                             'Message $_proName',
                             style: const TextStyle(
@@ -389,27 +485,33 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
     _finishToTab(index);
   }
 
-  Widget _detailBlock(String label, String value) {
+  Widget _detailBlock(String label, String value, {String? meta}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: AppTheme.textSecondary,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-          ),
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 2),
         Text(
           value,
           style: const TextStyle(
-            color: AppTheme.ink,
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
+            color: AppTheme.navy,
+            fontSize: 16,
+            height: 1.44,
+            fontWeight: FontWeight.w600,
           ),
         ),
+        if (meta != null && meta.isNotEmpty)
+          Text(
+            meta,
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
       ],
     );
   }
@@ -425,32 +527,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
     final end = DateTime.tryParse(endRaw)?.toLocal();
     if (start == null) return startRaw.isEmpty ? 'To be scheduled' : startRaw;
 
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final date = '${months[start.month - 1]} ${start.day}, ${start.year}';
-    final startTime = _formatTime(start);
-    if (end == null) return '$date - $startTime';
-    return '$date - $startTime-${_formatTime(end)}';
-  }
-
-  String _formatTime(DateTime value) {
-    var hour = value.hour % 12;
-    if (hour == 0) hour = 12;
-    final minute = value.minute.toString().padLeft(2, '0');
-    final period = value.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
+    return formatVisit(start, end);
   }
 
   Map<String, dynamic>? _findWorkOrder(

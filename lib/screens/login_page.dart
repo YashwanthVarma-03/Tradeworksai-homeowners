@@ -168,7 +168,7 @@ class _LoginPageState extends State<LoginPage> {
         hintText: hint,
         suffixIcon: suffix,
         filled: true,
-        fillColor: AppTheme.pageBackground,
+        fillColor: AppTheme.subtle,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
         border: OutlineInputBorder(
@@ -233,6 +233,9 @@ class _LoginPageState extends State<LoginPage> {
                           enabled: !_loading,
                           decoration: _field('••••••••',
                               suffix: IconButton(
+                                  tooltip: _obscure
+                                      ? 'Show password'
+                                      : 'Hide password',
                                   icon: Icon(
                                       _obscure
                                           ? Icons.visibility_off_outlined
@@ -244,31 +247,39 @@ class _LoginPageState extends State<LoginPage> {
                               ? 'Please enter your password'
                               : null),
                       Row(children: [
-                        Expanded(
-                            child: CheckboxListTile(
-                                value: _rememberMe,
-                                onChanged: _loading
-                                    ? null
-                                    : (value) => setState(
-                                        () => _rememberMe = value ?? true),
-                                controlAffinity:
-                                    ListTileControlAffinity.leading,
-                                contentPadding: EdgeInsets.zero,
-                                dense: true,
-                                activeColor: AppTheme.navy,
-                                title: const Text('Remember me',
-                                    style: TextStyle(
-                                        color: AppTheme.ink, fontSize: 13)))),
-                        TextButton(
+                        Checkbox(
+                          value: _rememberMe,
+                          onChanged: _loading
+                              ? null
+                              : (value) =>
+                                  setState(() => _rememberMe = value ?? true),
+                          activeColor: AppTheme.blue,
+                        ),
+                        const Flexible(
+                          child: Text(
+                            'Remember me',
+                            maxLines: 1,
+                            style: TextStyle(color: AppTheme.ink, fontSize: 13),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: TextButton(
                             onPressed: _loading
                                 ? null
                                 : () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
+                                      context,
+                                      MaterialPageRoute(
                                         builder: (_) =>
-                                            const PasswordResetPage())),
-                            child: const Text('Forgot password?',
-                                style: TextStyle(color: AppTheme.navy)))
+                                            const PasswordResetPage(),
+                                      ),
+                                    ),
+                            child: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Forgot password?'),
+                            ),
+                          ),
+                        ),
                       ]),
                       const SizedBox(height: 4),
                       SizedBox(
@@ -277,12 +288,12 @@ class _LoginPageState extends State<LoginPage> {
                               onPressed: _loading ? null : _submit,
                               style: ElevatedButton.styleFrom(
                                   backgroundColor: AppTheme.orange500,
-                                  foregroundColor: Colors.white,
+                                  foregroundColor: AppTheme.navy,
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14))),
                               child: _loading
                                   ? const CircularProgressIndicator(
-                                      color: Colors.white)
+                                      color: AppTheme.navy)
                                   : const Text('Log in',
                                       style: TextStyle(
                                           fontWeight: FontWeight.w900,
@@ -333,19 +344,16 @@ class _LoginPageState extends State<LoginPage> {
                                   side: const BorderSide(
                                       color: AppTheme.cardBorder)))),
                       const SizedBox(height: 80),
-                      Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text('Don’t have an account? ',
-                                style:
-                                    TextStyle(color: AppTheme.textSecondary)),
-                            InkWell(
-                                onTap: _loading ? null : _openSignup,
-                                child: const Text('Sign up',
-                                    style: TextStyle(
-                                        color: AppTheme.navy,
-                                        fontWeight: FontWeight.w900)))
-                          ]),
+                      Wrap(alignment: WrapAlignment.center, children: [
+                        const Text('Don’t have an account? ',
+                            style: TextStyle(color: AppTheme.textSecondary)),
+                        InkWell(
+                            onTap: _loading ? null : _openSignup,
+                            child: const Text('Sign up',
+                                style: TextStyle(
+                                    color: AppTheme.blue,
+                                    fontWeight: FontWeight.w900)))
+                      ]),
                     ])),
           ))),
         ),

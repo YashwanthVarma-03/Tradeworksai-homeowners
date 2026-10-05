@@ -474,9 +474,8 @@ class BrowseScreen extends StatelessWidget {
             onBookPro: (pro) async {
               final result = await Navigator.push<Object?>(
                 context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      BookFlowScreen(pro: Map<String, dynamic>.from(pro)),
+                BookFlowScreen.route<Object?>(
+                  pro: Map<String, dynamic>.from(pro),
                 ),
               );
               if (result == BookFlowExit.changeContractor) return;

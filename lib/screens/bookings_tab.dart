@@ -3,6 +3,7 @@ import '../widgets/review_annotations.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../utils/display_format.dart';
 import '../utils/work_order_status.dart';
 import '../theme.dart';
 import '../services/homeowner_service.dart';
@@ -539,65 +540,29 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   Widget _buildBookingsHeader() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
-      ),
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
       child: _buildHeaderControls(),
     );
   }
 
   Widget _buildHeaderControls() {
     return Container(
-      height: 44,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.pageBackground,
-        borderRadius: BorderRadius.circular(100),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final itemWidth = constraints.maxWidth / 2;
-          return Stack(
-            children: [
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                left: _activeSegment * itemWidth,
-                top: 0,
-                bottom: 0,
-                width: itemWidth,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppTheme.navy700,
-                    borderRadius: BorderRadius.circular(100),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 2,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  _buildSegmentTap(
-                    index: 0,
-                    label: 'Upcoming',
-                    count: _upcomingJobs.length,
-                  ),
-                  _buildSegmentTap(
-                    index: 1,
-                    label: 'History',
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
+      child: Row(
+        children: [
+          _buildSegmentTap(
+            index: 0,
+            label: 'Upcoming',
+            count: _upcomingJobs.length,
+          ),
+          _buildSegmentTap(
+            index: 1,
+            label: 'History',
+          ),
+        ],
       ),
     );
   }
@@ -609,46 +574,56 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   }) {
     final selected = _activeSegment == index;
     return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(40),
-        onTap: () => setState(() => _activeSegment = index),
-        child: Center(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 160),
-                style: TextStyle(
-                  color: selected ? Colors.white : AppTheme.textSecondary,
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                  height: 1,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        child: InkWell(
+          onTap: () => setState(() => _activeSegment = index),
+          child: Container(
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: selected ? AppTheme.blue : Colors.transparent,
+                  width: 2,
                 ),
-                child: Text(label),
               ),
-              if (selected && count != null && count > 0) ...[
-                const SizedBox(width: 6),
-                Container(
-                  width: 20,
-                  height: 20,
-                  alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.navy,
-                    shape: BoxShape.circle,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? AppTheme.blue : AppTheme.body,
+                    fontSize: 15,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                   ),
-                  child: Text(
-                    count.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      height: 1,
+                ),
+                if (selected && count != null && count > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    constraints: const BoxConstraints(minWidth: 20),
+                    height: 20,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppTheme.blueTint,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(
+                        color: AppTheme.blue,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -657,7 +632,10 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
 
   Widget _buildJobsList() {
     if (_isLoading) {
-      return const SkeletonPage(label: 'Loading bookings');
+      return const SkeletonPage(
+        layout: SkeletonLayout.bookings,
+        label: 'Loading bookings',
+      );
     }
 
     if (_errorMessage != null) {
@@ -741,7 +719,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     for (var i = 0; i < jobs.length; i++) {
       final job = jobs[i];
       if (i > 0 && _isTomorrow(job) && !_isTomorrow(jobs[i - 1])) {
-        items.add(const _BookingSectionLabel('TOMORROW'));
+        items.add(const _BookingSectionLabel('Tomorrow'));
       }
       items.add(_buildUpcomingJobCard(job));
       if (i != jobs.length - 1) {
@@ -758,21 +736,17 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       (_isLastWeek(job) ? lastWeek : earlier).add(job);
     }
 
-    final visibleLastWeek = lastWeek.isEmpty && earlier.isNotEmpty
-        ? earlier.take(2).toList()
-        : lastWeek;
-    final visibleEarlier = lastWeek.isEmpty && earlier.length > 2
-        ? earlier.skip(2).toList()
-        : earlier;
-
+    // Each job sits in the bucket its own date puts it in — never moved up
+    // to fill an empty "Last week".
     return [
-      if (visibleLastWeek.isNotEmpty) ...[
-        const _BookingSectionLabel('LAST WEEK'),
-        ..._withSpacing(visibleLastWeek.map(_buildHistoryJobCard)),
+      if (lastWeek.isNotEmpty) ...[
+        const _BookingSectionLabel('Last week'),
+        ..._withSpacing(lastWeek.map(_buildHistoryJobCard)),
       ],
-      if (visibleEarlier.isNotEmpty) ...[
-        const _BookingSectionLabel('EARLIER'),
-        ..._withSpacing(visibleEarlier.map(_buildHistoryJobCard)),
+      if (earlier.isNotEmpty) ...[
+        if (lastWeek.isNotEmpty) const SizedBox(height: 12),
+        const _BookingSectionLabel('Earlier'),
+        ..._withSpacing(earlier.map(_buildHistoryJobCard)),
       ],
     ];
   }
@@ -792,8 +766,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   Widget _buildUpcomingJobCard(Map<String, dynamic> job) {
     final status = job['status']?.toString() ?? 'Active';
     final statusLower = status.toLowerCase();
-    final isAlert =
-        statusLower.contains('quote') || statusLower.contains('review');
+    final isAlert = WorkOrderStatus.capPending(job);
     final resolved = WorkOrderStatus.fromJob(job);
     final isLive = resolved.state == WorkOrderState.enRoute ||
         resolved.state == WorkOrderState.inProgress;
@@ -924,23 +897,21 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Flexible(
-                child: Text(
-                  proName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 14,
-                    height: 1.1,
-                    fontWeight: FontWeight.w900,
-                  ),
+              Text(
+                proName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppTheme.navy,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(width: 6),
-              _buildPriorityBadge(priority),
+              const SizedBox(height: 2),
+              _urgencyMeta(priority),
             ],
           ),
         ),
@@ -948,30 +919,48 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildPriorityBadge(String priority) {
-    final urgent = priority.toLowerCase().contains('urgent');
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: urgent ? AppTheme.blueTint : AppTheme.pageBackground,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        urgent ? 'URGENT' : 'STANDARD',
+  /// The job's real level under the pro name (Oct 1): Standard in grey,
+  /// Urgent / Emergency in red with a clock.
+  Widget _urgencyMeta(String priority) {
+    final p = priority.toLowerCase();
+    final level = p.contains('emergency')
+        ? 'Emergency'
+        : p.contains('urgent')
+            ? 'Urgent'
+            : 'Standard';
+    if (level == 'Standard') {
+      return const Text(
+        'Standard',
         style: TextStyle(
-          color: urgent ? AppTheme.teal500 : AppTheme.textSecondary,
-          fontSize: 9,
-          fontWeight: FontWeight.w900,
-          height: 1,
+          color: AppTheme.textSecondary,
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
         ),
-      ),
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.schedule_rounded, size: 14, color: AppTheme.red),
+        const SizedBox(width: 4),
+        Text(
+          level,
+          style: const TextStyle(
+            color: AppTheme.red,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildStatusBadge(Map<String, dynamic> job) {
     final resolved = WorkOrderStatus.fromJob(job);
-    return Wrap(spacing: 6, runSpacing: 6, children: [
-      WorkOrderStatusChip(resolved),
+    // Booked is the default and is not shown on rows (design standard v3.3).
+    return Wrap(spacing: 12, runSpacing: 6, children: [
+      if (resolved.state != WorkOrderState.booked)
+        WorkOrderStatusChip(resolved),
       if (resolved.waitingOnYou) const WaitingOnYouChip(),
     ]);
   }
@@ -998,20 +987,33 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       );
 
   Widget _buildScheduledActions(Map<String, dynamic> job) {
+    // Only Standard bookings can be rescheduled, and only while Booked
+    // (Sep 30). Urgent and Emergency are a 24h / 4h commitment.
+    final level = _jobPriority(job).toLowerCase();
+    final canReschedule = !level.contains('urgent') &&
+        !level.contains('emergency') &&
+        WorkOrderStatus.fromJob(job).state == WorkOrderState.booked;
     return Row(
       children: [
-        Expanded(
-          child: _buildOutlineAction(
-            label: 'Reschedule',
-            onPressed: () => _openReschedule(job),
+        if (canReschedule)
+          Expanded(
+            child: _buildOutlineAction(
+              label: 'Reschedule',
+              onPressed: () => _openReschedule(job),
+            ),
+          )
+        else
+          const Spacer(),
+        const SizedBox(width: 16),
+        TextButton(
+          onPressed: () => _cancelDialog(job),
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.red,
+            minimumSize: const Size(88, 44),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildOutlineAction(
-            label: 'Cancel',
-            color: AppTheme.error,
-            onPressed: () => _cancelDialog(job),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -1191,6 +1193,10 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             icon: Icons.location_on_outlined,
             label: address,
           ),
+          if (WorkOrderStatus.receiptPending(job)) ...[
+            const SizedBox(height: 12),
+            _buildReceiptRow(job),
+          ],
           const SizedBox(height: 12),
           _buildHistoryActions(
             job,
@@ -1198,6 +1204,84 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             reviewRating: reviewRating,
             reviewText: reviewText,
             isCancelled: isCancelled,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// D02: the paid receipt is owed on a completed job — Waiting on you
+  /// (Oct 1, G-46). Upload opens the work order at its money section.
+  Widget _buildReceiptRow(Map<String, dynamic> job) {
+    final earn =
+        readAmount(job['receiptRewardAmount'] ?? job['receipt_reward_amount']);
+    return Container(
+      padding: const EdgeInsets.only(top: 12),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: AppTheme.cardBorder)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: AppTheme.amberTint,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.upload_rounded,
+                size: 18, color: AppTheme.amber),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Upload your receipt',
+                  style: TextStyle(
+                    color: AppTheme.navy,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text.rich(
+                  TextSpan(
+                    style: const TextStyle(
+                      color: AppTheme.body,
+                      fontSize: 14,
+                      height: 1.43,
+                    ),
+                    children: [
+                      if (earn != null && earn > 0) ...[
+                        const TextSpan(text: 'Earn '),
+                        TextSpan(
+                          text: formatUsd(earn),
+                          style: const TextStyle(
+                            color: AppTheme.purple,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const TextSpan(text: ' in credits on this job.'),
+                      ] else
+                        const TextSpan(text: 'Earn credits on this job.'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    WorkOrderDetailScreen(job: job, focusMoney: true),
+              ),
+            ).then((_) => _fetchJobs(showLoading: false)),
+            child: const Text('Upload'),
           ),
         ],
       ),
@@ -1453,11 +1537,19 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         start.day == tomorrow.day;
   }
 
+  /// Within the last 7 calendar days, by completion date when there is one.
   bool _isLastWeek(Map<String, dynamic> job) {
-    final start = _parseDateTime(job['scheduledStart']?.toString());
-    if (start == null) return false;
+    final timeline = job['timeline'];
+    final raw = (timeline is Map ? timeline['completedAt'] : null) ??
+        job['completedAt'] ??
+        job['completed_at'] ??
+        job['scheduledStart'];
+    final date = _parseDateTime(raw?.toString())?.toLocal();
+    if (date == null) return false;
     final now = DateTime.now();
-    final days = now.difference(start).inDays;
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(date.year, date.month, date.day);
+    final days = today.difference(day).inDays;
     return days >= 0 && days <= 7;
   }
 
@@ -1518,9 +1610,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     if (end == null) return _clockLabel(start);
     final samePeriod = (start.hour >= 12) == (end.hour >= 12);
     if (samePeriod && start.minute == 0 && end.minute == 0) {
-      return '${_hourLabel(start)}-${_clockLabel(end)}';
+      return '${_hourLabel(start)}–${_clockLabel(end)}';
     }
-    return '${_clockLabel(start)}-${_clockLabel(end)}';
+    return '${_clockLabel(start)}–${_clockLabel(end)}';
   }
 
   String _hourLabel(DateTime date) {
@@ -1549,13 +1641,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       'price',
     ]) {
       final value = job[key];
-      if (value is num) {
-        return '\$${value % 1 == 0 ? value.toInt() : value.toStringAsFixed(2)}';
-      }
+      if (value is num) return formatUsd(value);
       final parsed = num.tryParse(value?.toString() ?? '');
-      if (parsed != null) {
-        return '\$${parsed % 1 == 0 ? parsed.toInt() : parsed.toStringAsFixed(2)}';
-      }
+      if (parsed != null) return formatUsd(parsed);
     }
     return null;
   }
@@ -1572,12 +1660,10 @@ class _BookingSectionLabel extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 16),
       child: Text(
         label,
-        style: const TextStyle(
-          color: AppTheme.textSecondary,
-          fontSize: 12,
-          height: 1,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 2.2,
+        style: AppTheme.headingStyle.copyWith(
+          fontSize: 20,
+          height: 1.3,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

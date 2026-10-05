@@ -47,7 +47,8 @@ void main() {
     expect(prefs.getString('selected_service_location_name'), isNull);
   });
 
-  test('clear requests a primary-address refresh without an override', () async {
+  test('clear requests a primary-address refresh without an override',
+      () async {
     var notifications = 0;
     void listener() => notifications++;
     ServiceLocation.selected.addListener(listener);

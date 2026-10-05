@@ -203,6 +203,43 @@ void main() {
             }));
     expect(called, isFalse);
   });
+  test('existing review details load through the legacy gateway fallback',
+      () async {
+    final paths = <String>[];
+    await http.runWithClient(() async {
+      final review = await HomeownerService.instance.getReview(8765);
+      expect(review, isNotNull);
+      expect(review!['rating'], 4.0);
+      expect(review['reviewText'], 'Careful work and a clean finish.');
+      expect(review['tags'], ['Clean work']);
+    },
+        () => MockClient((request) async {
+              paths.add(request.url.path);
+              final body = jsonDecode(request.body) as Map<String, dynamic>;
+              expect(body['action'], 'get_review');
+              expect(body['requesterUserId'], 'test-homeowner');
+              if (request.url.path == '/homeowner/review-action') {
+                return http.Response(
+                  '{"success":false,"error":"not_found"}',
+                  404,
+                );
+              }
+              return http.Response(
+                  jsonEncode({
+                    'success': true,
+                    'review': {
+                      'id': 42,
+                      'work_order_id': 8765,
+                      'rating': 4,
+                      'review_text': 'Careful work and a clean finish.',
+                      'tags': ['Clean work']
+                    }
+                  }),
+                  200);
+            }));
+    expect(paths,
+        ['/homeowner/review-action', '/homeowner-review-action-v2-supabase']);
+  });
   test('legacy home-profile success cannot claim extended fields were saved',
       () async {
     await http.runWithClient(() async {
@@ -240,6 +277,7 @@ void main() {
       () async {
     final paths = <String>[];
     final bytes = [37, 80, 68, 70];
+    final syncBefore = HomeownerService.instance.syncVersion.value;
     await http.runWithClient(() async {
       final document = await HomeownerService.instance
           .uploadWorkOrderReceipt(workOrderId: 101, file: {
@@ -287,6 +325,7 @@ void main() {
       'PUT /receipt',
       'POST /homeowner/work-orders/101/receipt/complete'
     ]);
+    expect(HomeownerService.instance.syncVersion.value, syncBefore + 1);
   });
 
   test('failed storage upload never confirms a receipt', () async {

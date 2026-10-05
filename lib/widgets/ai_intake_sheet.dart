@@ -377,7 +377,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                       _isSubmitting || _isUploadingPhoto ? null : _submit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.orange500,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppTheme.navy,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -605,7 +605,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                               : Icons.camera_alt_outlined,
                           size: 18,
                         ),
-                        label: Text(kIsWeb ? 'Upload Photo' : 'Take Photo'),
+                        label: Text(kIsWeb ? 'Upload photo' : 'Take photo'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.navy700,
                           side: const BorderSide(color: AppTheme.line),
@@ -624,7 +624,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                             : () => _pickPhoto(ImageSource.gallery),
                         icon:
                             const Icon(Icons.photo_library_outlined, size: 18),
-                        label: Text(kIsWeb ? 'Choose File' : 'Gallery'),
+                        label: Text(kIsWeb ? 'Choose file' : 'Gallery'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.navy700,
                           side: const BorderSide(color: AppTheme.line),

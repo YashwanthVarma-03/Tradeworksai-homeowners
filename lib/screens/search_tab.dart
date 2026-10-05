@@ -17,8 +17,10 @@ import '../services/stream_service.dart';
 import '../theme.dart';
 import '../utils/app_error_utils.dart';
 import '../utils/service_search_matcher.dart';
+import '../utils/display_format.dart';
 import '../widgets/ai_intake_sheet.dart';
 import '../widgets/app_notification.dart';
+import '../widgets/capsules.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/service_zip_entry_dialog.dart';
 import '../widgets/service_search_bar.dart';
@@ -82,7 +84,7 @@ class _SearchTabState extends State<SearchTab> {
   final Map<String, String> _liveNextSlotLabels = {};
   final List<String> _compareIds = [];
 
-  _BrowseView _view = _BrowseView.browse;
+  _BrowseView _view = _BrowseView.searchFocused;
   String? _bookingDescription;
   String? _descriptionCategory;
   String _selectedCategory = 'All';
@@ -98,6 +100,45 @@ class _SearchTabState extends State<SearchTab> {
   LazyResults<_BrowsePro>? _proPages;
   bool _isLoadingMore = false;
   String? _loadMoreError;
+  bool _preserveSearchViewOnUnfocus = false;
+  double? _maxDistanceFilter;
+  double? _minRatingFilter;
+  String? _priceTypeFilter;
+
+  bool get _hasActiveFilters =>
+      _maxDistanceFilter != null ||
+      _minRatingFilter != null ||
+      _priceTypeFilter != null;
+
+  int get _activeFilterCount => [
+        _maxDistanceFilter,
+        _minRatingFilter,
+        _priceTypeFilter,
+      ].where((value) => value != null).length;
+
+  List<_BrowsePro> get _filteredLivePros {
+    if (!_hasActiveFilters) return _livePros;
+    return _livePros.where((pro) {
+      final maxDistance = _maxDistanceFilter;
+      if (maxDistance != null &&
+          (pro.distanceMiles <= 0 || pro.distanceMiles > maxDistance)) {
+        return false;
+      }
+      final minRating = _minRatingFilter;
+      if (minRating != null && pro.rating < minRating) return false;
+      final priceType = _priceTypeFilter;
+      if (priceType != null && pro.workOrderType != priceType) return false;
+      return true;
+    }).toList(growable: false);
+  }
+
+  int get _availableProsCount {
+    if (_hasActiveFilters) return _filteredLivePros.length;
+    if (_selectedCategory == 'All') {
+      return _allProsCount > 0 ? _allProsCount : _livePros.length;
+    }
+    return _categoryCounts[_selectedCategory] ?? _livePros.length;
+  }
 
   @override
   void initState() {
@@ -277,11 +318,6 @@ class _SearchTabState extends State<SearchTab> {
 
       if (widget.initialCategory != null && widget.initialCategory != 'All') {
         await _runCategorySearch(widget.initialCategory!);
-        return;
-      }
-
-      if (_selectedCategory == 'All' && !widget.initialAllShowsCategories) {
-        await _runAllServicesSearch();
         return;
       }
 
@@ -639,6 +675,11 @@ class _SearchTabState extends State<SearchTab> {
 
   void _handleFocusChange() {
     if (!mounted) return;
+    if (!_searchFocusNode.hasFocus && _preserveSearchViewOnUnfocus) {
+      _preserveSearchViewOnUnfocus = false;
+      setState(() {});
+      return;
+    }
     setState(() {
       if (_searchFocusNode.hasFocus) {
         if (_searchController.text.trim().isEmpty) {
@@ -658,6 +699,12 @@ class _SearchTabState extends State<SearchTab> {
         _view = _BrowseView.browse;
       }
     });
+  }
+
+  void _dismissSearchKeyboard() {
+    if (!_searchFocusNode.hasFocus) return;
+    _preserveSearchViewOnUnfocus = true;
+    _searchFocusNode.unfocus();
   }
 
   Future<void> _applyLocationInput(
@@ -855,6 +902,7 @@ class _SearchTabState extends State<SearchTab> {
     ]);
     await _loadProPage(requestToken,
         initial: true, keepCatalogue: keepAllServicesListVisible);
+    if (_hasActiveFilters) await _loadAllProsForFilters();
     _queueSelectedRailVisibility();
   }
 
@@ -996,6 +1044,7 @@ class _SearchTabState extends State<SearchTab> {
           urgency: urgency),
     ]);
     await _loadProPage(requestToken, initial: true);
+    if (_hasActiveFilters) await _loadAllProsForFilters();
   }
 
   Future<List<_BrowsePro>> _fetchProCategory(
@@ -1090,7 +1139,10 @@ class _SearchTabState extends State<SearchTab> {
           ),
           if (_isLoadingResults)
             const SliverToBoxAdapter(
-                child: LoadingSkeleton(label: 'Loading pros'))
+                child: LoadingSkeleton(
+              layout: SkeletonLayout.results,
+              label: 'Loading pros',
+            ))
           else if (_resultsError != null)
             SliverToBoxAdapter(child: _buildInlineState(_resultsError!))
           else ...[
@@ -1107,8 +1159,11 @@ class _SearchTabState extends State<SearchTab> {
             ),
             if (_isLoadingMore)
               const SliverToBoxAdapter(
-                  child:
-                      LoadingSkeleton(itemCount: 1, label: 'Loading more pros'))
+                  child: LoadingSkeleton(
+                layout: SkeletonLayout.results,
+                itemCount: 1,
+                label: 'Loading more pros',
+              ))
             else if (_loadMoreError != null || hasMore)
               SliverToBoxAdapter(
                   child: Padding(
@@ -1834,7 +1889,8 @@ class _SearchTabState extends State<SearchTab> {
       'business_name': pro.name,
       'verifiedRating': pro.rating,
       'verifiedCount': pro.reviews,
-      'workOrderType': 'rate_card',
+      'workOrderType':
+          pro.workOrderType.isEmpty ? 'rate_card' : pro.workOrderType,
       'fromPrice': pro.price,
       'selectedCertified': pro.selectedCertified,
       'category': pro.category,
@@ -1882,8 +1938,11 @@ class _SearchTabState extends State<SearchTab> {
       MaterialPageRoute(
         builder: (_) => CompareProsScreen(
           contractorIds: List<String>.from(_compareIds),
-          serviceLabel:
-              _selectedCategory == 'All' ? _committedQuery : _selectedCategory,
+          // The service the homeowner searched ("AC repair"), so Compare's
+          // context line and Price row use it (Oct 1 G-48).
+          serviceLabel: (_committedQuery?.trim().isNotEmpty ?? false)
+              ? _committedQuery!.trim()
+              : (_selectedCategory == 'All' ? null : _selectedCategory),
           zip: _selectedZip,
         ),
       ),
@@ -1939,7 +1998,7 @@ class _SearchTabState extends State<SearchTab> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppTheme.pageBackground,
+        color: AppTheme.white,
         border: Border.all(color: AppTheme.cardBorder),
         borderRadius: BorderRadius.circular(10),
       ),
@@ -1953,7 +2012,7 @@ class _SearchTabState extends State<SearchTab> {
           onPressed: ready ? _openCompare : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.orange,
-            foregroundColor: Colors.white,
+            foregroundColor: AppTheme.navy,
           ),
           child: const Text('Compare'),
         ),
@@ -1964,14 +2023,17 @@ class _SearchTabState extends State<SearchTab> {
   @override
   Widget build(BuildContext context) {
     if (_isInitializing) {
-      return const SkeletonPage(label: 'Loading nearby services');
+      return const SkeletonPage(
+        layout: SkeletonLayout.browse,
+        label: 'Loading nearby services',
+      );
     }
 
     if (_selectedZip.isEmpty) {
       return _buildZipRequired();
     }
 
-    final visiblePros = _livePros;
+    final visiblePros = _filteredLivePros;
     final searchQuery = _searchController.text.trim();
     final activeTypeAhead = _matchesQuery(searchQuery);
 
@@ -1987,14 +2049,15 @@ class _SearchTabState extends State<SearchTab> {
         body = _buildTypeAhead(activeTypeAhead);
         break;
       case _BrowseView.results:
-        body = _buildResults(_livePros);
+        body = _buildResults(visiblePros);
         break;
       case _BrowseView.noCoverage:
         body = _buildNoCoverage();
         break;
       case _BrowseView.browse:
       default:
-        body = (visiblePros.isEmpty &&
+        body = (!_hasActiveFilters &&
+                visiblePros.isEmpty &&
                 !_isLoadingResults &&
                 _resultsError == null &&
                 _loadMoreError == null &&
@@ -2073,18 +2136,8 @@ class _SearchTabState extends State<SearchTab> {
         const SizedBox(height: 12),
         _buildRail(_allCategories),
         const SizedBox(height: 16),
-        Text(
-          '${visiblePros.length} pros loaded for $_selectedZip',
-          style: const TextStyle(
-            color: AppTheme.navy,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-            "We show your pros in a random order. TradeWorks doesn't rank them.",
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+        ..._resultsHeader(_availableProsCount),
+        _buildFilterBar(),
         const SizedBox(height: 12),
         _compareTray(),
       ],
@@ -2103,33 +2156,34 @@ class _SearchTabState extends State<SearchTab> {
           if (nextZip != null) await _applyLocationInput(nextZip);
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
-            color: AppTheme.blueTint,
+            color: AppTheme.white,
             borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: AppTheme.border),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(
                 Icons.location_on,
-                color: AppTheme.teal500,
-                size: 12,
+                color: AppTheme.navy,
+                size: 20,
               ),
               const SizedBox(width: 6),
               Text(
                 _locationChipLabel,
                 style: const TextStyle(
                   color: AppTheme.navy700,
-                  fontSize: 12,
+                  fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(width: 2),
               const Icon(
                 Icons.keyboard_arrow_down_rounded,
-                color: AppTheme.teal500,
-                size: 16,
+                color: AppTheme.navy,
+                size: 20,
               ),
             ],
           ),
@@ -2191,28 +2245,32 @@ class _SearchTabState extends State<SearchTab> {
 
   Widget _buildSearchFocused() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       children: [
         _buildSearchInputPill(),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         _buildCompactLocationChip(),
-        const SizedBox(height: 18),
-        _buildSectionHeader('Recent searches'),
-        const SizedBox(height: 10),
-        ..._recentSearches.map((term) => _buildListChipRow(
-              title: term,
-              trailing: 'Recent',
-              onTap: () {
-                _searchController.text = term;
-                _searchController.selection = TextSelection.collapsed(
-                  offset: term.length,
-                );
-                _submitSearch(term);
-              },
-            )),
-        const SizedBox(height: 18),
+        if (_recentSearches.isNotEmpty) ...[
+          const SizedBox(height: 30),
+          _buildSectionHeader('Recent searches'),
+          const SizedBox(height: 12),
+          ..._recentSearches.take(3).map((term) => _buildListChipRow(
+                title: term,
+                trailing: '',
+                leading: Icons.history_rounded,
+                showChevron: true,
+                onTap: () {
+                  _searchController.text = term;
+                  _searchController.selection = TextSelection.collapsed(
+                    offset: term.length,
+                  );
+                  _submitSearch(term);
+                },
+              )),
+        ],
+        const SizedBox(height: 28),
         _buildSectionHeader('Popular services'),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         ..._serviceCatalog.take(8).map((service) => _buildListChipRow(
               title: service.name,
               trailing: service.category,
@@ -2224,12 +2282,12 @@ class _SearchTabState extends State<SearchTab> {
                 _submitSearch(service.name);
               },
             )),
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
         InkWell(
           onTap: _openAllCategories,
           borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
             decoration: BoxDecoration(
               color: AppTheme.pageBackground,
               borderRadius: BorderRadius.circular(12),
@@ -2238,14 +2296,17 @@ class _SearchTabState extends State<SearchTab> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
+                const Icon(Icons.grid_view_rounded, color: AppTheme.navy),
+                const SizedBox(width: 14),
+                Expanded(
+                    child: Text(
                   'Browse all ${_allCategories.length} categories',
                   style: const TextStyle(
                     color: AppTheme.navy700,
                     fontWeight: FontWeight.w600,
                   ),
-                ),
-                Icon(Icons.chevron_right, color: AppTheme.gray),
+                )),
+                const Icon(Icons.chevron_right, color: AppTheme.textTertiary),
               ],
             ),
           ),
@@ -2301,16 +2362,302 @@ class _SearchTabState extends State<SearchTab> {
         const SizedBox(height: 12),
         if (!_isLoadingResults &&
             _resultsError == null &&
-            matches.isNotEmpty) ...[
-          Text('${matches.length} pros loaded for $_selectedZip'),
+            (_livePros.isNotEmpty || _hasActiveFilters)) ...[
+          Row(children: [
+            Expanded(
+              child: Text(
+                '$_availableProsCount ${_availableProsCount == 1 ? 'pro' : 'pros'}',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+            ),
+            Text(
+              'ZIP $_selectedZip',
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 14,
+              ),
+            ),
+          ]),
           const SizedBox(height: 6),
           const Text(
-              "Pros appear in a random order. TradeWorks does not rank them."),
+            'Pros appear in a random order. TradeWorks does not rank them.',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+          _buildFilterBar(),
           const SizedBox(height: 12),
           _compareTray(),
         ],
       ],
     );
+  }
+
+  List<Widget> _resultsHeader(int count) {
+    return [
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Expanded(
+            child: Text(
+              '$count ${count == 1 ? 'pro' : 'pros'}',
+              style: AppTheme.headingStyle.copyWith(
+                color: AppTheme.navy,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(
+            'ZIP $_selectedZip',
+            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
+        ],
+      ),
+      const SizedBox(height: 6),
+      const Text(
+        'Pros appear in a random order. TradeWorks does not rank them.',
+        style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+      ),
+      const SizedBox(height: 12),
+    ];
+  }
+
+  Widget _buildFilterBar() {
+    final filterCount = _activeFilterCount;
+    return Row(
+      children: [
+        OutlinedButton.icon(
+          onPressed: _showFiltersBottomSheet,
+          icon: const Icon(Icons.tune_rounded, size: 18),
+          label: Text(filterCount == 0 ? 'Filters' : 'Filters ($filterCount)'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: filterCount == 0 ? AppTheme.navy : AppTheme.blue,
+            backgroundColor:
+                filterCount == 0 ? Colors.white : AppTheme.blueTint,
+            side: BorderSide(
+              color: filterCount == 0 ? AppTheme.cardBorder : AppTheme.blue,
+            ),
+            minimumSize: const Size(0, 44),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+          ),
+        ),
+        if (filterCount > 0) ...[
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: () => setState(() {
+              _maxDistanceFilter = null;
+              _minRatingFilter = null;
+              _priceTypeFilter = null;
+            }),
+            child: const Text('Clear'),
+          ),
+        ],
+        const Spacer(),
+        if (_isLoadingMore && filterCount > 0)
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _showFiltersBottomSheet() async {
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        double? distance = _maxDistanceFilter;
+        double? rating = _minRatingFilter;
+        String? priceType = _priceTypeFilter;
+
+        return StatefulBuilder(
+          builder: (context, setSheetState) => SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 18),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardBorder,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Filter pros',
+                          style: AppTheme.headingStyle.copyWith(fontSize: 20),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => setSheetState(() {
+                          distance = null;
+                          rating = null;
+                          priceType = null;
+                        }),
+                        child: const Text('Reset all'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  _filterSection(
+                    title: 'Distance',
+                    children: [
+                      _filterChoice(
+                        label: 'Any distance',
+                        selected: distance == null,
+                        onSelected: () => setSheetState(() => distance = null),
+                      ),
+                      for (final miles in const [5.0, 15.0, 25.0])
+                        _filterChoice(
+                          label: 'Within ${miles.toInt()} miles',
+                          selected: distance == miles,
+                          onSelected: () =>
+                              setSheetState(() => distance = miles),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _filterSection(
+                    title: 'Minimum rating',
+                    children: [
+                      _filterChoice(
+                        label: 'All ratings',
+                        selected: rating == null,
+                        onSelected: () => setSheetState(() => rating = null),
+                      ),
+                      for (final minimum in const [4.5, 4.8])
+                        _filterChoice(
+                          label: '$minimum+ stars',
+                          selected: rating == minimum,
+                          onSelected: () =>
+                              setSheetState(() => rating = minimum),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _filterSection(
+                    title: 'Pricing type',
+                    children: [
+                      _filterChoice(
+                        label: 'All pricing',
+                        selected: priceType == null,
+                        onSelected: () => setSheetState(() => priceType = null),
+                      ),
+                      _filterChoice(
+                        label: 'Flat / hourly',
+                        selected: priceType == 'rate_card',
+                        onSelected: () =>
+                            setSheetState(() => priceType = 'rate_card'),
+                      ),
+                      _filterChoice(
+                        label: 'Quote request',
+                        selected: priceType == 'quote_request',
+                        onSelected: () =>
+                            setSheetState(() => priceType = 'quote_request'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(sheetContext, {
+                        'distance': distance,
+                        'rating': rating,
+                        'priceType': priceType,
+                      }),
+                      child: const Text('Apply filters'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _maxDistanceFilter = selected['distance'] as double?;
+      _minRatingFilter = selected['rating'] as double?;
+      _priceTypeFilter = selected['priceType'] as String?;
+    });
+    if (_hasActiveFilters) await _loadAllProsForFilters();
+  }
+
+  Widget _filterSection({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppTheme.navy,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, children: children),
+      ],
+    );
+  }
+
+  Widget _filterChoice({
+    required String label,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      onSelected: (_) => onSelected(),
+      selectedColor: AppTheme.navy,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: selected ? AppTheme.navy : AppTheme.cardBorder,
+      ),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : AppTheme.navy,
+        fontWeight: FontWeight.w600,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+    );
+  }
+
+  Future<void> _loadAllProsForFilters() async {
+    final pages = _proPages;
+    if (pages == null) return;
+    while (mounted && identical(pages, _proPages) && pages.hasMore) {
+      if (_isLoadingMore) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        continue;
+      }
+      await _loadProPage(_prosRequestToken);
+      if (_loadMoreError != null) break;
+    }
   }
 
   Widget _buildNoCoverage() {
@@ -2427,18 +2774,16 @@ class _SearchTabState extends State<SearchTab> {
       controller: _searchController,
       focusNode: _searchFocusNode,
       hint: 'Search a service or pro',
-      borderColor:
-          _searchFocusNode.hasFocus ? AppTheme.blue : AppTheme.cardBorder,
+      borderColor: _searchFocusNode.hasFocus ||
+              _view == _BrowseView.searchFocused ||
+              _view == _BrowseView.typeAhead
+          ? AppTheme.blue
+          : AppTheme.cardBorder,
       onTap: focusSearchField,
-      // Keep the focused suggestions mounted long enough for their rows to
-      // receive the gesture. Unfocusing on pointer-down replaces this view
-      // before Recent and Popular rows can receive pointer-up.
-      onTapOutside: (_) {
-        if (_view != _BrowseView.searchFocused &&
-            _view != _BrowseView.typeAhead) {
-          _searchFocusNode.unfocus();
-        }
-      },
+      // Keep suggestions mounted while dismissing the keyboard so the same
+      // pointer gesture can still activate a Recent, Popular, or type-ahead
+      // row on pointer-up.
+      onTapOutside: (_) => _dismissSearchKeyboard(),
       onChanged: (value) {
         setState(() {
           if (value.trim().isEmpty) {
@@ -2533,7 +2878,7 @@ class _SearchTabState extends State<SearchTab> {
       title,
       style: const TextStyle(
         color: AppTheme.navy700,
-        fontSize: 15,
+        fontSize: 20,
         fontWeight: FontWeight.w700,
       ),
     );
@@ -2543,41 +2888,47 @@ class _SearchTabState extends State<SearchTab> {
     required String title,
     required String trailing,
     required VoidCallback onTap,
+    IconData? leading,
+    bool showChevron = false,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.line),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13.5,
-                  ),
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 50),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
+        ),
+        child: Row(
+          children: [
+            if (leading != null) ...[
+              Icon(leading, color: AppTheme.textSecondary, size: 20),
+              const SizedBox(width: 14),
+            ],
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppTheme.navy,
+                  fontWeight: FontWeight.w400,
+                  fontSize: 16,
                 ),
               ),
+            ),
+            if (trailing.isNotEmpty)
               Text(
                 trailing,
                 style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
-            ],
-          ),
+            if (showChevron)
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppTheme.textTertiary,
+              ),
+          ],
         ),
       ),
     );
@@ -2668,7 +3019,10 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildBrowseCard(_BrowsePro pro) {
-    final nextAvailable = _nextAvailableLabelFor(pro);
+    final slot = _nextAvailableLabelFor(pro);
+    final nextAvailable = slot == 'Availability pending' ? slot : 'Next: $slot';
+    final selected = _compareIds.contains(_compareId(pro));
+    final canToggle = selected || _compareIds.length < 3;
     return InkWell(
       onTap: () => _openProProfile(pro),
       borderRadius: BorderRadius.circular(12),
@@ -2702,7 +3056,7 @@ class _SearchTabState extends State<SearchTab> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${pro.category} · ${pro.distanceMiles.toStringAsFixed(1)} mi · ${pro.completedWorkOrders} orders',
+                        '${pro.category} · ${pro.completedWorkOrders} jobs completed',
                         style: const TextStyle(
                           color: AppTheme.textSecondary,
                           fontSize: 12,
@@ -2729,22 +3083,22 @@ class _SearchTabState extends State<SearchTab> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      'From \$${pro.price}',
+                      pro.priceHeadline,
                       style: const TextStyle(
                         color: AppTheme.navy700,
                         fontWeight: FontWeight.w700,
-                        fontSize: 14,
+                        fontSize: 22,
                         height: 1.1,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      pro.priceLabel,
+                      pro.priceNote,
                       style: TextStyle(
                         color: AppTheme.textSecondary,
-                        fontSize: 10,
+                        fontSize: 12,
                         fontWeight: FontWeight.w400,
-                        height: 1.1,
+                        height: 1.25,
                       ),
                     ),
                   ],
@@ -2752,56 +3106,22 @@ class _SearchTabState extends State<SearchTab> {
               ],
             ),
             const SizedBox(height: 12),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.amberTint,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.star_rounded,
-                        color: AppTheme.gold,
-                        size: 14,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        pro.reviews == 0
-                            ? 'No reviews yet'
-                            : '${pro.rating.toStringAsFixed(1)} · ${pro.reviews} reviews',
-                        style: const TextStyle(
-                          color: AppTheme.navy,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          height: 1.0,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.pageBackground,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    nextAvailable,
-                    style: const TextStyle(
-                      color: AppTheme.green,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      height: 1.0,
+                if (pro.reviews > 0)
+                  RatingCapsule(rating: pro.rating, count: pro.reviews)
+                else
+                  const Text(
+                    'No reviews yet',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
+                AvailabilityCapsule(label: nextAvailable),
               ],
             ),
             const SizedBox(height: 12),
@@ -2811,58 +3131,69 @@ class _SearchTabState extends State<SearchTab> {
               color: AppTheme.cardBorder,
             ),
             const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Text(
-                    pro.footerText,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      height: 1.2,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppTheme.pageBackground,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'View profile',
-                    style: TextStyle(
-                      color: AppTheme.navy700,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                      height: 1.0,
-                    ),
-                  ),
-                ),
-              ],
+            Text(
+              pro.footerText,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppTheme.body,
+                fontSize: 14,
+                height: 1.35,
+              ),
             ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton(
-                onPressed: _compareIds.contains(_compareId(pro)) ||
-                        _compareIds.length < 3
-                    ? () => _toggleCompare(pro)
-                    : null,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.navy,
-                  side: const BorderSide(color: AppTheme.navy),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: canToggle ? () => _toggleCompare(pro) : null,
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      height: 44,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 20,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: selected ? AppTheme.blue : Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color:
+                                    selected ? AppTheme.blue : AppTheme.border,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: selected
+                                ? const Icon(Icons.check,
+                                    size: 15, color: Colors.white)
+                                : null,
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              selected ? 'Added to compare' : 'Compare',
+                              style: TextStyle(
+                                color: selected
+                                    ? AppTheme.blue
+                                    : canToggle
+                                        ? AppTheme.navy
+                                        : AppTheme.textTertiary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                child: Text(_compareIds.contains(_compareId(pro))
-                    ? 'Added'
-                    : 'Compare'),
-              ),
+                TextButton(
+                  onPressed: () => _openProProfile(pro),
+                  child: const Text('View profile'),
+                ),
+              ],
             ),
           ],
         ),
@@ -3016,8 +3347,9 @@ class _BrowsePro {
   final double distanceMiles;
   final int completedWorkOrders;
   final String nextAvailable;
-  final int price;
+  final double price;
   final String priceLabel;
+  final String workOrderType;
   final String summary;
   final bool selectedCertified;
   final List<String> services;
@@ -3040,6 +3372,7 @@ class _BrowsePro {
     required this.nextAvailable,
     required this.price,
     required this.priceLabel,
+    this.workOrderType = '',
     required this.summary,
     required this.selectedCertified,
     required this.services,
@@ -3098,7 +3431,9 @@ class _BrowsePro {
     final rating = readDouble(map['verifiedRating'], 0);
     final reviews = readInt(map['verifiedCount'], 0);
     final distance = readDouble(map['distanceMiles'], 0);
-    final price = readDouble(map['fromPrice'], 0).round();
+    final price = readDouble(map['fromPrice'], 0);
+    final workOrderType =
+        read(map['workOrderType'], read(map['work_order_type']));
     final completedWorkOrders = readInt(map['completedWorkOrders'], reviews);
     final nextAvailableRaw = read(map['nextAvailable']);
     String titleCase(String value) {
@@ -3148,6 +3483,7 @@ class _BrowsePro {
       nextAvailable: nextAvailableRaw,
       price: price,
       priceLabel: priceLabel,
+      workOrderType: workOrderType,
       summary: read(
         map['tagline'],
         read(
@@ -3170,6 +3506,18 @@ class _BrowsePro {
       responseTime: read(map['responseTime'], read(map['response_time'])),
     );
   }
+
+  String get priceHeadline {
+    if (workOrderType == 'quote_request') return 'Free visit';
+    return price > 0 ? formatUsd(price) : '';
+  }
+
+  String get priceNote => switch (workOrderType) {
+        'nte' => 'diagnostic · You approve the cap',
+        'quote_request' => 'The pro sends you an estimate',
+        'rate_card' => 'Upfront price',
+        _ => priceLabel,
+      };
 
   String get slug =>
       apiSlug.isNotEmpty ? apiSlug : name.toLowerCase().replaceAll(' ', '-');

@@ -45,8 +45,8 @@ void main() {
         ]
       },
     });
-    expect(find.text(r'$1,250.50'), findsNothing);
-    expect(find.text(r'$1250.50'), findsNWidgets(3));
+    expect(find.text(r'$1,250.50'), findsNWidgets(3));
+    expect(find.text(r'$1250.50'), findsNothing);
     expect(find.text('Replace fitting'), findsOneWidget);
     expect(find.text('Inspection'), findsOneWidget);
     expect(find.text('TP'), findsOneWidget);
@@ -57,7 +57,7 @@ void main() {
       (tester) async {
     await showCap(tester,
         {'id': 12, 'quoteAmount': 200, 'quote': 'pending', 'pro': 'unknown'});
-    expect(find.text(r'$200'), findsOneWidget);
+    expect(find.text(r'$200.00'), findsOneWidget);
     expect(find.text('BREAKDOWN'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -83,8 +83,8 @@ void main() {
       'proName': 'Test Plumbing',
     })));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Review the quote'));
-    await tester.tap(find.text('Review the quote'));
+    await tester.ensureVisible(find.text('Review the cap'));
+    await tester.tap(find.text('Review the cap'));
     await tester.pumpAndSettle();
     expect(find.byType(CapApprovalScreen), findsOneWidget);
   });
@@ -96,7 +96,7 @@ void main() {
       'serviceCategory': 'Plumbing',
     })));
     await tester.pumpAndSettle();
-    expect(find.text('Review the quote'), findsNothing);
+    expect(find.text('Review the cap'), findsNothing);
     expect(find.byType(CapApprovalScreen), findsNothing);
   });
 }

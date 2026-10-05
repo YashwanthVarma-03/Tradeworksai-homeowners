@@ -196,6 +196,13 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
               controller: _phoneController,
               keyboardType: TextInputType.phone,
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'For your account and TradeWorks support. Pros never see your '
+              'phone number.',
+              style:
+                  TextStyle(color: _mutedText, fontSize: 13, height: 18 / 13),
+            ),
             if (_emailController.text.trim() != _originalEmail) ...[
               const SizedBox(height: 16),
               TextFormField(
@@ -313,28 +320,27 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
 
   Widget _infoCallout({required String text}) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.navyTint,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.cardBorder),
+        color: AppTheme.subtle,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Icon(
-            Icons.trending_up_rounded,
+            Icons.info_outline_rounded,
             color: AppTheme.navy,
-            size: 25,
+            size: 20,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               text,
               style: const TextStyle(
-                color: _inkStrong,
-                fontSize: 12.5,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
+                color: AppTheme.body,
+                fontSize: 14,
+                height: 21 / 14,
               ),
             ),
           ),

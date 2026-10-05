@@ -169,7 +169,7 @@ class CategoryGuideDetailScreen extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'Call',
+                    'Call support',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -184,7 +184,7 @@ class CategoryGuideDetailScreen extends StatelessWidget {
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.orange500,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppTheme.navy,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -387,7 +387,7 @@ class CategoryGuideArticle {
   }
 
   String get kindLabel =>
-      kind == 'general' ? 'General Guide' : 'Category Guide';
+      kind == 'general' ? 'General guide' : 'Category guide';
 
   bool get isGeneral => kind == 'general';
 
@@ -473,41 +473,26 @@ class _GuidesHeroCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppTheme.navy,
-            AppTheme.navy,
-            AppTheme.blue,
-          ],
-        ),
-        borderRadius: BorderRadius.circular(24),
+        color: Colors.white,
+        border: Border.all(color: AppTheme.cardBorder),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              'TradeWorks Homeowner Guides',
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
-              ),
+          Text(
+            'TradeWorks Homeowner Guides',
+            style: GoogleFonts.inter(
+              color: AppTheme.blue,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 14),
           Text(
             'Helpful guides for every home project',
-            style: GoogleFonts.poppins(
-              color: Colors.white,
+            style: GoogleFonts.outfit(
+              color: AppTheme.navy,
               fontSize: 24,
               fontWeight: FontWeight.w700,
               height: 1.15,
@@ -517,7 +502,7 @@ class _GuidesHeroCard extends StatelessWidget {
           Text(
             'Browse $generalCount homeowner guides and $categoryCount service category guides with practical advice, FAQs, pricing context, safety notes, and quick ways to book vetted pros.',
             style: GoogleFonts.inter(
-              color: AppTheme.blueTint,
+              color: AppTheme.textSecondary,
               fontSize: 13.5,
               height: 1.5,
             ),
@@ -679,7 +664,7 @@ class _GuideListCard extends StatelessWidget {
                   alignment: Alignment.center,
                   child: Text(
                     article.id.replaceAll('CAT-', '').replaceAll('GEN-', ''),
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.outfit(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
                     ),
@@ -740,51 +725,13 @@ class _ArticleTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: const BoxDecoration(
-        color: AppTheme.navy,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Text(
-            'TradeWorks Homeowner Guide',
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-          ),
-          _TagPill(label: article.kindLabel),
-        ],
-      ),
-    );
-  }
-}
-
-class _TagPill extends StatelessWidget {
-  final String label;
-
-  const _TagPill({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppTheme.navy,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.blue),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
       child: Text(
-        label,
+        'TradeWorks Homeowner Guide · ${article.kindLabel}',
         style: const TextStyle(
-          color: AppTheme.blueTint,
-          fontSize: 11.5,
+          color: AppTheme.textSecondary,
+          fontSize: 13,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -802,23 +749,13 @@ class _ArticleHeader extends StatelessWidget {
     final overview =
         article.sections.isNotEmpty ? article.sections.first : null;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            article.kindLabel.toUpperCase(),
-            style: GoogleFonts.poppins(
-              color: AppTheme.teal700,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1.4,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
             article.title,
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.outfit(
               color: AppTheme.navy700,
               fontSize: 29,
               fontWeight: FontWeight.w700,
@@ -833,16 +770,6 @@ class _ArticleHeader extends StatelessWidget {
               fontWeight: FontWeight.w600,
               fontSize: 15,
             ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _InfoChip(label: 'Guide type', value: article.kindLabel),
-              _InfoChip(label: 'Topic', value: article.serviceCategory),
-              const _InfoChip(label: 'Availability', value: 'Free guide'),
-            ],
           ),
           const SizedBox(height: 18),
           _ImagePlaceholder(
@@ -867,8 +794,8 @@ class _ArticleHeader extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'QUICK ANSWER',
-                    style: GoogleFonts.poppins(
+                    'Quick answer',
+                    style: GoogleFonts.outfit(
                       color: AppTheme.teal700,
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
@@ -894,52 +821,6 @@ class _ArticleHeader extends StatelessWidget {
   }
 }
 
-class _InfoChip extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _InfoChip({
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 150, maxWidth: 360),
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: GoogleFonts.poppins(
-              color: AppTheme.gray,
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              color: AppTheme.navy700,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _TocCard extends StatelessWidget {
   final CategoryGuideArticle article;
 
@@ -958,8 +839,8 @@ class _TocCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'TABLE OF CONTENTS',
-            style: GoogleFonts.poppins(
+            'Contents',
+            style: GoogleFonts.outfit(
               color: AppTheme.navy700,
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -1021,14 +902,18 @@ class _ArticleSectionCard extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
                 section.heading,
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.outfit(
                   color: AppTheme.navy700,
                   fontSize: 22,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-          ...section.paragraphs.asMap().entries.map((entry) {
+          ...(isOverview ? section.paragraphs.skip(1) : section.paragraphs)
+              .toList()
+              .asMap()
+              .entries
+              .map((entry) {
             final paragraph = entry.value;
             final isBulletLike = _isBulletLike(paragraph);
             final isAlert = _isAlertLike(paragraph);
@@ -1314,7 +1199,7 @@ class _SeasonCard extends StatelessWidget {
             ),
             child: Text(
               data.title,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.outfit(
                 color: Colors.white,
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
@@ -1329,7 +1214,7 @@ class _SeasonCard extends StatelessWidget {
                 ...data.tasks.map((task) => _BulletRow(text: task)),
                 Text(
                   data.proLine,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.outfit(
                     color: AppTheme.teal700,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1378,16 +1263,23 @@ class _PricingModule extends StatelessWidget {
       children: [
         _PricingCard(
           title: 'Upfront price',
-          label: 'Rate Card',
+          label: 'Upfront price',
           text: 'Routine, predictable jobs show a clear price before booking.',
           color: AppTheme.green,
         ),
         _PricingCard(
           title: 'You approve the cap',
-          label: 'Not-to-Exceed',
+          label: 'Cap Approval',
           text:
-              'Repairs needing diagnosis use a cap you approve before work begins.',
+              'You approve a not-to-exceed cap before work begins. The final price may be lower — never higher.',
           color: AppTheme.blue,
+        ),
+        _PricingCard(
+          title: 'Free visit',
+          label: 'Free estimate',
+          text:
+              'The pro visits, then sends you an estimate to accept or decline.',
+          color: AppTheme.navy,
         ),
       ],
     );
@@ -1428,7 +1320,7 @@ class _PricingCard extends StatelessWidget {
             ),
             child: Text(
               title,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.outfit(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
                 fontSize: 12.5,
@@ -1442,7 +1334,7 @@ class _PricingCard extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.outfit(
                     color: AppTheme.navy700,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1529,7 +1421,7 @@ class _ChecklistPanel extends StatelessWidget {
             ),
             child: Text(
               title,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.outfit(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
               ),
@@ -1573,7 +1465,7 @@ class _AiExperienceModule extends StatelessWidget {
               children: [
                 Text(
                   "Describe it. We'll handle the rest.",
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.outfit(
                     color: Colors.white,
                     fontSize: 19,
                     fontWeight: FontWeight.w700,
@@ -1614,9 +1506,9 @@ class _AiExperienceModule extends StatelessWidget {
                 ),
                 _AiStepRow(
                   step: '4',
-                  title: 'Book and track',
+                  title: 'Book and follow along',
                   text:
-                      'Use the existing booking flow and follow status to completion.',
+                      'Book in the app and see each status your pro sets, through to Completed.',
                 ),
               ],
             ),
@@ -1656,7 +1548,7 @@ class _AiStepRow extends StatelessWidget {
             ),
             child: Text(
               step,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.outfit(
                 color: AppTheme.teal700,
                 fontWeight: FontWeight.w700,
               ),
@@ -1669,7 +1561,7 @@ class _AiStepRow extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.outfit(
                     color: AppTheme.navy700,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -1721,7 +1613,7 @@ class _GuideTable extends StatelessWidget {
             ),
             child: Text(
               title,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.outfit(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
               ),
@@ -1740,7 +1632,7 @@ class _GuideTable extends StatelessWidget {
                     width: 112,
                     child: Text(
                       row.$1,
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.outfit(
                         color: AppTheme.navy700,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
@@ -1805,7 +1697,7 @@ class _FaqCard extends StatelessWidget {
       children: [
         Text(
           'Frequently asked questions',
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.outfit(
             color: AppTheme.navy700,
             fontSize: 22,
             fontWeight: FontWeight.w600,
@@ -1831,7 +1723,7 @@ class _FaqCard extends StatelessWidget {
               ),
               title: Text(
                 faq.question,
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.outfit(
                   color: AppTheme.navy700,
                   fontSize: 14.2,
                   fontWeight: FontWeight.w600,
@@ -1877,7 +1769,7 @@ class _ArticleCtaCard extends StatelessWidget {
         children: [
           Text(
             article.ctaTitle.isNotEmpty ? article.ctaTitle : 'Need help?',
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.outfit(
               color: Colors.white,
               fontSize: 21,
               fontWeight: FontWeight.w700,
@@ -1976,7 +1868,7 @@ class _ImagePlaceholder extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             subtitle.toUpperCase(),
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.outfit(
               color: AppTheme.teal700,
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -1987,7 +1879,7 @@ class _ImagePlaceholder extends StatelessWidget {
           Text(
             title,
             textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.outfit(
               color: AppTheme.navy700,
               fontSize: 14,
               fontWeight: FontWeight.w600,

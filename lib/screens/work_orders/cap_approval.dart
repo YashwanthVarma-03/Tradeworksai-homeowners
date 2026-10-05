@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
+import 'package:intl/intl.dart';
+
+import '../../utils/display_format.dart';
+import '../../widgets/alert_row.dart';
 import '../../widgets/transaction_guard.dart';
 import 'reschedule_work_order.dart';
 
@@ -57,6 +61,49 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       _readString(widget.job['proName']) ??
       _readString(widget.job['businessName']);
 
+  String? get _serviceName =>
+      _readString(widget.job['serviceName']) ??
+      _readString(widget.job['service_name']) ??
+      _readString(widget.job['serviceCategory']) ??
+      _readString(widget.job['service_category']);
+
+  /// "WO-24152" — the work-order number, never the database id.
+  String? get _woNumber {
+    final value = _readString(widget.job['woNumber']) ??
+        _readString(widget.job['wo_number']) ??
+        _readString(widget.job['workOrderNumber']) ??
+        _readString(widget.job['work_order_number']);
+    if (value == null) return null;
+    return value.startsWith('#') ? value.substring(1) : value;
+  }
+
+  /// The diagnostic fee the homeowner booked, or null when not sent.
+  double? get _diagnosticFee => _amountOrNull(
+        widget.job['diagnosticFee'] ??
+            widget.job['diagnostic_fee'] ??
+            widget.job['diagnosticPrice'] ??
+            widget.job['diagnostic_price'],
+      );
+
+  /// "Mon, Oct 12, 2:00–4:00 PM". Until the cap is approved, the job's
+  /// scheduled window is the diagnostic visit.
+  String? get _diagnosticVisit {
+    final start = DateTime.tryParse(_readString(widget.job['diagnosticStart'] ??
+            widget.job['diagnostic_start'] ??
+            widget.job['scheduledStart'] ??
+            widget.job['scheduled_start']) ??
+        '');
+    if (start == null) return null;
+    final end = DateTime.tryParse(_readString(widget.job['diagnosticEnd'] ??
+            widget.job['diagnostic_end'] ??
+            widget.job['scheduledEnd'] ??
+            widget.job['scheduled_end']) ??
+        '');
+    final local = start.toLocal();
+    return '${DateFormat('EEE, MMM d').format(local)}, '
+        '${formatWindow(local, end?.toLocal())}';
+  }
+
   String? get _diagnosis =>
       _readString(widget.job['quoteScope']) ??
       _readString(widget.job['quote_scope']) ??
@@ -93,32 +140,23 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
         throw Exception(
             'The pro is unavailable. Please reopen this work order.');
       }
-      var startsAt = _readString(
-          widget.job['proposedStart'] ?? widget.job['scheduledStart']);
-      var endsAt =
-          _readString(widget.job['proposedEnd'] ?? widget.job['scheduledEnd']);
-      final start = DateTime.tryParse(startsAt ?? '');
-      final end = DateTime.tryParse(endsAt ?? '');
-      // The current backend still books a slot on quote_accept. Ask for a
-      // real available time when the work order has none; never invent one.
-      if (start == null ||
-          end == null ||
-          !end.isAfter(start) ||
-          !start.isAfter(DateTime.now())) {
-        final slot = await Navigator.push<Map<String, String>>(
-          context,
-          MaterialPageRoute(
-              builder: (_) => RescheduleWorkOrderScreen(
-                    job: widget.job,
-                    workOrderId: _workOrderId(),
-                    contractorId: contractorId!,
-                    selectSlotOnly: true,
-                  )),
-        );
-        if (!mounted || slot == null) return;
-        startsAt = slot['start'];
-        endsAt = slot['end'];
-      }
+      // Approving the cap books the repair in the same step (Oct 1, G-49).
+      // The job's scheduled window is the diagnostic visit, never the
+      // repair, so the homeowner always picks the repair window here.
+      final slot = await Navigator.push<Map<String, String>>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => RescheduleWorkOrderScreen(
+                  job: widget.job,
+                  workOrderId: _workOrderId(),
+                  contractorId: contractorId!,
+                  selectSlotOnly: true,
+                  capAmount: _capAmount,
+                )),
+      );
+      if (!mounted || slot == null) return;
+      final startsAt = slot['start'];
+      final endsAt = slot['end'];
       if (!mounted) return;
       setState(() => _isProcessing = true);
       await HomeownerService.instance.respondToCap(
@@ -131,9 +169,14 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       );
 
       if (mounted) {
+        final repairStart = DateTime.tryParse(startsAt ?? '')?.toLocal();
+        final repairEnd = DateTime.tryParse(endsAt ?? '')?.toLocal();
         AppNotification.showInfo(
           context,
-          'Cap approved.',
+          repairStart == null
+              ? 'Cap approved. Your repair is booked.'
+              : 'Cap approved. Your repair is booked for '
+                  '${formatVisit(repairStart, repairEnd)}.',
         );
         Navigator.pop(context, true);
       }
@@ -228,7 +271,14 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
             Expanded(
               child: SafeArea(
                 top: false,
-                child: cap == null ? _missingCapState() : _capContent(cap),
+                child: cap == null
+                    ? _missingCapState()
+                    : Column(
+                        children: [
+                          Expanded(child: _capContent(cap)),
+                          _actionBar(),
+                        ],
+                      ),
               ),
             ),
           ],
@@ -284,8 +334,8 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
         children: [
           _infoBanner(),
           const SizedBox(height: 22),
-          if (_diagnosis != null) ...[
-            _sectionLabel('WHAT YOUR PRO FOUND'),
+          if (_diagnosis != null || _proName != null) ...[
+            _sectionLabel('What your pro found'),
             const SizedBox(height: 10),
             _diagnosisCard(),
             const SizedBox(height: 16),
@@ -293,7 +343,7 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
           _capCard(cap),
           if (items.isNotEmpty) ...[
             const SizedBox(height: 22),
-            _sectionLabel('BREAKDOWN'),
+            _sectionLabel('Breakdown'),
             const SizedBox(height: 14),
             for (final item in items) ...[
               _lineItem(
@@ -309,19 +359,35 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
             const SizedBox(height: 14),
             _lineItem('Not to exceed', cap, isTotal: true),
           ],
-          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+      decoration: const BoxDecoration(
+        color: AppTheme.pageBackground,
+        border: Border(top: BorderSide(color: AppTheme.cardBorder)),
+        boxShadow: AppTheme.floatShadow,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           _primaryButton('Approve cap', _approve),
-          const SizedBox(height: 14),
+          const SizedBox(height: 6),
           Center(
             child: TextButton(
               onPressed: _isProcessing || _isChoosingSlot ? null : _decline,
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.red,
+                minimumSize: const Size(44, 44),
+              ),
               child: const Text(
                 'Decline this cap',
-                style: TextStyle(
-                  color: AppTheme.red,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -359,8 +425,8 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
     return amount != null && amount.isFinite && amount >= 0 ? amount : null;
   }
 
-  String _money(num amount) =>
-      '\$${amount.toStringAsFixed(amount % 1 == 0 ? 0 : 2)}';
+  /// "$460.00" — cents always (Part B1).
+  String _money(num amount) => formatUsd(amount);
 
   String _initials(String name) {
     final parts = name
@@ -407,93 +473,133 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
     );
   }
 
+  /// v3.3 alert row: tinted icon circle, bold line, one sentence (E01).
   Widget _infoBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: const BoxDecoration(
-        color: AppTheme.blueTint,
-        border: Border(left: BorderSide(color: AppTheme.blue, width: 4)),
-      ),
-      child: const Text(
-        'Work can\'t start until you approve this cap. The final price may be '
-        'lower than the cap. It can never be higher.',
-        style: TextStyle(
-          color: AppTheme.navy,
-          fontSize: 13,
-          height: 1.4,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
+    return const AlertRow(
+      icon: Icons.info_outline_rounded,
+      tint: AppTheme.blueTint,
+      iconColor: AppTheme.blue,
+      title: 'You approve a not-to-exceed cap before work begins.',
+      body: 'The final price may be lower — never higher.',
     );
   }
 
+  /// Section heading: Outfit 20, sentence case — never all-caps (v3.3).
   Widget _sectionLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: AppTheme.textSecondary,
-        fontSize: 11.5,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1.8,
-      ),
-    );
+    return Text(text, style: Theme.of(context).textTheme.headlineMedium);
   }
 
+  /// Who sent the cap, for which job, what they found, and the diagnostic
+  /// visit it follows (E01).
   Widget _diagnosisCard() {
     final proName = _proName;
+    final diagnosis = _diagnosis;
+    final meta = [_serviceName, _woNumber].whereType<String>().join(' · ');
+    final visit = _diagnosticVisit;
+    final fee = _diagnosticFee;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppTheme.pageBackground,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppTheme.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (proName != null) ...[
+          if (proName != null)
             Row(
               children: [
-                CircleAvatar(
-                  radius: 21,
-                  backgroundColor: AppTheme.navy,
+                Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppTheme.navy,
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                  ),
                   child: Text(
                     _initials(proName),
-                    style: const TextStyle(
+                    style: AppTheme.headingStyle.copyWith(
                       color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    proName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppTheme.navy,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        proName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.navy,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (meta.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          meta,
+                          style: const TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 18),
-          ],
-          Text(
-            _diagnosis!,
-            style: const TextStyle(
-              color: AppTheme.navy,
-              fontSize: 13.5,
-              height: 1.4,
-              fontWeight: FontWeight.w500,
+          if (diagnosis != null) ...[
+            if (proName != null) const SizedBox(height: 14),
+            Text(
+              diagnosis,
+              style: const TextStyle(
+                color: AppTheme.navy,
+                fontSize: 15,
+                height: 1.53,
+              ),
             ),
-          ),
+          ],
+          if (visit != null || fee != null) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: AppTheme.cardBorder),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    visit == null
+                        ? 'Diagnostic visit'
+                        : 'Diagnostic visit · $visit',
+                    style: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                if (fee != null) ...[
+                  const SizedBox(width: 12),
+                  Text(
+                    _money(fee),
+                    style: const TextStyle(
+                      color: AppTheme.navy,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -511,12 +617,11 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       child: Column(
         children: [
           const Text(
-            'NOT TO EXCEED',
+            'Not to exceed',
             style: TextStyle(
               color: AppTheme.textSecondary,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.8,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),

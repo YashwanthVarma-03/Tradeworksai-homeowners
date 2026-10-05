@@ -1,6 +1,7 @@
 import '../widgets/loading_skeleton.dart';
 import 'account/account_security.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
@@ -179,69 +180,69 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
         color: AppTheme.navy,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 110),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 110),
           children: [
+            Text('Profile', style: Theme.of(context).textTheme.headlineLarge),
+            const SizedBox(height: 12),
             _accountHeader(),
             const SizedBox(height: 12),
             _creditsCard(),
-            const SizedBox(height: 18),
-            _sectionLabel('ACCOUNT'),
+            _sectionLabel('Account'),
             _settingsCard(
               icon: Icons.person_outline_rounded,
               title: 'Personal info',
               subtitle: _personalSubtitle(),
               onTap: _editPersonalInfo,
             ),
-            const SizedBox(height: 8),
             _settingsCard(
               icon: Icons.location_on_outlined,
               title: 'Addresses',
               subtitle: _addressSubtitle(),
               onTap: _manageAddresses,
             ),
-            const SizedBox(height: 8),
             _settingsCard(
-              icon: Icons.mail_outline_rounded,
-              title: 'Payment options',
+              icon: Icons.credit_card_outlined,
+              title: 'Payment methods',
               subtitle: 'Pay your booked pro directly',
               onTap: _managePayments,
+              last: true,
             ),
-            const SizedBox(height: 18),
-            _sectionLabel('YOUR HOME'),
+            _sectionLabel('Your home'),
             _settingsCard(
               icon: Icons.home_outlined,
               title: 'Home profile',
               subtitle: _homeProfileSubtitle(),
               onTap: _openHomeProfileScreen,
+              last: true,
             ),
-            const SizedBox(height: 18),
-            _sectionLabel('PREFERENCES'),
+            _sectionLabel('Preferences'),
             _settingsCard(
               icon: Icons.notifications_none_rounded,
               title: 'Notifications',
               subtitle: 'Push & email preferences',
               onTap: _openNotifications,
+              last: true,
             ),
-            const SizedBox(height: 18),
-            _sectionLabel('SUPPORT'),
+            _sectionLabel('Support'),
             _settingsCard(
               icon: Icons.help_outline_rounded,
               title: 'Help & support',
               subtitle: 'FAQs, contact us, report an issue',
               onTap: _openSupport,
             ),
-            const SizedBox(height: 10),
             _settingsCard(
-                icon: Icons.security_outlined,
-                title: 'Account security',
-                subtitle: 'Password and account closure',
-                onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const AccountSecurityScreen()))),
-            const SizedBox(height: 10),
+              icon: Icons.security_outlined,
+              title: 'Account security',
+              subtitle: 'Password and account closure',
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const AccountSecurityScreen())),
+              last: true,
+            ),
+            const SizedBox(height: 24),
             _signOutButton(),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             _deleteAccountButton(),
           ],
         ),
@@ -256,27 +257,36 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     final hasPicture = _string(AuthService.instance.pictureUrl) != null;
 
     return _card(
-      padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 29,
-            backgroundColor: AppTheme.navy700,
-            backgroundImage: hasPicture
-                ? NetworkImage(AuthService.instance.pictureUrl!)
-                : null,
+          Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: AppTheme.navy,
+              borderRadius: BorderRadius.circular(14),
+              image: hasPicture
+                  ? DecorationImage(
+                      image: NetworkImage(AuthService.instance.pictureUrl!),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
             child: hasPicture
                 ? null
                 : Text(
                     initials,
-                    style: const TextStyle(
+                    style: AppTheme.headingStyle.copyWith(
                       color: Colors.white,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
           ),
-          const SizedBox(width: 13),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,47 +295,25 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                   userName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _inkStrong,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                    height: 1.1,
+                  style: AppTheme.headingStyle.copyWith(
+                    fontSize: 20,
+                    height: 26 / 20,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   userEmail,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _mutedText,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: const TextStyle(color: _mutedText, fontSize: 14),
                 ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.blueTint,
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    child: Text(
-                      _memberBadge(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.teal500,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
+                const SizedBox(height: 3),
+                Text(
+                  _memberBadge(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: _mutedText, fontSize: 13),
                 ),
               ],
             ),
@@ -340,23 +328,31 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         onTap: widget.onRewardsTap,
         child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: AppTheme.navyTint,
-            borderRadius: BorderRadius.circular(12),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: AppTheme.cardBorder, width: 1),
           ),
           child: Row(
             children: [
-              const Icon(
-                Icons.card_giftcard_rounded,
-                color: AppTheme.navy,
-                size: 25,
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  color: AppTheme.purpleTint,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.card_giftcard_rounded,
+                  color: AppTheme.purple,
+                  size: 20,
+                ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
               const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -364,19 +360,15 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                     Text(
                       'Service credits',
                       style: TextStyle(
-                        color: AppTheme.navy700,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w900,
+                        color: AppTheme.navy,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    SizedBox(height: 4),
+                    SizedBox(height: 2),
                     Text(
                       'Apply at your next booking',
-                      style: TextStyle(
-                        color: _mutedText,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                      style: TextStyle(color: _mutedText, fontSize: 14),
                     ),
                   ],
                 ),
@@ -386,19 +378,18 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                 fit: BoxFit.scaleDown,
                 child: Text(
                   _money(balance),
-                  style: const TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                  style: AppTheme.headingStyle.copyWith(
+                    color: AppTheme.purple,
+                    fontSize: 20,
                     height: 1,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               const Icon(
                 Icons.chevron_right_rounded,
-                color: _mutedText,
-                size: 23,
+                color: AppTheme.textTertiary,
+                size: 20,
               ),
             ],
           ),
@@ -407,79 +398,80 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     );
   }
 
+  /// A hairline list row: 40px grey icon well, title, one meta line,
+  /// chevron (F02). The last row in a section has no bottom rule.
   Widget _settingsCard({
     required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    bool last = false,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: _card(
-          padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 34,
-                child: Icon(icon, color: AppTheme.navy700, size: 23),
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          border:
+              last ? null : const Border(bottom: BorderSide(color: _lineSoft)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                color: AppTheme.subtle,
+                shape: BoxShape.circle,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _inkStrong,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w900,
-                      ),
+              child: Icon(icon, color: AppTheme.navy, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _inkStrong,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _mutedText,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _mutedText,
+                      fontSize: 14,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: _mutedText,
-                size: 23,
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppTheme.textTertiary,
+              size: 20,
+            ),
+          ],
         ),
       ),
     );
   }
 
+  /// Section heading: Outfit 20, sentence case (v3.3 rule 2).
   Widget _sectionLabel(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: _mutedText,
-          fontSize: 11.5,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 1.6,
-        ),
-      ),
+      padding: const EdgeInsets.only(top: 24),
+      child: Text(text, style: Theme.of(context).textTheme.headlineMedium),
     );
   }
 
@@ -497,49 +489,28 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
   }
 
   Widget _signOutButton() {
-    // ListView supplies tight horizontal constraints to its children. Keep the
-    // button itself content-sized so its hover/focus ink and tap target do not
-    // extend across the full profile page.
-    return Center(
-      // The explicit box is intentional: it prevents Material's interactive
-      // surface from inheriting ListView's full-width constraint on web.
-      child: SizedBox(
-        width: 148,
-        height: 44,
-        child: TextButton.icon(
-          onPressed: widget.onLogout,
-          icon: const Icon(Icons.logout_rounded, size: 18),
-          label: const Text('Sign out'),
-          style: TextButton.styleFrom(
-            foregroundColor: AppTheme.error,
-            backgroundColor: Colors.transparent,
-            overlayColor: AppTheme.error.withOpacity(0.12),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            shape: const StadiumBorder(),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            textStyle: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: OutlinedButton.icon(
+        onPressed: widget.onLogout,
+        icon: const Icon(Icons.logout_rounded, size: 18),
+        label: const Text('Sign out'),
       ),
     );
   }
 
   Widget _deleteAccountButton() => Center(
-        child: TextButton.icon(
+        child: TextButton(
           onPressed: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => const AccountSecurityScreen())),
-          icon: const Icon(Icons.delete_outline, size: 18),
-          label: const Text('Delete account'),
           style: TextButton.styleFrom(
             foregroundColor: AppTheme.red,
-            minimumSize: const Size(148, 44),
+            minimumSize: const Size(44, 44),
             textStyle:
-                const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
           ),
+          child: const Text('Delete account'),
         ),
       );
 
@@ -571,7 +542,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
 
   String _personalSubtitle() {
     final phone = _profilePhone();
-    return phone.isEmpty ? _profileName() : '${_profileName()} · $phone';
+    return phone.isEmpty ? 'Name, email and phone' : phone;
   }
 
   String _addressSubtitle() {
@@ -608,7 +579,10 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
         _string(defaultAddr['squareFootage']) ??
         _string(_profileData?['sqft']) ??
         _string(_profileData?['squareFootage']);
-    return sqft == null ? type : '$type · $sqft sq ft';
+    final area = num.tryParse(sqft?.replaceAll(',', '') ?? '');
+    final areaText =
+        area == null ? sqft : NumberFormat.decimalPattern('en_US').format(area);
+    return areaText == null ? type : '$type · $areaText sq ft';
   }
 
   String _memberBadge() {

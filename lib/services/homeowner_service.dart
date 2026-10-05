@@ -1020,6 +1020,39 @@ class HomeownerService {
     }
   }
 
+  /// Inbox › Activity feed (Oct 1, G-52). Off until the backend ships
+  /// `homeowner/notifications-list`; Activity derives its rows from the
+  /// work-order list meanwhile. Returns null whenever the feed is unavailable.
+  static const bool notificationsFeedEnabled = false;
+  static const String _notificationsListPath = 'homeowner/notifications-list';
+  static const String _notificationsReadPath = 'homeowner/notifications-read';
+
+  Future<List<Map<String, dynamic>>?> fetchNotifications() async {
+    if (!notificationsFeedEnabled) return null;
+    final uid = _userId;
+    if (uid == null) return null;
+    try {
+      final data = await _post(_notificationsListPath, {'userId': uid});
+      final rows = data['notifications'] ?? data['items'] ?? data['data'];
+      if (rows is! List) return null;
+      return rows
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> markNotificationRead(String id) async {
+    if (!notificationsFeedEnabled || id.isEmpty) return;
+    try {
+      await _post(_notificationsReadPath, {'id': id});
+    } catch (_) {
+      // A missed read mark only leaves the dot until the next refresh.
+    }
+  }
+
   Future<Map<String, dynamic>> findWorkOrder(int workOrderId) async {
     final data = await fetchWorkOrders(forceRefresh: true);
     final tabs = data['tabs'];
@@ -1278,7 +1311,8 @@ class HomeownerService {
       }
     } catch (_) {
       // Some environments intentionally restrict direct review-table reads.
-      // Eligibility still gives us a reliable reviewed/not-reviewed state.
+      // The authenticated gateway below remains the source of truth in those
+      // environments.
     }
 
     unresolved = completed.keys
@@ -1289,8 +1323,24 @@ class HomeownerService {
       final end = (start + batchSize).clamp(0, unresolved.length).toInt();
       await Future.wait(unresolved.sublist(start, end).map((workOrderId) async {
         try {
-          final eligibility =
-              await getReviewEligibility(workOrderId: workOrderId);
+          await _fetchReviewFromEndpoint(workOrderId);
+        } catch (_) {
+          // Older gateways may not expose get_review. Eligibility below still
+          // prevents a submitted review from being shown as a new review.
+        }
+      }));
+    }
+
+    unresolved = completed.keys
+        .where((id) => !_reviewsByWorkOrder.containsKey(id))
+        .toList(growable: false);
+    for (var start = 0; start < unresolved.length; start += batchSize) {
+      final end = (start + batchSize).clamp(0, unresolved.length).toInt();
+      await Future.wait(unresolved.sublist(start, end).map((workOrderId) async {
+        try {
+          final eligibility = await getReviewEligibility(
+            workOrderId: workOrderId,
+          );
           if (eligibility['eligible'] == false &&
               eligibility['reason']?.toString() == 'already_reviewed') {
             _cacheReview(workOrderId, const {
@@ -1742,6 +1792,29 @@ class HomeownerService {
     await _invalidateProfileCache();
     unawaited(syncInBackground());
     return result;
+  }
+
+  /// Help & support's contact form (F09). Off until the backend ships
+  /// `homeowner/support-request`; returns null while off so the form can
+  /// hand the request to the phone's email app instead. A request is never
+  /// reported as sent unless this call returned.
+  static const bool supportRequestEnabled = false;
+  static const String _supportRequestPath = 'homeowner/support-request';
+
+  Future<Map<String, dynamic>?> submitSupportRequest({
+    required String topic,
+    required String message,
+    int? workOrderId,
+  }) async {
+    if (!supportRequestEnabled) return null;
+    final uid = _userId;
+    if (uid == null) throw Exception('User is not authenticated');
+    return _post(_supportRequestPath, {
+      'userId': uid,
+      'topic': topic,
+      'message': message,
+      if (workOrderId != null) 'workOrderId': workOrderId,
+    });
   }
 
   /// Persists the categories a homeowner has explicitly opted into. The
@@ -2455,6 +2528,7 @@ class HomeownerService {
       receipt: true,
     );
     await _invalidateWorkOrderCache();
+    notifyLocalDataChanged();
     return document;
   }
 
@@ -2504,17 +2578,8 @@ class HomeownerService {
     final cached = cachedReviewForWorkOrder(workOrderId);
     if (cached != null && cached['detailsAvailable'] != false) return cached;
     try {
-      final response = await _post(_reviewActionPath, {
-        'action': 'get_review',
-        'workOrderId': workOrderId,
-        'requesterUserId': _userId
-      });
-      if (response['review'] is Map) {
-        final review =
-            _normalizeReview(Map<String, dynamic>.from(response['review']));
-        _cacheReview(workOrderId, review);
-        return review;
-      }
+      final review = await _fetchReviewFromEndpoint(workOrderId);
+      if (review != null) return review;
     } catch (_) {
       // Legacy servers can still supply embedded or RLS-protected review rows.
     }
@@ -2547,6 +2612,28 @@ class HomeownerService {
 
     final review = _reviewFromWorkOrder(match);
     if (review != null) _cacheReview(workOrderId, review);
+    return review;
+  }
+
+  Future<Map<String, dynamic>?> _fetchReviewFromEndpoint(
+    int workOrderId,
+  ) async {
+    if (_userId == null) throw Exception('User is not authenticated');
+    final response = await _post(
+      _reviewActionPath,
+      {
+        'action': 'get_review',
+        'workOrderId': workOrderId,
+        'requesterUserId': _userId,
+        'requester_user_id': _userId,
+      },
+      fallbackEndpoint: _legacyReviewActionPath,
+    );
+    if (response['review'] is! Map) return null;
+    final review = _normalizeReview(
+      Map<String, dynamic>.from(response['review']),
+    );
+    _cacheReview(workOrderId, review);
     return review;
   }
 

@@ -89,16 +89,22 @@ void main() {
     final expanded = order.arrange([...all, 'new'], (s) => s);
     expect(expanded.where((s) => s != 'new').toList(), first);
   });
-  testWidgets(
-      'new review has no selected stars or praise and gates invoice tag',
+  testWidgets('new review only offers the cap tag for cap-approval jobs',
       (tester) async {
     await tester.pumpWidget(const MaterialApp(
         home: LeaveReviewScreen(job: {'status': 'completed'}, jobId: 17)));
     expect(find.byIcon(Icons.star_rounded), findsNothing);
     expect(find.text('Great service'), findsNothing);
-    final chip = find.widgetWithText(FilterChip, 'Price stayed within the cap');
-    expect(chip, findsOneWidget);
-    expect(tester.widget<FilterChip>(chip).onSelected, isNull);
+    expect(find.widgetWithText(FilterChip, 'Price stayed within the cap'),
+        findsNothing);
+
+    await tester.pumpWidget(const MaterialApp(
+        home: LeaveReviewScreen(
+            job: {'status': 'completed', 'workOrderType': 'nte'}, jobId: 18)));
+    final capChip =
+        find.widgetWithText(FilterChip, 'Price stayed within the cap');
+    expect(capChip, findsOneWidget);
+    expect(tester.widget<FilterChip>(capChip).onSelected, isNotNull);
     expect(tester.takeException(), isNull);
   });
   testWidgets('review edit is identified and preserves existing rating',

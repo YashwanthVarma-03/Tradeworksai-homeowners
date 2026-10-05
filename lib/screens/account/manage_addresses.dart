@@ -15,7 +15,6 @@ class ManageAddressesScreen extends StatefulWidget {
 
 class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
   static const Color _pageBackground = AppTheme.pageBackground;
-  static const Color _inkStrong = AppTheme.navy;
   static const Color _mutedText = AppTheme.textSecondary;
   static const Color _lineSoft = AppTheme.cardBorder;
 
@@ -227,14 +226,13 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
                   _string(address['label']) ?? 'Address',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _inkStrong,
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w900,
+                  style: AppTheme.headingStyle.copyWith(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              if (isDefault) _pill('DEFAULT'),
+              if (isDefault) _defaultMark(),
               if (busy) ...[
                 const SizedBox(width: 8),
                 const SizedBox(
@@ -252,25 +250,21 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
           Text(
             _addressLine(address),
             style: const TextStyle(
-              color: _mutedText,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w500,
-              height: 1.35,
+              color: AppTheme.body,
+              fontSize: 15,
+              height: 22 / 15,
             ),
           ),
           const SizedBox(height: 10),
           const Divider(height: 1, color: _lineSoft),
           const SizedBox(height: 10),
           Wrap(
-            spacing: 18,
-            runSpacing: 8,
+            spacing: 24,
             children: [
               _textAction('Edit', () => _addOrEditAddress(address)),
-              if (!isDefault)
-                _textAction('Set default', () => _setDefault(id),
-                    color: AppTheme.navy700),
+              if (!isDefault) _textAction('Set default', () => _setDefault(id)),
               _textAction('Delete', () => _deleteAddress(id),
-                  color: AppTheme.error),
+                  color: AppTheme.red),
             ],
           ),
         ],
@@ -278,25 +272,14 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
     );
   }
 
+  /// Secondary button (v3.3 rule 3): white, grey border, navy label.
   Widget _addAddressButton() {
-    return OutlinedButton(
-      onPressed: () => _addOrEditAddress(),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppTheme.teal500,
-        side: const BorderSide(
-          color: AppTheme.teal500,
-          width: 1.2,
-          style: BorderStyle.solid,
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 17),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      child: const Text(
-        '+ Add address',
-        style: TextStyle(
-          fontSize: 15.5,
-          fontWeight: FontWeight.w900,
-        ),
+    return SizedBox(
+      height: 50,
+      child: OutlinedButton.icon(
+        onPressed: () => _addOrEditAddress(),
+        icon: const Icon(Icons.add_rounded, size: 20),
+        label: const Text('Add address'),
       ),
     );
   }
@@ -322,35 +305,45 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
     );
   }
 
+  /// Blue text link by default; [color] only for the destructive Delete.
+  /// 44px tall so each is a full tap target.
   Widget _textAction(String label, VoidCallback onTap, {Color? color}) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color ?? AppTheme.teal500,
-          fontSize: 13,
-          fontWeight: FontWeight.w900,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          widthFactor: 1,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color ?? AppTheme.blue,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _pill(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppTheme.blueTint,
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: AppTheme.teal500,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
+  /// "Default" — a green check and the word (v3.3: no pills).
+  Widget _defaultMark() {
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.check_rounded, size: 16, color: AppTheme.greenMark),
+        SizedBox(width: 4),
+        Text(
+          'Default',
+          style: TextStyle(
+            color: AppTheme.green,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -362,7 +355,8 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
     final zip = _string(address['zip']);
     final line1 = [street, unit].whereType<String>().join(' ');
     final line2 = [city, state, zip].whereType<String>().join(', ');
-    return [line1, line2].where((part) => part.isNotEmpty).join(', ');
+    // Street on one line, city / state / ZIP on the next (F06).
+    return [line1, line2].where((part) => part.isNotEmpty).join('\n');
   }
 
   Map<String, dynamic> _asMap(dynamic value) {

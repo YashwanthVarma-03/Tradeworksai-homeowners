@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../theme.dart';
 
@@ -83,7 +82,7 @@ class ServiceSearchBar extends StatelessWidget {
                       focusNode: focusNode,
                       textInputAction: TextInputAction.search,
                       onTap: onTap,
-                      onTapOutside: onTapOutside,
+                      onTapOutside: onTapOutside ?? (_) => focusNode.unfocus(),
                       onChanged: onChanged,
                       onSubmitted: (_) => onSubmit(),
                       showCursor: focusNode.hasFocus,
@@ -93,7 +92,8 @@ class ServiceSearchBar extends StatelessWidget {
                       cursorRadius: const Radius.circular(0.75),
                       maxLines: 1,
                       textAlignVertical: const TextAlignVertical(y: -0.08),
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'Inter',
                         color: textColor,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -101,8 +101,15 @@ class ServiceSearchBar extends StatelessWidget {
                       ),
                       decoration: const InputDecoration(
                         border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        errorBorder: InputBorder.none,
+                        focusedErrorBorder: InputBorder.none,
                         isDense: true,
-                        contentPadding: EdgeInsets.zero,
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: EdgeInsets.symmetric(vertical: 18),
                         prefixIcon: Padding(
                           padding: EdgeInsets.only(left: 14),
                           child: Icon(
@@ -131,7 +138,8 @@ class ServiceSearchBar extends StatelessWidget {
                                   hint!,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.inter(
+                                  style: const TextStyle(
+                                    fontFamily: 'Inter',
                                     color: AppTheme.textSecondary,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
@@ -178,7 +186,7 @@ class ServiceSearchBar extends StatelessWidget {
                         height: submitSize,
                         child: const Icon(
                           Icons.arrow_forward_rounded,
-                          color: Colors.white,
+                          color: AppTheme.navy,
                           size: 22,
                         ),
                       ),

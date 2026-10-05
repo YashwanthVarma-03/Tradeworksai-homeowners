@@ -12,6 +12,7 @@ import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
 import '../widgets/app_notification.dart';
+import '../widgets/capsules.dart';
 import '../widgets/select_certified_info.dart';
 import 'book_flow.dart';
 import 'chat_screen.dart';
@@ -317,27 +318,22 @@ class _FigmaProfileSurface extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 4),
-              Wrap(
-                spacing: 5,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (distance.isNotEmpty)
-                    Text(distance,
-                        style: const TextStyle(
-                            color: _muted,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500)),
-                  if (_hasRating) ...[
-                    const Icon(Icons.star_rounded,
-                        size: 15, color: AppTheme.gold),
-                    Text('$reviewCount reviews ($rating)',
-                        style: const TextStyle(
-                            color: _muted,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500)),
-                  ],
-                ],
-              ),
+              if (distance.isNotEmpty)
+                Text(
+                  distance,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              if (_hasRating) ...[
+                const SizedBox(height: 8),
+                RatingCapsule(
+                  rating: num.parse(rating),
+                  count: num.parse(reviewCount).toInt(),
+                ),
+              ],
             ],
           ),
         ),
@@ -431,11 +427,7 @@ class _FigmaProfileSurface extends StatelessWidget {
             const SizedBox(width: 10),
             Padding(
               padding: const EdgeInsets.only(top: 15),
-              child: Text('Next: $nextSlot',
-                  style: const TextStyle(
-                      color: _green,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800)),
+              child: AvailabilityCapsule(label: 'Next: $nextSlot'),
             ),
           ],
         ],
@@ -1085,7 +1077,7 @@ class _FigmaProfileSurface extends StatelessWidget {
         onPressed: bookActionLoading ? null : onBook,
         style: ElevatedButton.styleFrom(
             backgroundColor: _orange,
-            foregroundColor: Colors.white,
+            foregroundColor: AppTheme.navy,
             elevation: 0,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
@@ -1095,7 +1087,7 @@ class _FigmaProfileSurface extends StatelessWidget {
                 height: 18,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  color: AppTheme.navy,
                 ),
               )
             : Text(bookActionLabel,
@@ -2655,11 +2647,9 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       if (!mounted) return;
       final navigator = Navigator.of(context);
       final result = await navigator.push(
-        MaterialPageRoute(
-          builder: (context) => BookFlowScreen(
-            initialDescription: widget.initialDescription,
-            pro: _displayPro,
-          ),
+        BookFlowScreen.route<Object?>(
+          initialDescription: widget.initialDescription,
+          pro: _displayPro,
         ),
       );
       if (result == BookFlowExit.changeContractor && mounted) {

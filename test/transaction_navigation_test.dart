@@ -25,12 +25,12 @@ void main() {
     await tester.tap(find.text('Start booking'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Booking confirmed!'), findsOneWidget);
-    await tester.tap(find.byTooltip('Back to browse'));
+    expect(find.text('Booking confirmed'), findsOneWidget);
+    await tester.tap(find.byTooltip('Back to search'));
     await tester.pumpAndSettle();
 
     expect(find.text('Start booking'), findsOneWidget);
-    expect(find.text('Booking confirmed!'), findsNothing);
+    expect(find.text('Booking confirmed'), findsNothing);
     expect(AppTabNavigation.requestedTab.value, 1);
   });
 

@@ -104,12 +104,87 @@ class WorkOrderStatus {
     return WorkOrderStatus(WorkOrderState.booked, waitingOnYou: waiting);
   }
 
-  static WorkOrderStatus fromJob(Map<String, dynamic> job) => from(
-        job['status'],
-        rawFlags: job,
-        cancelledBy:
-            job['cancelledBy'] ?? job['cancelled_by'] ?? job['canceled_by'],
-      );
+  /// The job's state plus what the homeowner owes. A submitted cap that is
+  /// not yet approved is Waiting on you whatever state the pro has set, and
+  /// so is the paid receipt on a completed job (Oct 1, G-46).
+  static WorkOrderStatus fromJob(Map<String, dynamic> job) {
+    final base = from(
+      job['status'],
+      rawFlags: job,
+      cancelledBy:
+          job['cancelledBy'] ?? job['cancelled_by'] ?? job['canceled_by'],
+    );
+    if (base.waitingOnYou || base.isTerminalWithoutProgress) return base;
+    if (capPending(job) || receiptPending(job)) {
+      return WorkOrderStatus(base.state, waitingOnYou: true);
+    }
+    return base;
+  }
+
+  static bool _present(dynamic value) {
+    if (value == null) return false;
+    if (value is Map) return value.isNotEmpty;
+    if (value is List) return value.isNotEmpty;
+    final text = value.toString().trim().toLowerCase();
+    return text.isNotEmpty && text != 'null' && text != 'false';
+  }
+
+  /// True while the pro has sent a not-to-exceed cap that the homeowner has
+  /// not approved or declined. Keyed on the cap, never on the job state: the
+  /// pro may already have tapped In progress for the diagnostic (Oct 1).
+  static bool capPending(Map<String, dynamic> job) {
+    final status = '${job['status'] ?? ''}'.toLowerCase();
+    if (status.contains('complete') ||
+        status.contains('cancel') ||
+        status.contains('no_show') ||
+        status.contains('declined')) {
+      return false;
+    }
+    final capStatus =
+        '${job['capStatus'] ?? job['cap_status'] ?? job['quoteStatus'] ?? job['quote_status'] ?? ''}'
+            .toLowerCase();
+    if (capStatus.contains('approved') ||
+        capStatus.contains('accepted') ||
+        capStatus.contains('declined') ||
+        capStatus.contains('rejected')) {
+      return false;
+    }
+    final timeline = job['timeline'];
+    if (_present(job['capApprovedAt']) ||
+        _present(job['cap_approved_at']) ||
+        (timeline is Map && _present(timeline['capApprovedAt']))) {
+      return false;
+    }
+    return status == 'quote_sent' ||
+        status == 'quote_provided' ||
+        status == 'cap_review' ||
+        status.contains('cap_pending') ||
+        capStatus.contains('pending') ||
+        capStatus.contains('sent') ||
+        capStatus.contains('submitted') ||
+        job['requiresCapApproval'] == true ||
+        job['requires_cap_approval'] == true ||
+        job['needsQuoteApproval'] == true ||
+        job['needs_quote_approval'] == true;
+  }
+
+  /// A completed job whose paid receipt has not been uploaded. Not owed when
+  /// credits covered the whole job — nothing was paid (Oct 1, G-46).
+  static bool receiptPending(Map<String, dynamic> job) {
+    final status = '${job['status'] ?? ''}'.toLowerCase();
+    if (status != 'completed' && status != 'complete') return false;
+    if (_present(job['receiptDocumentId']) ||
+        _present(job['receipt_document_id']) ||
+        _present(job['paidReceiptUrl']) ||
+        _present(job['paid_receipt_url']) ||
+        job['receiptUploaded'] == true ||
+        job['receipt_uploaded'] == true) {
+      return false;
+    }
+    final paid = job['paidAmount'] ?? job['paid_amount'];
+    final paidNumber = paid is num ? paid : num.tryParse('${paid ?? ''}');
+    return paidNumber != 0;
+  }
 
   String get label {
     switch (state) {

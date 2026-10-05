@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import '../theme.dart';
+import '../services/auth_service.dart';
+import '../services/homeowner_service.dart';
+import '../utils/work_order_labels.dart';
 import '../widgets/app_notification.dart';
 
 class SupportPage extends StatefulWidget {
@@ -13,6 +16,119 @@ class SupportPage extends StatefulWidget {
 class _SupportPageState extends State<SupportPage> {
   int _viewIndex = 0; // 0: FAQ, 1: Contact Form, 2: Success
   String _searchQuery = '';
+
+  // Contact form (F09): only real values — the homeowner's own work orders
+  // and account email. Nothing is shown as sent unless the server took it.
+  static const List<String> _topics = [
+    'Booking help',
+    'Billing',
+    'Service credits',
+    'Reschedule/Cancel',
+    'Other',
+  ];
+  String _topic = _topics.first;
+  String? _relatedId;
+  List<({String id, String label})> _workOrders = const [];
+  final TextEditingController _message = TextEditingController();
+  bool _sending = false;
+  String? _reference;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWorkOrders();
+  }
+
+  @override
+  void dispose() {
+    _message.dispose();
+    super.dispose();
+  }
+
+  /// "WO-24152 — AC repair" for each of the homeowner's work orders.
+  Future<void> _loadWorkOrders() async {
+    try {
+      final data = await HomeownerService.instance.fetchWorkOrders();
+      final tabs = data['tabs'];
+      final seen = <String>{};
+      final rows = <({String id, String label})>[];
+      if (tabs is Map) {
+        for (final list in tabs.values.whereType<List>()) {
+          for (final raw in list.whereType<Map>()) {
+            final job = Map<String, dynamic>.from(raw);
+            final id = workOrderDbId(job);
+            final wo = workOrderLabel(job);
+            if (id == null || wo.isEmpty || !seen.add('$id')) continue;
+            rows.add((id: '$id', label: '$wo — ${jobServiceName(job)}'));
+          }
+        }
+      }
+      if (mounted) setState(() => _workOrders = rows);
+    } catch (_) {
+      // Signed out or offline: the form still works without a related job.
+    }
+  }
+
+  String? get _relatedLabel {
+    for (final row in _workOrders) {
+      if (row.id == _relatedId) return row.label;
+    }
+    return null;
+  }
+
+  /// What "Message sent" lists — only what was actually sent.
+  List<(String, String)> get _summaryRows => [
+        if (_reference != null) ('Reference', _reference!),
+        ('Topic', _topic),
+        if (_relatedLabel != null) ('Related', _relatedLabel!),
+      ];
+
+  Future<void> _sendRequest() async {
+    final message = _message.text.trim();
+    if (_sending) return;
+    if (message.isEmpty) {
+      AppNotification.showInfo(context, 'Tell us what’s going on first.');
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      final result = await HomeownerService.instance.submitSupportRequest(
+        topic: _topic,
+        message: message,
+        workOrderId: _relatedId == null ? null : int.tryParse(_relatedId!),
+      );
+      if (!mounted) return;
+      if (result == null) {
+        // The support inbox isn't live in the app yet: hand the same
+        // request to the phone's email app rather than pretend it was sent.
+        final subject = [_topic, _relatedLabel].whereType<String>().join(' · ');
+        await _openSupportLink(
+          'mailto:support@tradeworksai.com'
+              '?subject=${Uri.encodeComponent(subject)}'
+              '&body=${Uri.encodeComponent(message)}',
+          'write an email',
+        );
+        return;
+      }
+      final reference = '${result['reference'] ?? result['id'] ?? ''}'.trim();
+      setState(() {
+        _reference =
+            reference.isEmpty || reference == 'null' ? null : reference;
+        _viewIndex = 2;
+      });
+    } catch (e) {
+      if (mounted) {
+        AppNotification.showError(
+          context,
+          e,
+          fallback:
+              'We couldn’t send your request. Email support@tradeworksai.com instead.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
 
   final List<Map<String, String>> _faqs = [
     {
@@ -214,8 +330,16 @@ class _SupportPageState extends State<SupportPage> {
                                 fontSize: 12.5)),
                         const SizedBox(height: 2),
                         const Text('(813) 477-7350',
-                            style:
-                                TextStyle(color: AppTheme.gray, fontSize: 11)),
+                            style: TextStyle(
+                                color: AppTheme.blue,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        const Text('Opens your phone’s dialer',
+                            style: TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 13,
+                                height: 18 / 13)),
                       ],
                     ),
                   ),
@@ -255,8 +379,10 @@ class _SupportPageState extends State<SupportPage> {
                                 fontSize: 12.5)),
                         const SizedBox(height: 2),
                         const Text('support@tradeworksai.com',
-                            style:
-                                TextStyle(color: AppTheme.gray, fontSize: 11)),
+                            style: TextStyle(
+                                color: AppTheme.blue,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
@@ -270,14 +396,9 @@ class _SupportPageState extends State<SupportPage> {
             style: TextStyle(color: AppTheme.gray, fontSize: 10.5),
           ),
           const SizedBox(height: 24),
-          const Text(
-            'COMMON QUESTIONS',
-            style: TextStyle(
-              color: AppTheme.gray,
-              fontSize: 10.5,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
+          Text(
+            'Common questions',
+            style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: 8),
           ...(() {
@@ -300,10 +421,9 @@ class _SupportPageState extends State<SupportPage> {
                 child: Text(
                   cat,
                   style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.04,
+                    color: AppTheme.textSecondary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ));
@@ -316,9 +436,9 @@ class _SupportPageState extends State<SupportPage> {
                     title: Text(
                       faq['q']!,
                       style: const TextStyle(
-                          color: AppTheme.navy700,
+                          color: AppTheme.navy,
                           fontWeight: FontWeight.w600,
-                          fontSize: 13),
+                          fontSize: 16),
                     ),
                     children: [
                       Padding(
@@ -326,7 +446,9 @@ class _SupportPageState extends State<SupportPage> {
                         child: Text(
                           faq['a']!,
                           style: const TextStyle(
-                              color: AppTheme.ink, fontSize: 12.5, height: 1.5),
+                              color: AppTheme.body,
+                              fontSize: 15,
+                              height: 23 / 15),
                         ),
                       ),
                     ],
@@ -342,114 +464,62 @@ class _SupportPageState extends State<SupportPage> {
   }
 
   Widget _buildContactForm() {
+    const labelStyle = TextStyle(
+        fontWeight: FontWeight.w600, fontSize: 14, color: AppTheme.navy);
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      borderSide: const BorderSide(color: AppTheme.cardBorder),
+    );
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Topic',
-              style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  color: AppTheme.ink)),
-          const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppTheme.line),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                isExpanded: true,
-                value: 'Booking help',
-                items: [
-                  'Booking help',
-                  'Billing',
-                  'Service credits',
-                  'Reschedule/Cancel',
-                  'Other'
-                ]
-                    .map((t) => DropdownMenuItem(
-                        value: t,
-                        child: Text(t, style: const TextStyle(fontSize: 13))))
-                    .toList(),
-                onChanged: (v) {},
-              ),
-            ),
+          const Text('Topic', style: labelStyle),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            value: _topic,
+            isExpanded: true,
+            decoration: InputDecoration(
+                enabledBorder: border, border: border, isDense: true),
+            items: _topics
+                .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                .toList(),
+            onChanged: _sending
+                ? null
+                : (v) => setState(() => _topic = v ?? _topics.first),
           ),
           const SizedBox(height: 16),
-          const Text('Related work order (optional)',
-              style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  color: AppTheme.ink)),
-          const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppTheme.line),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                isExpanded: true,
-                value: 'None',
-                items: ['None', '#TW-4821 — AC repair']
-                    .map((t) => DropdownMenuItem(
-                        value: t,
-                        child: Text(t, style: const TextStyle(fontSize: 13))))
-                    .toList(),
-                onChanged: (v) {},
-              ),
-            ),
+          const Text('Related work order (optional)', style: labelStyle),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String?>(
+            value: _relatedId,
+            isExpanded: true,
+            decoration: InputDecoration(
+                enabledBorder: border, border: border, isDense: true),
+            items: [
+              const DropdownMenuItem<String?>(value: null, child: Text('None')),
+              for (final row in _workOrders)
+                DropdownMenuItem<String?>(
+                  value: row.id,
+                  child: Text(row.label, overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: _sending ? null : (v) => setState(() => _relatedId = v),
           ),
           const SizedBox(height: 16),
-          const Text('Message',
-              style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  color: AppTheme.ink)),
-          const SizedBox(height: 6),
+          const Text('Message', style: labelStyle),
+          const SizedBox(height: 8),
           TextField(
-            maxLines: 4,
+            controller: _message,
+            enabled: !_sending,
+            minLines: 4,
+            maxLines: 8,
+            textCapitalization: TextCapitalization.sentences,
             decoration: InputDecoration(
               hintText: 'Tell us what’s going on...',
-              hintStyle: const TextStyle(color: AppTheme.gray, fontSize: 13),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppTheme.line),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppTheme.line),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.pageBackground,
-              border:
-                  Border.all(color: AppTheme.line, style: BorderStyle.solid),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.camera_alt_outlined,
-                    color: AppTheme.navy700, size: 16),
-                SizedBox(width: 8),
-                Text('Add a photo ',
-                    style: TextStyle(
-                        color: AppTheme.navy700,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12.5)),
-                Text('(optional)',
-                    style: TextStyle(color: AppTheme.gray, fontSize: 12.5)),
-              ],
+              enabledBorder: border,
+              border: border,
             ),
           ),
         ],
@@ -480,10 +550,12 @@ class _SupportPageState extends State<SupportPage> {
                   fontWeight: FontWeight.bold,
                   color: AppTheme.navy700)),
           const SizedBox(height: 8),
-          const Text(
-            'We’ll reply to jordan.avery@email.com within 1 business day.',
+          Text(
+            AuthService.instance.userEmail == null
+                ? 'We’ll reply by email within 1 business day.'
+                : 'We’ll reply to ${AuthService.instance.userEmail} within 1 business day.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppTheme.gray, fontSize: 13),
+            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15),
           ),
           const SizedBox(height: 24),
           Container(
@@ -492,46 +564,28 @@ class _SupportPageState extends State<SupportPage> {
               border: Border.all(color: AppTheme.line),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Column(
+            child: Column(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Reference',
-                        style: TextStyle(color: AppTheme.gray, fontSize: 12.5)),
-                    Text('#HS-2048',
-                        style: TextStyle(
-                            color: AppTheme.navy700,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12.5)),
-                  ],
-                ),
-                Divider(height: 24, color: AppTheme.line),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Topic',
-                        style: TextStyle(color: AppTheme.gray, fontSize: 12.5)),
-                    Text('Booking help',
-                        style: TextStyle(
-                            color: AppTheme.navy700,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12.5)),
-                  ],
-                ),
-                Divider(height: 24, color: AppTheme.line),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Related',
-                        style: TextStyle(color: AppTheme.gray, fontSize: 12.5)),
-                    Text('#TW-4821 · AC repair',
-                        style: TextStyle(
-                            color: AppTheme.navy700,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12.5)),
-                  ],
-                ),
+                for (var i = 0; i < _summaryRows.length; i++) ...[
+                  if (i > 0) const Divider(height: 24, color: AppTheme.line),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(_summaryRows[i].$1,
+                          style: const TextStyle(
+                              color: AppTheme.textSecondary, fontSize: 14)),
+                      const SizedBox(width: 16),
+                      Flexible(
+                        child: Text(_summaryRows[i].$2,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                                color: AppTheme.navy,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14)),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -636,11 +690,8 @@ class _SupportPageState extends State<SupportPage> {
                   setState(() {
                     _viewIndex = 1;
                   });
-                } else if (_viewIndex == 1) {
-                  // submit form
-                  setState(() {
-                    _viewIndex = 2;
-                  });
+                } else if (_viewIndex == 1 && !_sending) {
+                  _sendRequest();
                 }
               },
               style: ElevatedButton.styleFrom(
@@ -657,13 +708,11 @@ class _SupportPageState extends State<SupportPage> {
               ),
             ),
           ),
-          if (_viewIndex == 1) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'We usually reply by email within 1 business day.',
-              style: TextStyle(color: AppTheme.gray, fontSize: 11),
-            ),
-          ]
+          const SizedBox(height: 8),
+          const Text(
+            'We usually reply by email within 1 business day.',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
         ],
       ),
     );

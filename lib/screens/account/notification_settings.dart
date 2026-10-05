@@ -187,7 +187,7 @@ class _NotificationSettingsScreenState
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
                   children: [
-                    _sectionLabel('PUSH NOTIFICATIONS'),
+                    _sectionLabel('Push notifications'),
                     _toggleTile(
                       title: 'Work-order status updates',
                       subtitle: 'Booked, en route, in progress, completed',
@@ -224,7 +224,8 @@ class _NotificationSettingsScreenState
                     ),
                     _toggleTile(
                       title: 'Service credits & rewards',
-                      subtitle: 'When credits are ready, and before they expire',
+                      subtitle:
+                          'When credits are ready, and before they expire',
                       value: _pushCredits,
                       onChanged: _isSaving
                           ? null
@@ -241,7 +242,7 @@ class _NotificationSettingsScreenState
                     ),
                     _toggleTile(
                       title: 'Promotions & offers',
-                      subtitle: 'Occasional offers',
+                      subtitle: 'Occasional offers · Off unless you turn it on',
                       value: _pushPromos,
                       onChanged: _isSaving
                           ? null
@@ -257,7 +258,7 @@ class _NotificationSettingsScreenState
                               ),
                     ),
                     const SizedBox(height: 18),
-                    _sectionLabel('EMAIL'),
+                    _sectionLabel('Email'),
                     _toggleTile(
                       title: 'Booking receipts',
                       subtitle: 'A receipt after each completed job',
@@ -277,7 +278,7 @@ class _NotificationSettingsScreenState
                     ),
                     _toggleTile(
                       title: 'Promotions & offers',
-                      subtitle: 'Occasional offers',
+                      subtitle: 'Occasional offers · Off unless you turn it on',
                       value: _emailPromos,
                       onChanged: _isSaving
                           ? null
@@ -328,21 +329,15 @@ class _NotificationSettingsScreenState
     );
   }
 
+  /// Section heading: Outfit 20, sentence case (v3.3 rule 2).
   Widget _sectionLabel(String text) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: _mutedText,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 1.4,
-        ),
-      ),
+      padding: const EdgeInsets.only(top: 6, bottom: 4),
+      child: Text(text, style: Theme.of(context).textTheme.headlineMedium),
     );
   }
 
+  /// A hairline row: title, one meta line, a switch (F08).
   Widget _toggleTile({
     required String title,
     required String subtitle,
@@ -350,12 +345,9 @@ class _NotificationSettingsScreenState
     required ValueChanged<bool>? onChanged,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(11, 8, 9, 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: _lineSoft),
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: _lineSoft)),
       ),
       child: Row(
         children: [
@@ -365,35 +357,37 @@ class _NotificationSettingsScreenState
               children: [
                 Text(
                   title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: _inkStrong,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: _mutedText,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                    height: 20 / 14,
                   ),
                 ),
               ],
             ),
           ),
-          Switch(
-            value: value,
-            activeColor: Colors.white,
-            activeTrackColor: AppTheme.navy,
-            inactiveThumbColor: Colors.white,
-            inactiveTrackColor: AppTheme.cardBorder,
-            onChanged: onChanged,
+          const SizedBox(width: 12),
+          Semantics(
+            label: title,
+            child: Switch(
+              value: value,
+              activeColor: Colors.white,
+              activeTrackColor: AppTheme.blue,
+              inactiveThumbColor: Colors.white,
+              inactiveTrackColor: AppTheme.border,
+              trackOutlineColor:
+                  const WidgetStatePropertyAll(Colors.transparent),
+              onChanged: onChanged,
+            ),
           ),
         ],
       ),
@@ -402,25 +396,23 @@ class _NotificationSettingsScreenState
 
   Widget _infoCallout() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.blueTint,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.teal500),
+        color: AppTheme.subtle,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
       ),
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.trending_up_rounded, color: AppTheme.teal500, size: 26),
+          Icon(Icons.info_outline_rounded, color: AppTheme.navy, size: 20),
           SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Push alerts deep-link to the relevant work order. In-app live status uses a 60-second refresh.',
+              'Push alerts open the work order they’re about.',
               style: TextStyle(
-                color: _inkStrong,
-                fontSize: 12,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
+                color: AppTheme.body,
+                fontSize: 14,
+                height: 21 / 14,
               ),
             ),
           ),

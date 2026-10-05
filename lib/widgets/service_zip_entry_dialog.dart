@@ -47,7 +47,7 @@ class _ServiceZipEntryDialogState extends State<_ServiceZipEntryDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -58,8 +58,8 @@ class _ServiceZipEntryDialogState extends State<_ServiceZipEntryDialog> {
               'Enter ZIP code',
               style: TextStyle(
                 color: AppTheme.navy700,
-                fontSize: 21,
-                fontWeight: FontWeight.w900,
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 16),
@@ -111,7 +111,7 @@ class _ServiceZipEntryDialogState extends State<_ServiceZipEntryDialog> {
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.orange500,
-                      foregroundColor: Colors.white,
+                      foregroundColor: AppTheme.navy,
                     ),
                     onPressed: _save,
                     child: const Text('Save'),

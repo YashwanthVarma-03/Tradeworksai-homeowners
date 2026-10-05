@@ -36,7 +36,8 @@ void main() {
     expect(find.textContaining('7%'), findsNothing);
     expect(tester.takeException(), isNull);
   });
-  testWidgets('current platform anniversary fields render without calendar totals',
+  testWidgets(
+      'current platform anniversary fields render without calendar totals',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
@@ -57,8 +58,8 @@ void main() {
                       ],
                     }))));
     await tester.pumpAndSettle();
-    expect(find.textContaining('24.00 earned since your year started'),
-        findsOneWidget);
+    expect(find.text('Earned since your year started'), findsOneWidget);
+    expect(find.text(r'$24.00'), findsOneWidget);
     expect(find.text('Earned'), findsOneWidget);
     expect(find.textContaining('99,999'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -97,6 +98,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Fully credited job'), findsNothing);
     expect(find.text('Upload paid receipt'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('Fully covered by credits · No credits earned'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Fully covered by credits · No credits earned'),
         findsOneWidget);
     expect(tester.takeException(), isNull);

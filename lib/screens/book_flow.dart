@@ -11,6 +11,7 @@ import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
+import '../utils/display_format.dart';
 import '../utils/transaction_id.dart';
 import '../widgets/app_notification.dart';
 import 'account/manage_addresses.dart';
@@ -36,20 +37,42 @@ class BookFlowScreen extends StatefulWidget {
     this.initialDescription,
   });
 
+  /// The booking flow is a bottom sheet over the screen that opened it
+  /// (C01–C05). Non-opaque so the profile shows under the dimmed strip.
+  static Route<T> route<T>({
+    required Map<String, dynamic> pro,
+    String? initialDescription,
+  }) {
+    return PageRouteBuilder<T>(
+      opaque: false,
+      barrierColor: AppTheme.navy.withOpacity(0.45),
+      transitionDuration: const Duration(milliseconds: 280),
+      reverseTransitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (_, __, ___) => BookFlowScreen(
+        pro: pro,
+        initialDescription: initialDescription,
+      ),
+      transitionsBuilder: (_, animation, __, child) => SlideTransition(
+        position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+            .animate(
+                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+        child: child,
+      ),
+    );
+  }
+
   @override
   State<BookFlowScreen> createState() => _BookFlowScreenState();
 }
 
 class _BookFlowScreenState extends State<BookFlowScreen> {
-  static const double _contentInset = 16;
-  static const double _headerInset = 8;
   static const Color _surfaceLine = AppTheme.cardBorder;
   static const Color _mutedText = AppTheme.textSecondary;
-  static const Color _inkText = AppTheme.navy;
 
   late final PageController _pageController;
   final _issueController = TextEditingController();
   final _creditAmountController = TextEditingController();
+  final _accessCodeController = TextEditingController();
   final _picker = ImagePicker();
   final Set<String> _selectedDetailChips = <String>{};
   late final String _bookingTransactionId = TransactionId.create('booking');
@@ -110,6 +133,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     _pageController.dispose();
     _issueController.dispose();
     _creditAmountController.dispose();
+    _accessCodeController.dispose();
     super.dispose();
   }
 
@@ -174,6 +198,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       'service_prices',
       'servicePrices',
     ])) {
+      // Only services the pro can take bookings for: not pending admin
+      // approval, not switched off (Oct 1).
+      if (item is Map && !_isBookableServiceRecord(item)) continue;
       final option = item is Map
           ? _ServiceOption.fromMap(Map<String, dynamic>.from(item))
           : _ServiceOption.fromString(item.toString(), trade: _proTrade);
@@ -250,6 +277,53 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     );
   }
 
+  bool _isBookableServiceRecord(Map item) {
+    for (final key in const [
+      'active',
+      'is_active',
+      'isActive',
+      'enabled',
+      'bookable',
+      'is_bookable',
+      'isBookable',
+    ]) {
+      if (item[key] == false) return false;
+    }
+    final status =
+        '${item['status'] ?? item['approval_status'] ?? item['approvalStatus'] ?? ''}'
+            .toLowerCase()
+            .trim();
+    return !(status.startsWith('pending') ||
+        const {'off', 'inactive', 'disabled', 'rejected', 'paused'}
+            .contains(status));
+  }
+
+  String _serviceType(_ServiceOption service) => service.pricingChoices.isEmpty
+      ? 'rate_card'
+      : service.pricingChoices.first.workOrderType;
+
+  /// The line under a service name says what kind of price it is (Oct 1).
+  String _serviceTypeLine(_ServiceOption service) {
+    switch (_serviceType(service)) {
+      case 'nte':
+        return 'You approve the cap';
+      case 'quote_request':
+        return 'The pro sends you an estimate';
+      default:
+        return 'Upfront price';
+    }
+  }
+
+  /// "$129.00", "$89.00 diagnostic" or "Free visit" — never "From".
+  String _servicePriceText(_ServiceOption service) {
+    final type = _serviceType(service);
+    if (type == 'quote_request') return 'Free visit';
+    final amount = service.amount;
+    if (amount == null) return '';
+    final price = formatUsd(amount);
+    return type == 'nte' ? '$price diagnostic' : price;
+  }
+
   String _formatPriceLabel(int? price) {
     if (price == null) return '';
     return 'From \$$price';
@@ -308,14 +382,24 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   String _urgencyCardPriceText(_UrgencyOption tier) {
     final fee = tier.feeLabel.trim();
-    if (fee.isEmpty) return 'Included';
-    if (fee.toLowerCase() == 'included') return 'Included';
+    final isStandard = tier.urgencySlug.toLowerCase() == 'standard';
+    if (!isStandard && !tier.available) return 'Not offered';
+    if (fee.isEmpty || fee.toLowerCase() == 'included') {
+      return isStandard ? 'Included' : '';
+    }
     return fee;
   }
 
-  String _urgencyCardPriceSubtext(_UrgencyOption tier) {
-    final servicePrice = _priceAmountOnly(_selectedPricingChoice.priceText);
-    return servicePrice.isEmpty ? '' : 'Service $servicePrice';
+  /// The response promise per level (Oct 1): 48 / 24 / 4 hours.
+  String _responseWindow(String slug) {
+    switch (slug.toLowerCase()) {
+      case 'emergency':
+        return 'Within 4 hours';
+      case 'urgent':
+        return 'Within 24 hours';
+      default:
+        return 'Within 48 hours';
+    }
   }
 
   String _selectedEmergencySurchargeLabel() {
@@ -393,7 +477,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 _string(_mergedPro['urgent_response_time']) ??
                 _string(_mergedPro['urgentNextAvailable']) ??
                 _string(_mergedPro['urgent_next_available']) ??
-                'Responds within 8 hours',
+                'Within 24 hours',
           ),
           feeLabel: _urgencyFallbackPriceText('urgent'),
           urgencySlug: 'urgent',
@@ -407,7 +491,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 _string(_mergedPro['emergency_response_time']) ??
                 _string(_mergedPro['emergencyNextAvailable']) ??
                 _string(_mergedPro['emergency_next_available']) ??
-                'Responds within 2 hours',
+                'Within 4 hours',
           ),
           feeLabel: _urgencyFallbackPriceText('emergency'),
           urgencySlug: 'emergency',
@@ -417,7 +501,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         return _UrgencyOption(
           label: 'Standard',
           detail: _UrgencyOption.formatDetail(
-            responseTime.isNotEmpty ? responseTime : 'Responds within 48 hours',
+            responseTime.isNotEmpty ? responseTime : 'Within 48 hours',
           ),
           feeLabel: _urgencyFallbackPriceText('standard'),
           urgencySlug: 'standard',
@@ -428,11 +512,22 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   _UrgencyOption _withLiveUrgencySummary(_UrgencyOption option) {
     final key = option.urgencySlug.toLowerCase();
-    return option.copyWith(
+    final live = option.copyWith(
       detail: _urgencyAvailabilityDetails[key],
       feeLabel: _urgencyAvailabilityPrices[key],
       available: _urgencyAvailabilityStates[key],
     );
+    if (key == 'standard') return live;
+    // Urgent and Emergency need a fee to be offered (Oct 1). No fee, or no
+    // answer yet from the pro's availability, means not available — never
+    // "Included", never available by default.
+    final fee = live.feeLabel.trim().toLowerCase();
+    final hasFee = fee.isNotEmpty &&
+        fee != 'included' &&
+        readAmount(fee) != null &&
+        readAmount(fee)! > 0;
+    final confirmed = _urgencyAvailabilityStates[key] == true;
+    return live.copyWith(available: hasFee && confirmed);
   }
 
   String _urgencyFallbackPriceText(String urgency) {
@@ -679,6 +774,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             );
           }
         });
+        _prefillAccessCode();
         if (shouldRefreshAvailability) {
           await _refreshAvailability();
           await _hydrateUrgencySummaries();
@@ -1051,7 +1147,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     if (_isSubmitting) return;
     if (!_stepIsAnswered(_BookingPage.review)) {
       AppNotification.showInfo(
-          context, 'Choose a response tier and arrival window first.');
+          context, 'Choose a response time and arrival window first.');
       return;
     }
     if (!AuthService.instance.isAuthenticated) {
@@ -1106,7 +1202,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             live['slots'] as List? ?? [], _selectedUrgency.urgencySlug);
         if (slots.isEmpty)
           throw Exception(
-              'This pro has no availability within the response deadline. Choose another response tier or pro.');
+              'This pro has no availability within the response deadline. Choose another response time or pro.');
         startsAt = BookingTiming.start(slots.first)!.toIso8601String();
         endsAt = BookingTiming.end(slots.first)!.toIso8601String();
       }
@@ -1164,6 +1260,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           'intake_session_token': _bookingIntakeToken,
         'selected_pricing_label': selectedPricing.label,
         'credit_request_id': _creditRequestId,
+        if (_accessCodeController.text.trim().isNotEmpty)
+          'access_code': _accessCodeController.text.trim(),
         if (selectedPricing.amount != null)
           'upfront_price': selectedPricing.amount,
         if (selectedPricing.workOrderType != 'quote_request' &&
@@ -1403,85 +1501,185 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         _goBack();
       },
       child: Scaffold(
-        backgroundColor: AppTheme.pageBackground,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(),
-              _buildProgress(),
-              Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _pages.length,
-                  onPageChanged: (index) {
-                    if (index != _pageIndex) {
-                      setState(() => _pageIndex = index);
-                    }
-                  },
-                  itemBuilder: (context, index) {
-                    return SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(
-                        _contentInset,
-                        0,
-                        _contentInset,
-                        24,
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            // The dimmed strip above the sheet. Tapping it closes the flow.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _closeFlow,
+              child: SizedBox(
+                width: double.infinity,
+                height: MediaQuery.of(context).padding.top + 36,
+              ),
+            ),
+            Expanded(
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: AppTheme.floatShadow,
+                ),
+                child: Column(
+                  children: [
+                    _buildSheetHeader(),
+                    Expanded(
+                      child: PageView.builder(
+                        controller: _pageController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _pages.length,
+                        onPageChanged: (index) {
+                          if (index != _pageIndex) {
+                            setState(() => _pageIndex = index);
+                          }
+                        },
+                        itemBuilder: (context, index) {
+                          return SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                            child: _buildStepFor(_pages[index]),
+                          );
+                        },
                       ),
-                      child: _buildStepFor(_pages[index]),
-                    );
-                  },
+                    ),
+                    _buildSheetFooter(),
+                  ],
                 ),
               ),
-              _buildFooter(),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: _headerInset),
-      child: SizedBox(
-        height: 48,
-        child: Row(
-          children: [
-            IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 40, minHeight: 48),
-              icon: const Icon(
-                Icons.arrow_back_rounded,
-                color: _inkText,
-                size: 20,
-              ),
-              onPressed: _goBack,
-            ),
-            Expanded(
-              child: Center(
+  /// Sheet header (C01–C05): grabber, "Book Pro: {pro}" with "Step n of N",
+  /// and one bar segment per step — done and current segments are blue.
+  Widget _buildSheetHeader() {
+    final total = _pages.length;
+    final pro = _proName.isEmpty ? 'this pro' : _proName;
+    return Column(
+      children: [
+        const SizedBox(height: 10),
+        Container(
+          width: 36,
+          height: 4,
+          decoration: BoxDecoration(
+            color: AppTheme.border,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+          child: Row(
+            children: [
+              Expanded(
                 child: Text(
-                  'Step $_currentStepNumber of ${_pages.length}',
+                  'Book Pro: $pro',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: _mutedText,
-                    fontSize: 13,
+                  style: AppTheme.headingStyle.copyWith(
+                    fontSize: 17,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-            ),
-            IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 40, minHeight: 48),
-              icon: const Icon(
-                Icons.close_rounded,
-                color: _inkText,
-                size: 20,
+              const SizedBox(width: 12),
+              Text(
+                'Step $_currentStepNumber of $total',
+                style: const TextStyle(
+                  color: AppTheme.blue,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              onPressed: _closeFlow,
+            ],
+          ),
+        ),
+        Semantics(
+          label: 'Booking progress, step $_currentStepNumber of $total',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                for (var i = 0; i < total; i++) ...[
+                  if (i > 0) const SizedBox(width: 4),
+                  Expanded(
+                    child: Container(
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: i < _currentStepNumber
+                            ? AppTheme.blue
+                            : AppTheme.cardBorder,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Back (secondary) + Continue (primary). Step 1 has Continue only.
+  Widget _buildSheetFooter() {
+    final label = _isLastPage
+        ? 'Confirm booking'
+        : (_returnToReviewAfterEdit ? 'Save changes' : 'Continue');
+    final canContinue = !_isSubmitting && _stepIsAnswered(_pages[_pageIndex]);
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppTheme.cardBorder)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+          child: Row(
+            children: [
+              if (_pageIndex > 0) ...[
+                SizedBox(
+                  width: 104,
+                  height: 50,
+                  child: OutlinedButton(
+                    onPressed: _isSubmitting ? null : _goBack,
+                    child: const Text('Back'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: SizedBox(
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: canContinue
+                        ? () {
+                            if (_isLastPage) {
+                              _submitBooking();
+                            } else {
+                              _goToNext();
+                            }
+                          }
+                        : null,
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppTheme.onOrange,
+                            ),
+                          )
+                        : Text(label),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1526,47 +1724,25 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return null;
   }
 
-  Widget _buildProgress() {
-    return const SizedBox.shrink();
-  }
-
   Widget _bookingStepHeader({
     required String title,
     required String subtitle,
   }) {
-    final pro = _proName.isEmpty ? 'this pro' : _proName;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'BOOK $pro'.toUpperCase(),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppTheme.teal500,
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1,
-          ),
-        ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 12),
         Text(
           title,
-          style: const TextStyle(
-            color: AppTheme.navy700,
-            fontSize: 22,
-            height: 1.25,
-            fontWeight: FontWeight.w900,
-          ),
+          style: AppTheme.headingStyle.copyWith(fontSize: 24, height: 1.25),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           subtitle,
           style: const TextStyle(
-            color: _mutedText,
-            fontSize: 13,
-            height: 1.4,
-            fontWeight: FontWeight.w400,
+            color: AppTheme.textSecondary,
+            fontSize: 15,
+            height: 1.47,
           ),
         ),
       ],
@@ -1584,7 +1760,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       case _BookingPage.schedule:
         return _buildScheduleStep();
       case _BookingPage.review:
-        return _buildReviewStep();
+        return _buildReviewAndConfirm();
     }
   }
 
@@ -1628,6 +1804,19 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 onTap: () => _selectBookingService(index, service),
               );
             }),
+          if (_hasBookableService &&
+              options.any((option) => _serviceType(option) == 'nte'))
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'With a cap, the final price may be lower — never higher.',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
+                  height: 1.45,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1671,9 +1860,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     required bool selected,
     required VoidCallback onTap,
   }) {
-    final priceIsEstimate =
-        service.priceLabel.toLowerCase().contains('estimate') ||
-            service.priceLabel.toLowerCase().contains('free');
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: InkWell(
@@ -1727,33 +1913,29 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    if (service.subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        service.subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _mutedText,
-                          fontSize: 12,
-                          height: 1.15,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _serviceTypeLine(service),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 14,
+                        height: 1.43,
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
-              if (service.priceLabel.isNotEmpty) ...[
+              if (_servicePriceText(service).isNotEmpty) ...[
                 const SizedBox(width: 8),
                 Text(
-                  service.priceLabel,
+                  _servicePriceText(service),
                   textAlign: TextAlign.right,
-                  style: TextStyle(
-                    color:
-                        priceIsEstimate ? AppTheme.success : AppTheme.navy700,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
+                  style: const TextStyle(
+                    color: AppTheme.navy,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
@@ -1777,7 +1959,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           _bookingStepHeader(
             title: 'Anything else we should know?',
             subtitle:
-                'Optional - add details or photos to help ${_proName.isNotEmpty ? _proName : 'the pro'} prepare. You can also skip this step.',
+                'Optional — add details or photos to help ${_proName.isNotEmpty ? _proName : 'the pro'} prepare. You can also skip this step.',
           ),
           const SizedBox(height: 12),
           Container(
@@ -1800,6 +1982,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               ),
               decoration: const InputDecoration(
                 isCollapsed: true,
+                filled: false,
                 border: InputBorder.none,
                 hintText: 'AC isn\'t cooling properly',
                 hintStyle: TextStyle(
@@ -1904,7 +2087,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                     ),
                     SizedBox(width: 10),
                     Text(
-                      '+ Add photos of the issue',
+                      'Add photos of the issue',
                       style: TextStyle(
                         color: AppTheme.teal500,
                         fontSize: 13,
@@ -2040,7 +2223,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             final tier = entry.value;
             final selected = index == _selectedUrgencyIndex;
             final priceText = _urgencyCardPriceText(tier);
-            final priceSubtext = _urgencyCardPriceSubtext(tier);
             final isIncluded = priceText.toLowerCase() == 'included';
             return Opacity(
               opacity: tier.available ? 1 : 0.42,
@@ -2101,7 +2283,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                tier.detail,
+                                _responseWindow(tier.urgencySlug),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -2134,20 +2316,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
-                                if (priceSubtext.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    priceSubtext,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.right,
-                                    style: const TextStyle(
-                                      color: _mutedText,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
                               ],
                             ),
                           ),
@@ -2172,7 +2340,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               const SizedBox(width: 12),
               Expanded(
                   child: Text(
-                      'The response-tier fee goes to $_proName. TradeWorks adds no markup and no platform fee.',
+                      'The Urgent or Emergency fee goes to $_proName. TradeWorks adds no markup and no platform fee.',
                       style: const TextStyle(
                           color: AppTheme.navy700,
                           fontSize: 13,
@@ -2211,15 +2379,24 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         else if (_selectedUrgency.urgencySlug.toLowerCase() == 'emergency' &&
             _selectedAvailability?['emergencyEligible'] == false)
           const Text(
-            'This pro can’t take an emergency booking. Pick another tier or another pro.',
+            'This pro can’t take an emergency booking. Pick another response time or another pro.',
             style: TextStyle(color: AppTheme.gray),
           )
         else if (_dates.isEmpty)
           const Text(
-            'No availability in this window — try another pro or a different response tier.',
+            'No availability in this window — try another pro or a different response time.',
             style: TextStyle(color: AppTheme.gray),
           )
         else ...[
+          const Text(
+            'Day',
+            style: TextStyle(
+              color: AppTheme.navy,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
           SizedBox(
             height: 46,
             child: ListView.separated(
@@ -2263,7 +2440,16 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               },
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
+          Text(
+            'Arrival window · ${_fullDateLabel(_selectedDate)}',
+            style: const TextStyle(
+              color: AppTheme.navy,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -2298,9 +2484,27 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               );
             },
           ),
+          const SizedBox(height: 12),
+          Text(
+            'The window you pick is booked on $_proName’s calendar.',
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 13,
+              height: 1.45,
+            ),
+          ),
         ],
       ]),
     );
+  }
+
+  /// "Wed, Oct 14" for a date key, even when its tile says "Tomorrow".
+  String _fullDateLabel(String? date) {
+    if (date == null) return '';
+    final slots = _slotsByDate[date] ?? const <Map<String, dynamic>>[];
+    final slot = slots.isEmpty ? null : slots.first['slot'];
+    final parsed = slot is Map ? _slotDateTime(slot, 'start') : null;
+    return parsed == null ? date : DateFormat('EEE, MMM d').format(parsed);
   }
 
   (String, String) _dateTileInfo(String date) {
@@ -2322,146 +2526,448 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       'Nov',
       'Dec'
     ];
-    return (date, '${months[parsed.month - 1]} ${parsed.day}');
+    // Top line: "Today", "Tomorrow" or the weekday — never the date again.
+    return (date.split(',').first, '${months[parsed.month - 1]} ${parsed.day}');
   }
 
-  Widget _buildReviewStep() {
+  /// Prefills the gate / access code from the Home profile's access notes
+  /// for the selected address, when the homeowner saved any (Oct 1, G-53).
+  Future<void> _prefillAccessCode() async {
+    final addressId = _string(_selectedAddressObj?['id']);
+    if (addressId == null || _accessCodeController.text.trim().isNotEmpty) {
+      return;
+    }
+    try {
+      final data = await HomeownerService.instance.fetchHomeProfiles();
+      final homes =
+          (data['homeProfiles'] as List? ?? const []).whereType<Map>();
+      for (final home in homes) {
+        if ('${home['addressId'] ?? home['address_id']}' != addressId) continue;
+        final notes = home['accessNotes'];
+        final text = notes is Map ? _string(notes['text']) : null;
+        if (text != null &&
+            mounted &&
+            _accessCodeController.text.trim().isEmpty) {
+          setState(() => _accessCodeController.text = text);
+        }
+        return;
+      }
+    } catch (_) {
+      // Optional field — the homeowner can type it.
+    }
+  }
+
+  TextStyle get _cardTitleStyle => AppTheme.headingStyle.copyWith(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+      );
+
+  Widget _changeLink(VoidCallback onTap) => TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+        child: const Text('Change'),
+      );
+
+  Widget _reviewRow(
+    String label,
+    String value, {
+    VoidCallback? onChange,
+    bool last = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : const Border(bottom: BorderSide(color: AppTheme.cardBorder)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value.isEmpty ? '—' : value,
+                  style: const TextStyle(
+                    color: AppTheme.navy,
+                    fontSize: 16,
+                    height: 1.375,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onChange != null) _changeLink(onChange),
+        ],
+      ),
+    );
+  }
+
+  /// "+$35.00" for Urgent / Emergency, shown in the Response time row.
+  String _selectedLevelFeeLabel() {
+    if (_selectedUrgencyIndex < 0) return '';
+    if (_selectedUrgency.urgencySlug.toLowerCase() == 'standard') return '';
+    final fee = _selectedUrgency.feeLabel.trim();
+    if (fee.isEmpty || fee.toLowerCase() == 'included') return '';
+    return fee.startsWith('+') ? fee : '+$fee';
+  }
+
+  /// (label, value) of the price panel, by work-order type.
+  (String, String) _reviewPrice(_PricingChoice pricing) {
+    final amount = pricing.amount;
+    switch (pricing.workOrderType) {
+      case 'quote_request':
+        return ('Estimate to follow', 'Free visit');
+      case 'nte':
+        return (
+          'Diagnostic · you approve the cap next',
+          amount == null ? _priceText(pricing) : formatUsd(amount),
+        );
+      default:
+        return (
+          'Upfront price',
+          amount == null ? _priceText(pricing) : formatUsd(amount),
+        );
+    }
+  }
+
+  /// Review & confirm (C05; Oct 1, G-53).
+  Widget _buildReviewAndConfirm() {
     final pricing = _selectedPricingChoice;
     final detail = _issueController.text.trim();
     final address = _selectedAddressObj;
+    final stateZip = [
+      _string(address?['state']),
+      _string(address?['zip']),
+    ].whereType<String>().join(' ');
     final addressText = address == null
         ? ''
         : [
             _string(address['street']),
             _string(address['city']),
-            _string(address['state']),
-            _string(address['zip']),
-          ].whereType<String>().where((value) => value.isNotEmpty).join(', ');
+            stateZip.isEmpty ? null : stateZip,
+          ].whereType<String>().join(', ');
     final when = !_picksOwnTime
         ? _deadlineText()
         : _selectedDate != null && _selectedTime != null
-            ? '$_selectedDate $_selectedTime'
+            ? '${_fullDateLabel(_selectedDate)} · $_selectedTime'
             : '';
-    final fromPrice = _websiteFromPriceValue();
-    final emergencySurcharge = _selectedEmergencySurchargeLabel();
+    final levelFee = _selectedLevelFeeLabel();
+    final price = _reviewPrice(pricing);
 
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 24),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _bookingStepHeader(
-          title: 'Review & confirm',
-          subtitle: 'Confirm the details below to book.',
-        ),
-        const SizedBox(height: 12),
-        _reviewPanel(Column(children: [
-          _reviewLine('Pro', _proName, onChange: _changeContractor),
-          _reviewLine('Service', _selectedService.title,
-              onChange: () => _editFromReview(0)),
-          _reviewLine('When', when,
-              onChange: () => _editFromReview(_picksOwnTime ? 3 : 2)),
-          _reviewLine('Response tier', _selectedUrgency.label,
-              onChange: () => _editFromReview(2)),
-          if (fromPrice.isNotEmpty) _reviewLine('From', fromPrice),
-          if (emergencySurcharge.isNotEmpty)
-            _reviewLine('Emergency surcharge', emergencySurcharge),
-        ])),
-        const SizedBox(height: 11),
-        _reviewPanel(
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Text('YOUR DETAILS',
-                style: TextStyle(
-                    color: AppTheme.gray,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800)),
-            const Spacer(),
-            InkWell(
-                onTap: () => _editFromReview(1),
-                child: const Text('Change',
-                    style: TextStyle(
-                        color: AppTheme.teal500,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800)))
-          ]),
-          if (detail.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(detail,
-                style: const TextStyle(
-                    color: AppTheme.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700))
-          ],
-          if (_selectedPhotos.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-                spacing: 8,
-                children: _selectedPhotos
-                    .take(3)
-                    .map((photo) => ClipRRect(
-                        borderRadius: BorderRadius.circular(7),
-                        child: Image.file(File(photo.path),
-                            width: 42, height: 42, fit: BoxFit.cover)))
-                    .toList())
-          ],
-        ])),
-        const SizedBox(height: 11),
-        _reviewPanel(Row(children: [
-          Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                const Text('SERVICE ADDRESS',
-                    style: TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800)),
-                const SizedBox(height: 4),
-                Text(addressText.isEmpty ? 'No saved address' : addressText,
-                    style: const TextStyle(
-                        color: AppTheme.ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700))
-              ])),
-          IconButton(
-              onPressed: _openManageAddresses,
-              icon: const Icon(Icons.edit_outlined, color: AppTheme.gray))
-        ])),
-        const SizedBox(height: 11),
-        Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-                color: AppTheme.pageBackground,
-                borderRadius: BorderRadius.circular(12)),
-            child: Row(children: [
-              Expanded(
-                  child: Column(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _bookingStepHeader(
+            title: 'Review & confirm',
+            subtitle: 'Confirm the details below to book.',
+          ),
+          const SizedBox(height: 20),
+          _reviewPanel(Column(children: [
+            _reviewRow('Pro', _proName, onChange: _changeContractor),
+            _reviewRow('Service', _selectedService.title,
+                onChange: () => _editFromReview(0)),
+            _reviewRow('When', when,
+                onChange: () => _editFromReview(_picksOwnTime ? 3 : 2)),
+            _reviewRow(
+              'Response time',
+              levelFee.isEmpty
+                  ? _selectedUrgency.label
+                  : '${_selectedUrgency.label} · $levelFee',
+              onChange: () => _editFromReview(2),
+              last: true,
+            ),
+          ])),
+          const SizedBox(height: 12),
+          _reviewPanel(Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Expanded(child: Text('Your details', style: _cardTitleStyle)),
+                _changeLink(() => _editFromReview(1)),
+              ]),
+              if (detail.isEmpty && _selectedPhotos.isEmpty)
+                const Text(
+                  'No details or photos added',
+                  style: TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 14,
+                    height: 1.43,
+                  ),
+                ),
+              if (detail.isNotEmpty)
+                Text(
+                  detail,
+                  style: const TextStyle(
+                    color: AppTheme.navy,
+                    fontSize: 15,
+                    height: 1.47,
+                  ),
+                ),
+              if (_selectedPhotos.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: _selectedPhotos
+                      .take(3)
+                      .map((photo) => ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(File(photo.path),
+                              width: 42, height: 42, fit: BoxFit.cover)))
+                      .toList(),
+                ),
+              ],
+            ],
+          )),
+          const SizedBox(height: 12),
+          _reviewPanel(Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    const Text('UPFRONT PRICE',
-                        style: TextStyle(
-                            color: AppTheme.teal500,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 8),
-                    Text('You pay $_proName directly · \$0 markup',
-                        style:
-                            const TextStyle(color: AppTheme.gray, fontSize: 12))
-                  ])),
-              Text(_priceText(pricing),
-                  style: const TextStyle(
-                      color: AppTheme.navy700,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900))
-            ])),
-        if (pricing.workOrderType != 'quote_request' &&
-            _availableServiceCredits != null &&
-            pricing.amount != null) ...[
-          const SizedBox(height: 11),
-          _serviceCreditsPanel(pricing.amount!),
+                        Text('Service address', style: _cardTitleStyle),
+                        const SizedBox(height: 4),
+                        Text(
+                          addressText.isEmpty
+                              ? 'No saved address'
+                              : addressText,
+                          style: const TextStyle(
+                            color: AppTheme.navy,
+                            fontSize: 16,
+                            height: 1.44,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Edit address',
+                    onPressed: _openManageAddresses,
+                    icon: const Icon(Icons.edit_outlined,
+                        color: AppTheme.navy, size: 20),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Gate / access code (optional)',
+                style: TextStyle(
+                  color: AppTheme.navy,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _accessCodeController,
+                minLines: 1,
+                maxLines: 3,
+                maxLength: 500,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(counterText: ''),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Only your pro sees this, on the job.',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
+                  height: 1.38,
+                ),
+              ),
+            ],
+          )),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.subtle,
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        price.$1,
+                        style: const TextStyle(
+                          color: AppTheme.navy,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      price.$2,
+                      style: AppTheme.headingStyle.copyWith(fontSize: 26),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'TradeWorks adds no markup and takes no fee — we only fund the credits you apply.',
+                  style: TextStyle(
+                    color: AppTheme.body,
+                    fontSize: 14,
+                    height: 1.43,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (pricing.workOrderType != 'quote_request' &&
+              _availableServiceCredits != null &&
+              pricing.amount != null) ...[
+            const SizedBox(height: 12),
+            _creditsCard(pricing.amount!),
+          ],
         ],
-      ]),
+      ),
     );
+  }
+
+  /// Apply credits (C05): balance in purple, the settled instruction, the
+  /// amount, credits applied and what the homeowner pays the pro.
+  Widget _creditsCard(int price) {
+    final balance = _availableServiceCredits ?? 0;
+    final applied = _appliedServiceCredits(price);
+    final amountDue = price - applied;
+    return _reviewPanel(Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Apply credits', style: _cardTitleStyle),
+                const SizedBox(height: 2),
+                Text(
+                  'Available: ${formatUsd(balance)}',
+                  style: const TextStyle(
+                    color: AppTheme.purple,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: _useServiceCredits,
+            onChanged: balance <= 0
+                ? null
+                : (value) => setState(() {
+                      _useServiceCredits = value;
+                      if (value &&
+                          _creditAmountController.text.trim().isEmpty) {
+                        _creditAmountController.text = [
+                          balance,
+                          price.toDouble()
+                        ].reduce((a, b) => a < b ? a : b).toStringAsFixed(2);
+                      }
+                    }),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        const Text(
+          'Tell us how much to apply when you book.',
+          style: TextStyle(color: AppTheme.body, fontSize: 14, height: 1.43),
+        ),
+        if (_useServiceCredits) ...[
+          const SizedBox(height: 12),
+          const Text(
+            'Amount to apply',
+            style: TextStyle(
+              color: AppTheme.navy,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _creditAmountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              prefixText: '\$ ',
+              hintText: '0.00',
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(children: [
+            const Expanded(
+              child: Text(
+                'Credits applied',
+                style: TextStyle(color: AppTheme.body, fontSize: 15),
+              ),
+            ),
+            Text(
+              '−${formatUsd(applied)}',
+              style: const TextStyle(
+                color: AppTheme.purple,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ]),
+          const Divider(height: 24, color: AppTheme.cardBorder),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              const Expanded(
+                child: Text(
+                  'You pay',
+                  style: TextStyle(
+                    color: AppTheme.navy,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                formatUsd(amountDue),
+                style: AppTheme.headingStyle.copyWith(fontSize: 24),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            amountDue <= 0
+                ? 'Fully covered by your credits.'
+                : 'The remaining balance is paid directly to $_proName.',
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 13,
+              height: 1.38,
+            ),
+          ),
+        ],
+      ],
+    ));
   }
 
   Widget _reviewPanel(Widget child) => Container(
@@ -2593,95 +3099,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         ]),
       );
 
-  Widget _buildFooter() {
-    final label = _isLastPage
-        ? 'Confirm booking'
-        : (_returnToReviewAfterEdit ? 'Save changes' : 'Continue');
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: _surfaceLine)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            _contentInset,
-            12,
-            _contentInset,
-            12,
-          ),
-          child: SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: ElevatedButton(
-              onPressed: _isSubmitting || !_stepIsAnswered(_pages[_pageIndex])
-                  ? null
-                  : () {
-                      if (_isLastPage) {
-                        _submitBooking();
-                      } else {
-                        _goToNext();
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.orange500,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: _isSubmitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _radio(bool selected) {
-    return Container(
-      width: 20,
-      height: 20,
-      margin: const EdgeInsets.only(top: 2),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: selected ? AppTheme.teal500 : AppTheme.line,
-          width: 2,
-        ),
-      ),
-      child: selected
-          ? Center(
-              child: Container(
-                width: 9,
-                height: 9,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppTheme.teal500,
-                ),
-              ),
-            )
-          : null,
-    );
-  }
-
   Future<void> _openManageAddresses() async {
     final navigator = Navigator.of(context);
     await navigator.push(
@@ -2716,19 +3133,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return '${weekdays[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
   }
 
-  String _formatArrivalWindow(DateTime start, DateTime end) {
-    String format(DateTime dt) {
-      var hour = dt.hour;
-      final isPm = hour >= 12;
-      if (hour > 12) hour -= 12;
-      if (hour == 0) hour = 12;
-      final minute =
-          dt.minute == 0 ? '' : ':${dt.minute.toString().padLeft(2, '0')}';
-      return '$hour$minute${isPm ? ' PM' : ' AM'}';
-    }
-
-    return '${format(start)}-${format(end)}';
-  }
+  String _formatArrivalWindow(DateTime start, DateTime end) =>
+      formatWindow(start, end);
 
   List<String> _detailChipsForTrade(String trade) {
     final raw = _readList(
@@ -3036,6 +3442,15 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         'amount': amount,
         'upfrontPrice': amount,
       },
+      'work_order_type': workOrder['work_order_type'] ??
+          workOrder['workOrderType'] ??
+          pricing.workOrderType,
+      if (_appliedServiceCredits(pricing.amount) > 0)
+        'creditsApplied': workOrder['creditsApplied'] ??
+            workOrder['credits_applied'] ??
+            _appliedServiceCredits(pricing.amount),
+      if (_accessCodeController.text.trim().isNotEmpty)
+        'accessCode': _accessCodeController.text.trim(),
     };
   }
 
@@ -3707,7 +4122,7 @@ class _UrgencyOption {
       return text;
     }
     if (RegExp(r'^\d+(?:\.\d+)?$').hasMatch(text)) {
-      return '${plusForPlainNumber ? '+' : ''}\$$text';
+      return '${plusForPlainNumber ? '+' : ''}\$${double.parse(text).toStringAsFixed(2)}';
     }
     return text;
   }

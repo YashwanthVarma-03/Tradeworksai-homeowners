@@ -251,93 +251,171 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
     final details = profile['propertyDetails'] as Map;
     final notes = profile['accessNotes'] as Map;
     final systems = profile['systems'] as List;
-    return Card(
-        child: Padding(
-            padding: const EdgeInsets.all(16),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                  '${address['label'] ?? address['street'] ?? address['line1'] ?? address['address_line1'] ?? 'Home'}',
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
-              const Text('Property details',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              for (final field in {
-                'squareFootage': 'Square footage',
-                'yearBuilt': 'Year built',
-                'bedrooms': 'Bedrooms',
-                'bathrooms': 'Bathrooms'
-              }.entries)
-                Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: TextFormField(
-                      initialValue: '${details[field.key] ?? ''}',
-                      enabled: !_saving,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(labelText: field.value),
-                      onChanged: (value) => details[field.key] = value,
-                    )),
-              const SizedBox(height: 24),
-              const Text('Systems',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              if (systems.isEmpty)
-                const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child:
-                        Text('Add the systems you want to keep a record of.')),
-              for (final system in systems.cast<Map<String, dynamic>>())
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                      '${system['type'] ?? 'System'} · ${system['brand'] ?? ''}'),
-                  subtitle: Text(
-                      '${system['model'] ?? ''}\nLast serviced: ${system['lastServicedAt'] ?? 'No completed service recorded'}'),
-                  isThreeLine: true,
-                  trailing: IconButton(
-                      tooltip: 'Edit system',
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed:
-                          _saving ? null : () => _editSystem(profile, system)),
-                ),
-              TextButton.icon(
-                  onPressed: _saving ? null : () => _editSystem(profile),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add system')),
-              const SizedBox(height: 16),
-              TextFormField(
-                  initialValue: '${notes['text'] ?? ''}',
+    final documents = (profile['documents'] as List).whereType<Map>().toList();
+    final street = _text(
+        address['street'] ?? address['line1'] ?? address['address_line1']);
+    final cityLine = [
+      _text(address['city']),
+      [_text(address['state']), _text(address['zip'])]
+          .whereType<String>()
+          .join(' '),
+    ].whereType<String>().where((part) => part.isNotEmpty).join(', ');
+    final place = [street, cityLine]
+        .whereType<String>()
+        .where((part) => part.isNotEmpty)
+        .join(', ');
+    final type = _text(details['propertyType'] ??
+        address['propertyType'] ??
+        address['homeType']);
+    final line = [place, type]
+        .whereType<String>()
+        .where((part) => part.isNotEmpty)
+        .join(' · ');
+    return Padding(
+        padding: const EdgeInsets.only(bottom: 28),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                  color: AppTheme.subtle, shape: BoxShape.circle),
+              child: const Icon(Icons.home_outlined,
+                  size: 20, color: AppTheme.navy),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_text(address['label']) ?? 'Home',
+                        style: const TextStyle(
+                            color: AppTheme.navy,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600)),
+                    if (line.isNotEmpty)
+                      Text(line,
+                          style: const TextStyle(
+                              color: AppTheme.textSecondary, fontSize: 14)),
+                  ]),
+            ),
+          ]),
+          _sectionHeading('Property details'),
+          for (final field in {
+            'squareFootage': 'Square footage',
+            'yearBuilt': 'Year built',
+            'bedrooms': 'Bedrooms',
+            'bathrooms': 'Bathrooms'
+          }.entries)
+            Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: TextFormField(
+                  initialValue: '${details[field.key] ?? ''}',
                   enabled: !_saving,
-                  maxLines: 4,
-                  maxLength: 4000,
-                  decoration: const InputDecoration(
-                      labelText: 'Getting in',
-                      hintText: 'Door, gate or access instructions'),
-                  onChanged: (value) => notes['text'] = value),
-              const Text(
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(labelText: field.value),
+                  onChanged: (value) => details[field.key] = value,
+                )),
+          _sectionHeading('Systems'),
+          if (systems.isEmpty)
+            const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('Add the systems you want to keep a record of.')),
+          for (final system in systems.cast<Map<String, dynamic>>())
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(_systemTitle(system),
+                  style: const TextStyle(
+                      color: AppTheme.navy,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600)),
+              subtitle: Text([
+                [
+                  _text(system['model']),
+                  if (_text(system['installedYear']) != null)
+                    'Installed ${_text(system['installedYear'])}',
+                ].whereType<String>().join(' · '),
+                'Last serviced: ${_text(system['lastServicedAt']) ?? 'No completed service recorded'}',
+              ].where((part) => part.isNotEmpty).join('\n')),
+              isThreeLine: true,
+              trailing: IconButton(
+                  tooltip: 'Edit system',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed:
+                      _saving ? null : () => _editSystem(profile, system)),
+            ),
+          TextButton.icon(
+              onPressed: _saving ? null : () => _editSystem(profile),
+              icon: const Icon(Icons.add),
+              label: const Text('Add system')),
+          _sectionHeading('Getting in'),
+          const SizedBox(height: 8),
+          TextFormField(
+              initialValue: '${notes['text'] ?? ''}',
+              enabled: !_saving,
+              maxLines: 4,
+              maxLength: 4000,
+              decoration: const InputDecoration(
+                  labelText: 'Door, gate or access instructions'),
+              onChanged: (value) => notes['text'] = value),
+          const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.lock_outline_rounded,
+                size: 18, color: AppTheme.textSecondary),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
                   'Only the pro with a confirmed booking at this address may see getting-in notes, until the job closes.',
                   style: TextStyle(color: AppTheme.textSecondary)),
-              const SizedBox(height: 24),
-              const Text('Documents & warranties',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              for (final doc in (profile['documents'] as List).whereType<Map>())
-                ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.description_outlined),
-                    title: Text(
-                        '${doc['title'] ?? doc['fileName'] ?? 'Document'}'),
-                    subtitle: doc['homeSystemId'] == null
-                        ? null
-                        : const Text('Attached to a system'),
-                    onTap: () => _openDocument(doc)),
-              TextButton.icon(
-                  onPressed: _saving ? null : () => _uploadDocument(profile),
-                  icon: const Icon(Icons.upload_file),
-                  label: const Text('Upload document')),
-              const Text(
-                  'PDF or image, up to 10 MB. Documents are separate from work-order attachments.',
-                  style: TextStyle(color: AppTheme.textSecondary)),
-            ])));
+            ),
+          ]),
+          _sectionHeading('Documents & warranties'),
+          if (documents.isEmpty)
+            const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text('No documents yet.',
+                    style: TextStyle(color: AppTheme.body, fontSize: 15))),
+          for (final doc in documents)
+            ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.description_outlined),
+                title: Text('${doc['title'] ?? doc['fileName'] ?? 'Document'}'),
+                subtitle: doc['homeSystemId'] == null
+                    ? null
+                    : const Text('Attached to a system'),
+                onTap: () => _openDocument(doc)),
+          TextButton.icon(
+              onPressed: _saving ? null : () => _uploadDocument(profile),
+              icon: const Icon(Icons.upload_file),
+              label: const Text('Upload document')),
+          const Text(
+              'PDF or image, up to 10 MB. Documents are separate from work-order attachments.',
+              style: TextStyle(color: AppTheme.textSecondary)),
+        ]));
+  }
+
+  Widget _sectionHeading(String text) => Padding(
+        padding: const EdgeInsets.only(top: 28, bottom: 4),
+        child: Text(text, style: Theme.of(context).textTheme.headlineMedium),
+      );
+
+  String? _text(dynamic value) {
+    final text = value?.toString().trim();
+    return text == null || text.isEmpty || text.toLowerCase() == 'null'
+        ? null
+        : text;
+  }
+
+  /// "HVAC · Carrier", "Water heater" — never a raw key or a dangling "·".
+  String _systemTitle(Map<String, dynamic> system) {
+    final raw = _text(system['type']);
+    final type = raw == null
+        ? 'System'
+        : raw.toLowerCase() == 'hvac'
+            ? 'HVAC'
+            : '${raw[0].toUpperCase()}${raw.substring(1).replaceAll('_', ' ')}';
+    final brand = _text(system['brand']);
+    return brand == null ? type : '$type · $brand';
   }
 }
 

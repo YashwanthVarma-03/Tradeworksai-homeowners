@@ -169,7 +169,7 @@ class _SignupPageState extends State<SignupPage> {
       hintText: hint,
       suffixIcon: suffix,
       filled: true,
-      fillColor: AppTheme.pageBackground,
+      fillColor: AppTheme.subtle,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
       border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -183,9 +183,9 @@ class _SignupPageState extends State<SignupPage> {
       blockedMessage: 'Please wait while your account is being created.',
       child: Scaffold(
           backgroundColor: AppTheme.pageBackground,
-          appBar: AppBar(backgroundColor: Colors.transparent),
           body: SafeArea(
-              child: Center(
+              child: Align(
+                  alignment: Alignment.topCenter,
                   child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
                       child: Form(
@@ -262,31 +262,47 @@ class _SignupPageState extends State<SignupPage> {
                                         ? 'Password must be at least 8 characters'
                                         : null),
                                 const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    TextButton(
-                                      onPressed:
-                                          _loading ? null : _openTermsOfService,
-                                      child: const Text('Terms of Service',
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      TextButton(
+                                        onPressed: _loading
+                                            ? null
+                                            : _openTermsOfService,
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 4),
+                                          minimumSize: const Size(48, 48),
+                                        ),
+                                        child: const Text('Terms of Service',
+                                            style: TextStyle(
+                                                color: AppTheme.blue,
+                                                decoration:
+                                                    TextDecoration.underline)),
+                                      ),
+                                      const Text('·',
                                           style: TextStyle(
-                                              color: AppTheme.navy,
-                                              decoration:
-                                                  TextDecoration.underline)),
-                                    ),
-                                    const Text('·',
-                                        style: TextStyle(
-                                            color: AppTheme.textSecondary)),
-                                    TextButton(
-                                      onPressed:
-                                          _loading ? null : _openPrivacyPolicy,
-                                      child: const Text('Read our Privacy Policy',
-                                          style: TextStyle(
-                                              color: AppTheme.navy,
-                                              decoration:
-                                                  TextDecoration.underline)),
-                                    ),
-                                  ],
+                                              color: AppTheme.textSecondary)),
+                                      TextButton(
+                                        onPressed: _loading
+                                            ? null
+                                            : _openPrivacyPolicy,
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 4),
+                                          minimumSize: const Size(48, 48),
+                                        ),
+                                        child: const Text(
+                                            'Read our Privacy Policy',
+                                            style: TextStyle(
+                                                color: AppTheme.blue,
+                                                decoration:
+                                                    TextDecoration.underline)),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 SizedBox(
@@ -295,13 +311,13 @@ class _SignupPageState extends State<SignupPage> {
                                         onPressed: _loading ? null : _submit,
                                         style: ElevatedButton.styleFrom(
                                             backgroundColor: AppTheme.orange500,
-                                            foregroundColor: Colors.white,
+                                            foregroundColor: AppTheme.navy,
                                             shape: RoundedRectangleBorder(
                                                 borderRadius:
                                                     BorderRadius.circular(14))),
                                         child: _loading
                                             ? const CircularProgressIndicator(
-                                                color: Colors.white)
+                                                color: AppTheme.navy)
                                             : const Text('Create account',
                                                 style: TextStyle(
                                                     fontWeight: FontWeight.w900,
@@ -356,8 +372,8 @@ class _SignupPageState extends State<SignupPage> {
                                             side: const BorderSide(
                                                 color: AppTheme.cardBorder)))),
                                 const SizedBox(height: 30),
-                                Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
+                                Wrap(
+                                    alignment: WrapAlignment.center,
                                     children: [
                                       const Text('Already have an account? ',
                                           style: TextStyle(
@@ -366,7 +382,7 @@ class _SignupPageState extends State<SignupPage> {
                                           onTap: _loading ? null : _openLogin,
                                           child: const Text('Log in',
                                               style: TextStyle(
-                                                  color: AppTheme.navy,
+                                                  color: AppTheme.blue,
                                                   fontWeight: FontWeight.w900)))
                                     ])
                               ])))))));
