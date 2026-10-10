@@ -2,6 +2,7 @@ import '../utils/lazy_results.dart';
 import '../widgets/loading_skeleton.dart';
 import '../utils/session_pro_order.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
@@ -24,7 +25,7 @@ import '../widgets/capsules.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/service_zip_entry_dialog.dart';
 import '../widgets/service_search_bar.dart';
-import '../widgets/select_certified_info.dart';
+import '../ui/tw.dart';
 import 'compare_pros.dart';
 import 'chat_screen.dart';
 import 'pro_profile.dart';
@@ -59,7 +60,7 @@ class SearchTab extends StatefulWidget {
 }
 
 class _SearchTabState extends State<SearchTab> {
-  static const double _railTileWidth = 88;
+  static const double _railTileWidth = 96;
   static const double _railTileGap = 8;
 
   static const Map<String, Color> _homeCategoryBackgrounds = {
@@ -101,17 +102,15 @@ class _SearchTabState extends State<SearchTab> {
   bool _isLoadingMore = false;
   String? _loadMoreError;
   bool _preserveSearchViewOnUnfocus = false;
-  double? _maxDistanceFilter;
+  // No distance filter: the homeowner searched by ZIP and the platform never
+  // measures distance (decisions §11, Oct 1).
   double? _minRatingFilter;
   String? _priceTypeFilter;
 
   bool get _hasActiveFilters =>
-      _maxDistanceFilter != null ||
-      _minRatingFilter != null ||
-      _priceTypeFilter != null;
+      _minRatingFilter != null || _priceTypeFilter != null;
 
   int get _activeFilterCount => [
-        _maxDistanceFilter,
         _minRatingFilter,
         _priceTypeFilter,
       ].where((value) => value != null).length;
@@ -119,11 +118,6 @@ class _SearchTabState extends State<SearchTab> {
   List<_BrowsePro> get _filteredLivePros {
     if (!_hasActiveFilters) return _livePros;
     return _livePros.where((pro) {
-      final maxDistance = _maxDistanceFilter;
-      if (maxDistance != null &&
-          (pro.distanceMiles <= 0 || pro.distanceMiles > maxDistance)) {
-        return false;
-      }
       final minRating = _minRatingFilter;
       if (minRating != null && pro.rating < minRating) return false;
       final priceType = _priceTypeFilter;
@@ -591,10 +585,16 @@ class _SearchTabState extends State<SearchTab> {
         }
       }
 
+      final currentLocation = _normalizeLocationText(_locationController.text)
+          .split(String.fromCharCode(183))
+          .first
+          .trim();
       final city = _readText(coverage['city']) ??
           _readText(coverage['areaName']) ??
           _readText(coverage['area_name']) ??
-          'Home';
+          (currentLocation.isEmpty || currentLocation == 'Enter ZIP code'
+              ? 'Home'
+              : currentLocation);
       final state = _readText(coverage['state']);
       final resolvedLocation = [city, state]
           .where((part) => part != null && part.trim().isNotEmpty)
@@ -670,7 +670,8 @@ class _SearchTabState extends State<SearchTab> {
     if (parts.length == 1) {
       return parts.first;
     }
-    return '${parts.first}, ${parts.last}';
+    final city = parts.first.replaceFirst(RegExp(r'(?:,\s*[A-Z]{2})+$'), '');
+    return '$city ${String.fromCharCode(183)} ${parts.last}';
   }
 
   void _handleFocusChange() {
@@ -789,9 +790,9 @@ class _SearchTabState extends State<SearchTab> {
     final result = await showModalBottomSheet<AiIntakeResult>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      constraints: BoxConstraints(
+        maxWidth: TwLayout.maxContent,
+        maxHeight: MediaQuery.sizeOf(context).height * 0.92,
       ),
       builder: (context) => AiIntakeSheet(
         initialMode: mode,
@@ -1127,61 +1128,82 @@ class _SearchTabState extends State<SearchTab> {
         }
         return false;
       },
-      child: CustomScrollView(
-        key: ValueKey('pros-$_prosRequestToken'),
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            sliver: SliverToBoxAdapter(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: header)),
-          ),
-          if (_isLoadingResults)
-            const SliverToBoxAdapter(
-                child: LoadingSkeleton(
-              layout: SkeletonLayout.results,
-              label: 'Loading pros',
-            ))
-          else if (_resultsError != null)
-            SliverToBoxAdapter(child: _buildInlineState(_resultsError!))
-          else ...[
+      // Gutter by width class; on Wide the column is centred and capped at
+      // 560 (SPEC §1.1). Slivers can't sit inside TwPage, so the same numbers
+      // are applied as sliver padding.
+      child: LayoutBuilder(builder: (context, constraints) {
+        final side = math.max(TwLayout.gutter(context),
+            (constraints.maxWidth - TwLayout.maxContent) / 2);
+        return CustomScrollView(
+          key: ValueKey('pros-$_prosRequestToken'),
+          slivers: [
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                      (context, index) => Padding(
-                          key: ValueKey(
-                              '${_proAvailabilityKey(pros[index])}|${pros[index].category}'),
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _buildBrowseCard(pros[index])),
-                      childCount: pros.length)),
+              padding: EdgeInsets.fromLTRB(side, TwSpace.s16, side, 0),
+              sliver: SliverToBoxAdapter(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: header)),
             ),
-            if (_isLoadingMore)
+            if (_isLoadingResults)
               const SliverToBoxAdapter(
                   child: LoadingSkeleton(
                 layout: SkeletonLayout.results,
-                itemCount: 1,
-                label: 'Loading more pros',
+                label: 'Loading pros',
               ))
-            else if (_loadMoreError != null || hasMore)
-              SliverToBoxAdapter(
-                  child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(children: [
-                        if (_loadMoreError != null) Text(_loadMoreError!),
-                        TextButton(
-                            onPressed: () => _loadProPage(_prosRequestToken),
-                            child: Text(_loadMoreError == null
-                                ? 'Load more pros'
-                                : 'Retry loading pros')),
-                      ]))),
-            if (pros.isEmpty && !hasMore && _loadMoreError == null)
-              SliverToBoxAdapter(child: _buildInlineState(emptyMessage)),
+            else if (_resultsError != null)
+              SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: side),
+                sliver: SliverToBoxAdapter(
+                    child: _buildInlineState(_resultsError!)),
+              )
+            else ...[
+              SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: side),
+                sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                        (context, index) => Padding(
+                            key: ValueKey(
+                                '${_proAvailabilityKey(pros[index])}|${pros[index].category}'),
+                            padding: const EdgeInsets.only(bottom: TwSpace.s12),
+                            child: _buildBrowseCard(pros[index])),
+                        childCount: pros.length)),
+              ),
+              if (_isLoadingMore)
+                const SliverToBoxAdapter(
+                    child: LoadingSkeleton(
+                  layout: SkeletonLayout.results,
+                  itemCount: 1,
+                  label: 'Loading more pros',
+                ))
+              else if (_loadMoreError != null || hasMore)
+                SliverToBoxAdapter(
+                    child: Padding(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: side, vertical: TwSpace.s16),
+                        child: Column(children: [
+                          if (_loadMoreError != null)
+                            Text(
+                              _loadMoreError!,
+                              textAlign: TextAlign.center,
+                              style: TwType.bodySm(),
+                            ),
+                          TextButton(
+                              onPressed: () => _loadProPage(_prosRequestToken),
+                              child: Text(_loadMoreError == null
+                                  ? 'Load more pros'
+                                  : 'Retry loading pros')),
+                        ]))),
+              if (pros.isEmpty && !hasMore && _loadMoreError == null)
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(horizontal: side),
+                  sliver: SliverToBoxAdapter(
+                      child: _buildInlineState(emptyMessage)),
+                ),
+            ],
+            const SliverToBoxAdapter(child: SizedBox(height: TwSpace.s28)),
           ],
-          const SliverToBoxAdapter(child: SizedBox(height: 18)),
-        ],
-      ),
+        );
+      }),
     );
   }
 
@@ -1252,15 +1274,17 @@ class _SearchTabState extends State<SearchTab> {
     return 'name:${pro.name.trim().toLowerCase()}';
   }
 
-  String _nextAvailableLabelFor(_BrowsePro pro) {
+  /// "Tomorrow", "Wed, Oct 14"… or null when the pro has no open slot
+  /// (B02: no capsule then — Batch 21 Amendment 1 R3).
+  String? _nextAvailableLabelFor(_BrowsePro pro) {
     return _liveNextSlotLabels[_proAvailabilityKey(pro)] ??
         _formatLooseAvailabilityLabel(pro.nextAvailable);
   }
 
-  String _formatLooseAvailabilityLabel(String raw) {
-    final trimmed = raw.trim();
+  String? _formatLooseAvailabilityLabel(String? raw) {
+    final trimmed = raw?.trim() ?? '';
     if (trimmed.isEmpty) {
-      return 'Availability pending';
+      return null;
     }
     if (RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(trimmed)) {
       return _formatSlotLabel(trimmed, null) ?? trimmed;
@@ -1898,6 +1922,10 @@ class _SearchTabState extends State<SearchTab> {
       'distanceMiles': pro.distanceMiles,
       'completedWorkOrders': pro.completedWorkOrders,
       'nextAvailable': pro.nextAvailable,
+      'selectedService': (_committedQuery?.trim().isNotEmpty ?? false)
+          ? _committedQuery!.trim()
+          : null,
+      'requestZip': _selectedZip,
       'summary': pro.summary,
       'services': pro.services,
       'photoUrl': pro.photoUrl,
@@ -1960,8 +1988,12 @@ class _SearchTabState extends State<SearchTab> {
         await Navigator.push<Object?>(
             context,
             MaterialPageRoute(
-                builder: (_) => ProProfileScreen(
-                    pro: pro, initialDescription: _bookingDescription)));
+                builder: (_) => ProProfileScreen(pro: {
+                      ...pro,
+                      'requestZip': _selectedZip,
+                      if ((_committedQuery?.trim().isNotEmpty ?? false))
+                        'selectedService': _committedQuery!.trim()
+                    }, initialDescription: _bookingDescription)));
     }
   }
 
@@ -1995,25 +2027,22 @@ class _SearchTabState extends State<SearchTab> {
     if (_compareIds.isEmpty) return const SizedBox.shrink();
     final ready = _compareIds.length >= 2;
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: TwSpace.s12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
       decoration: BoxDecoration(
         color: AppTheme.white,
         border: Border.all(color: AppTheme.cardBorder),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(children: [
         Expanded(
             child: Text(
                 '${_compareIds.length} of 3 selected${ready ? '' : ' · Add at least two pros to compare'}',
-                style: const TextStyle(
-                    color: AppTheme.navy, fontWeight: FontWeight.w700))),
+                style: TwType.title())),
+        const SizedBox(width: TwSpace.s12),
+        // Theme ElevatedButton: orange fill, navy label, 52 high, radius 12.
         ElevatedButton(
           onPressed: ready ? _openCompare : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.orange,
-            foregroundColor: AppTheme.navy,
-          ),
           child: const Text('Compare'),
         ),
       ]),
@@ -2071,57 +2100,38 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildZipRequired() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      children: [
-        _buildSearchInputPill(),
-        const SizedBox(height: 8),
-        _buildCompactLocationChip(),
-        const SizedBox(height: 64),
-        const Icon(
-          Icons.location_on_outlined,
-          color: AppTheme.navy700,
-          size: 48,
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          'Enter your ZIP code',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: AppTheme.navy700,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'We use it to show services and trusted pros available near you.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: AppTheme.gray,
-            fontSize: 13,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 22),
-        Center(
-          child: ElevatedButton(
-            onPressed: () async {
-              final zip = await showServiceZipEntryDialog(
-                context,
-                initialZip: '',
-              );
-              if (zip != null) await _applyLocationInput(zip);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.orange500,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
+    return SingleChildScrollView(
+      child: TwPage(
+        top: TwSpace.s16,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildSearchInputPill(),
+            const SizedBox(height: TwSpace.s8),
+            _buildCompactLocationChip(),
+            const SizedBox(height: TwSpace.s40),
+            // The one page-level action, so it stays the orange primary —
+            // now with the navy label (no white on orange).
+            TwEmptyState(
+              icon: Icons.location_on_outlined,
+              title: 'Enter your ZIP code',
+              message:
+                  'We use it to show services and trusted pros available near you.',
+              action: TwPrimaryButton(
+                label: 'Enter ZIP code',
+                expand: false,
+                onPressed: () async {
+                  final zip = await showServiceZipEntryDialog(
+                    context,
+                    initialZip: '',
+                  );
+                  if (zip != null) await _applyLocationInput(zip);
+                },
+              ),
             ),
-            child: const Text('Enter ZIP code'),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -2147,45 +2157,44 @@ class _SearchTabState extends State<SearchTab> {
   Widget _buildCompactLocationChip() {
     return Align(
       alignment: Alignment.centerLeft,
-      child: GestureDetector(
-        onTap: () async {
-          final nextZip = await showServiceZipEntryDialog(
-            context,
-            initialZip: _selectedZip,
-          );
-          if (nextZip != null) await _applyLocationInput(nextZip);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          decoration: BoxDecoration(
-            color: AppTheme.white,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.location_on,
-                color: AppTheme.navy,
-                size: 20,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                _locationChipLabel,
-                style: const TextStyle(
-                  color: AppTheme.navy700,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+      child: Material(
+        color: AppTheme.white,
+        shape: const StadiumBorder(side: BorderSide(color: AppTheme.border)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () async {
+            final nextZip = await showServiceZipEntryDialog(
+              context,
+              initialZip: _selectedZip,
+            );
+            if (nextZip != null) await _applyLocationInput(nextZip);
+          },
+          child: Padding(
+            // 12 + 20 (label line) + 12 = 44 tap height (SPEC §1.3).
+            padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.location_on_outlined,
+                  color: AppTheme.navy,
+                  size: 18,
                 ),
-              ),
-              const SizedBox(width: 2),
-              const Icon(
-                Icons.keyboard_arrow_down_rounded,
-                color: AppTheme.navy,
-                size: 20,
-              ),
-            ],
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    _locationChipLabel,
+                    style: TwType.label(),
+                  ),
+                ),
+                const SizedBox(width: 2),
+                const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: AppTheme.navy,
+                  size: 18,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2193,163 +2202,164 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildAllCategories() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-      children: [
-        Row(
+    return SingleChildScrollView(
+      child: TwPage(
+        top: TwSpace.s16,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Text(
-                'All services',
-                style: const TextStyle(
-                  color: AppTheme.navy,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Expanded(
+                  child: Text('All services', style: TwType.h2()),
                 ),
-              ),
+                const SizedBox(width: TwSpace.s12),
+                Text(
+                  '${_serviceCatalog.length} services',
+                  style: TwType.caption(),
+                ),
+              ],
             ),
+            const SizedBox(height: TwSpace.s8),
             Text(
-              '${_serviceCatalog.length} services',
-              style: const TextStyle(
-                color: AppTheme.gray,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+              'Choose a service to see available pros near you.',
+              style: TwType.bodySm(color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: TwSpace.s16),
+            ..._serviceCatalog.map(
+              (service) => Padding(
+                padding: const EdgeInsets.only(bottom: TwSpace.s8),
+                child: _AllServiceListRow(
+                  service: service,
+                  onTap: () {
+                    _searchController.text = service.name;
+                    _searchController.selection = TextSelection.collapsed(
+                      offset: service.name.length,
+                    );
+                    unawaited(_submitSearch(service.name));
+                  },
+                ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        const Text(
-          'Choose a service to see available pros near you.',
-          style: TextStyle(color: AppTheme.gray, fontSize: 13),
-        ),
-        const SizedBox(height: 12),
-        ..._serviceCatalog.map(
-          (service) => Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _AllServiceListRow(
-              service: service,
-              onTap: () {
-                _searchController.text = service.name;
-                _searchController.selection = TextSelection.collapsed(
-                  offset: service.name.length,
-                );
-                unawaited(_submitSearch(service.name));
-              },
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildSearchFocused() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-      children: [
-        _buildSearchInputPill(),
-        const SizedBox(height: 12),
-        _buildCompactLocationChip(),
-        if (_recentSearches.isNotEmpty) ...[
-          const SizedBox(height: 30),
-          _buildSectionHeader('Recent searches'),
-          const SizedBox(height: 12),
-          ..._recentSearches.take(3).map((term) => _buildListChipRow(
-                title: term,
-                trailing: '',
-                leading: Icons.history_rounded,
-                showChevron: true,
-                onTap: () {
-                  _searchController.text = term;
-                  _searchController.selection = TextSelection.collapsed(
-                    offset: term.length,
-                  );
-                  _submitSearch(term);
-                },
-              )),
-        ],
-        const SizedBox(height: 28),
-        _buildSectionHeader('Popular services'),
-        const SizedBox(height: 12),
-        ..._serviceCatalog.take(8).map((service) => _buildListChipRow(
-              title: service.name,
-              trailing: service.category,
-              onTap: () {
-                _searchController.text = service.name;
-                _searchController.selection = TextSelection.collapsed(
-                  offset: service.name.length,
-                );
-                _submitSearch(service.name);
-              },
-            )),
-        const SizedBox(height: 20),
-        InkWell(
-          onTap: _openAllCategories,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            decoration: BoxDecoration(
-              color: AppTheme.pageBackground,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.line),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Icon(Icons.grid_view_rounded, color: AppTheme.navy),
-                const SizedBox(width: 14),
-                Expanded(
-                    child: Text(
-                  'Browse all ${_allCategories.length} categories',
-                  style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontWeight: FontWeight.w600,
-                  ),
+    return SingleChildScrollView(
+      child: TwPage(
+        top: TwSpace.s16,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildSearchInputPill(),
+            const SizedBox(height: TwSpace.s8),
+            _buildCompactLocationChip(),
+            if (_recentSearches.isNotEmpty) ...[
+              const SizedBox(height: TwSpace.s28),
+              _buildSectionHeader('Recent searches'),
+              const SizedBox(height: TwSpace.s8),
+              ..._recentSearches.take(3).map((term) => _buildListChipRow(
+                    title: term,
+                    trailing: '',
+                    // A plain clock (B01), not the clock-with-arrow.
+                    leading: Icons.schedule_outlined,
+                    showChevron: true,
+                    onTap: () {
+                      _searchController.text = term;
+                      _searchController.selection = TextSelection.collapsed(
+                        offset: term.length,
+                      );
+                      _submitSearch(term);
+                    },
+                  )),
+            ],
+            const SizedBox(height: TwSpace.s28),
+            _buildSectionHeader('Popular services'),
+            const SizedBox(height: TwSpace.s8),
+            ..._serviceCatalog.take(8).map((service) => _buildListChipRow(
+                  title: service.name,
+                  trailing: service.category,
+                  onTap: () {
+                    _searchController.text = service.name;
+                    _searchController.selection = TextSelection.collapsed(
+                      offset: service.name.length,
+                    );
+                    _submitSearch(service.name);
+                  },
                 )),
-                const Icon(Icons.chevron_right, color: AppTheme.textTertiary),
-              ],
+            const SizedBox(height: TwSpace.s20),
+            TwCard(
+              onTap: _openAllCategories,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  const TwIconWell(Icons.grid_view_outlined, size: 40),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      'Browse all ${_allCategories.length} categories',
+                      style: TwType.title(),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: AppTheme.textTertiary,
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
   Widget _buildTypeAhead(List<_BrowsePro> matches) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-      children: [
-        _buildSearchInputPill(),
-        const SizedBox(height: 14),
-        _buildSectionHeader('Services'),
-        const SizedBox(height: 10),
-        ..._serviceMatches().take(4).map(
-              (service) => _buildListChipRow(
-                title: service.name,
-                trailing: service.category,
-                onTap: () {
-                  _searchController.text = service.name;
-                  _submitSearch(service.name);
-                },
-              ),
-            ),
-        const SizedBox(height: 14),
-        _buildSectionHeader('Categories'),
-        const SizedBox(height: 10),
-        ..._categoryMatches().take(4).map(
-              (category) => _buildListChipRow(
-                title: category.name,
-                trailing: '${category.serviceCount} services',
-                onTap: () => _selectCategory(category.name),
-              ),
-            ),
-        if (matches.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          _buildSectionHeader('Pros near you'),
-          const SizedBox(height: 10),
-          ...matches.take(3).map(_buildMiniProRow),
-        ],
-      ],
+    return SingleChildScrollView(
+      child: TwPage(
+        top: TwSpace.s16,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildSearchInputPill(),
+            const SizedBox(height: TwSpace.s20),
+            _buildSectionHeader('Services'),
+            const SizedBox(height: TwSpace.s8),
+            ..._serviceMatches().take(4).map(
+                  (service) => _buildListChipRow(
+                    title: service.name,
+                    trailing: service.category,
+                    onTap: () {
+                      _searchController.text = service.name;
+                      _submitSearch(service.name);
+                    },
+                  ),
+                ),
+            const SizedBox(height: TwSpace.s28),
+            _buildSectionHeader('Categories'),
+            const SizedBox(height: TwSpace.s8),
+            ..._categoryMatches().take(4).map(
+                  (category) => _buildListChipRow(
+                    title: category.name,
+                    trailing: '${category.serviceCount} services',
+                    onTap: () => _selectCategory(category.name),
+                  ),
+                ),
+            if (matches.isNotEmpty) ...[
+              const SizedBox(height: TwSpace.s28),
+              _buildSectionHeader('Pros near you'),
+              const SizedBox(height: TwSpace.s12),
+              ...matches.take(3).map(_buildMiniProRow),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -2359,33 +2369,13 @@ class _SearchTabState extends State<SearchTab> {
       emptyMessage: 'No live contractors matched this search.',
       header: [
         _buildSearchInputPill(),
-        const SizedBox(height: 12),
+        const SizedBox(height: TwSpace.s20),
         if (!_isLoadingResults &&
             _resultsError == null &&
             (_livePros.isNotEmpty || _hasActiveFilters)) ...[
-          Row(children: [
-            Expanded(
-              child: Text(
-                '$_availableProsCount ${_availableProsCount == 1 ? 'pro' : 'pros'}',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-            ),
-            Text(
-              'ZIP $_selectedZip',
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 14,
-              ),
-            ),
-          ]),
-          const SizedBox(height: 6),
-          const Text(
-            'Pros appear in a random order. TradeWorks does not rank them.',
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
-          ),
-          const SizedBox(height: 12),
+          ..._resultsHeader(_availableProsCount),
           _buildFilterBar(),
-          const SizedBox(height: 12),
+          const SizedBox(height: TwSpace.s12),
           _compareTray(),
         ],
       ],
@@ -2401,25 +2391,22 @@ class _SearchTabState extends State<SearchTab> {
           Expanded(
             child: Text(
               '$count ${count == 1 ? 'pro' : 'pros'}',
-              style: AppTheme.headingStyle.copyWith(
-                color: AppTheme.navy,
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TwType.h2(),
             ),
           ),
+          const SizedBox(width: TwSpace.s12),
           Text(
             'ZIP $_selectedZip',
-            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            style: TwType.caption(),
           ),
         ],
       ),
       const SizedBox(height: 6),
-      const Text(
+      Text(
         'Pros appear in a random order. TradeWorks does not rank them.',
-        style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        style: TwType.caption(),
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: TwSpace.s12),
     ];
   }
 
@@ -2436,7 +2423,8 @@ class _SearchTabState extends State<SearchTab> {
             backgroundColor:
                 filterCount == 0 ? Colors.white : AppTheme.blueTint,
             side: BorderSide(
-              color: filterCount == 0 ? AppTheme.cardBorder : AppTheme.blue,
+              color: filterCount == 0 ? AppTheme.border : AppTheme.blue,
+              width: filterCount == 0 ? 1 : 1.5,
             ),
             minimumSize: const Size(0, 44),
             padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -2446,7 +2434,6 @@ class _SearchTabState extends State<SearchTab> {
           const SizedBox(width: 8),
           TextButton(
             onPressed: () => setState(() {
-              _maxDistanceFilter = null;
               _minRatingFilter = null;
               _priceTypeFilter = null;
             }),
@@ -2465,138 +2452,113 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Future<void> _showFiltersBottomSheet() async {
-    final selected = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    final selected = await TwSheet.show<Map<String, dynamic>>(
+      context,
       builder: (sheetContext) {
-        double? distance = _maxDistanceFilter;
         double? rating = _minRatingFilter;
         String? priceType = _priceTypeFilter;
+        final gutter = TwLayout.gutter(sheetContext);
 
         return StatefulBuilder(
-          builder: (context, setSheetState) => SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+          builder: (context, setSheetState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Content scrolls; the action bar stays pinned (SPEC §1.5).
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(gutter, 4, gutter, TwSpace.s16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text('Filter pros', style: TwType.h3()),
+                          ),
+                          TextButton(
+                            onPressed: () => setSheetState(() {
+                              rating = null;
+                              priceType = null;
+                            }),
+                            child: const Text('Reset all'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: TwSpace.s16),
+                      _filterSection(
+                        title: 'Minimum rating',
+                        children: [
+                          _filterChoice(
+                            label: 'All ratings',
+                            selected: rating == null,
+                            onSelected: () =>
+                                setSheetState(() => rating = null),
+                          ),
+                          for (final minimum in const [4.5, 4.8])
+                            _filterChoice(
+                              label: '$minimum+ stars',
+                              selected: rating == minimum,
+                              onSelected: () =>
+                                  setSheetState(() => rating = minimum),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: TwSpace.s28),
+                      _filterSection(
+                        title: 'Pricing type',
+                        children: [
+                          _filterChoice(
+                            label: 'All pricing',
+                            selected: priceType == null,
+                            onSelected: () =>
+                                setSheetState(() => priceType = null),
+                          ),
+                          // Labels use the settled type names; the filter
+                          // values are unchanged.
+                          _filterChoice(
+                            label: 'Upfront price',
+                            selected: priceType == 'rate_card',
+                            onSelected: () =>
+                                setSheetState(() => priceType = 'rate_card'),
+                          ),
+                          _filterChoice(
+                            label: 'You approve the cap',
+                            selected: priceType == 'nte',
+                            onSelected: () =>
+                                setSheetState(() => priceType = 'nte'),
+                          ),
+                          _filterChoice(
+                            label: 'Free visit',
+                            selected: priceType == 'quote_request',
+                            onSelected: () => setSheetState(
+                                () => priceType = 'quote_request'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              TwStickyBar(
                 children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 18),
-                      decoration: BoxDecoration(
-                        color: AppTheme.cardBorder,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Filter pros',
-                          style: AppTheme.headingStyle.copyWith(fontSize: 20),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => setSheetState(() {
-                          distance = null;
-                          rating = null;
-                          priceType = null;
-                        }),
-                        child: const Text('Reset all'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  _filterSection(
-                    title: 'Distance',
-                    children: [
-                      _filterChoice(
-                        label: 'Any distance',
-                        selected: distance == null,
-                        onSelected: () => setSheetState(() => distance = null),
-                      ),
-                      for (final miles in const [5.0, 15.0, 25.0])
-                        _filterChoice(
-                          label: 'Within ${miles.toInt()} miles',
-                          selected: distance == miles,
-                          onSelected: () =>
-                              setSheetState(() => distance = miles),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  _filterSection(
-                    title: 'Minimum rating',
-                    children: [
-                      _filterChoice(
-                        label: 'All ratings',
-                        selected: rating == null,
-                        onSelected: () => setSheetState(() => rating = null),
-                      ),
-                      for (final minimum in const [4.5, 4.8])
-                        _filterChoice(
-                          label: '$minimum+ stars',
-                          selected: rating == minimum,
-                          onSelected: () =>
-                              setSheetState(() => rating = minimum),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  _filterSection(
-                    title: 'Pricing type',
-                    children: [
-                      _filterChoice(
-                        label: 'All pricing',
-                        selected: priceType == null,
-                        onSelected: () => setSheetState(() => priceType = null),
-                      ),
-                      _filterChoice(
-                        label: 'Flat / hourly',
-                        selected: priceType == 'rate_card',
-                        onSelected: () =>
-                            setSheetState(() => priceType = 'rate_card'),
-                      ),
-                      _filterChoice(
-                        label: 'Quote request',
-                        selected: priceType == 'quote_request',
-                        onSelected: () =>
-                            setSheetState(() => priceType = 'quote_request'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(sheetContext, {
-                        'distance': distance,
-                        'rating': rating,
-                        'priceType': priceType,
-                      }),
-                      child: const Text('Apply filters'),
-                    ),
+                  TwPrimaryButton(
+                    label: 'Apply filters',
+                    onPressed: () => Navigator.pop(sheetContext, {
+                      'rating': rating,
+                      'priceType': priceType,
+                    }),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
         );
       },
     );
     if (selected == null || !mounted) return;
     setState(() {
-      _maxDistanceFilter = selected['distance'] as double?;
       _minRatingFilter = selected['rating'] as double?;
       _priceTypeFilter = selected['priceType'] as String?;
     });
@@ -2610,16 +2572,9 @@ class _SearchTabState extends State<SearchTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: AppTheme.navy,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Wrap(spacing: 8, runSpacing: 8, children: children),
+        Text(title, style: TwType.title()),
+        const SizedBox(height: TwSpace.s12),
+        Wrap(spacing: TwSpace.s8, runSpacing: TwSpace.s8, children: children),
       ],
     );
   }
@@ -2629,21 +2584,10 @@ class _SearchTabState extends State<SearchTab> {
     required bool selected,
     required VoidCallback onSelected,
   }) {
-    return ChoiceChip(
-      label: Text(label),
+    return TwPill(
+      label: label,
       selected: selected,
-      showCheckmark: false,
-      onSelected: (_) => onSelected(),
-      selectedColor: AppTheme.navy,
-      backgroundColor: Colors.white,
-      side: BorderSide(
-        color: selected ? AppTheme.navy : AppTheme.cardBorder,
-      ),
-      labelStyle: TextStyle(
-        color: selected ? Colors.white : AppTheme.navy,
-        fontWeight: FontWeight.w600,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      onTap: onSelected,
     );
   }
 
@@ -2666,90 +2610,36 @@ class _SearchTabState extends State<SearchTab> {
         ? 'No pros currently list coverage for $_selectedZip.'
         : 'No pros currently list ${_selectedCategory.toLowerCase()} coverage for $_selectedZip.';
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(10, 30, 10, 28),
-      children: [
-        _buildSearchInputPill(),
-        const SizedBox(height: 8),
-        _buildCompactLocationChip(),
-        const SizedBox(height: 12),
-        // Keep the same service rail available in the no-results state so a
-        // homeowner can switch categories without backing out of their search.
-        _buildRail(_railCategoriesForCurrentSelection),
-        const SizedBox(height: 20),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 84,
-                height: 84,
-                decoration: const BoxDecoration(
-                  border: Border.fromBorderSide(
-                      BorderSide(color: AppTheme.cardBorder)),
-                  color: AppTheme.pageBackground,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.location_on,
-                  size: 36,
-                  color: AppTheme.navy700,
-                ),
+    return SingleChildScrollView(
+      child: TwPage(
+        top: TwSpace.s16,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildSearchInputPill(),
+            const SizedBox(height: TwSpace.s8),
+            _buildCompactLocationChip(),
+            const SizedBox(height: TwSpace.s12),
+            // Keep the same service rail available in the no-results state so
+            // a homeowner can switch categories without backing out of their
+            // search.
+            _buildRail(_railCategoriesForCurrentSelection),
+            const SizedBox(height: TwSpace.s40),
+            TwEmptyState(
+              icon: Icons.location_on_outlined,
+              title: 'No vetted pros for this yet in $_selectedZip',
+              message: subtitle,
+              action: TwSecondaryButton(
+                label: 'Browse other categories',
+                expand: false,
+                onPressed: () async {
+                  await _returnToBrowsePage();
+                },
               ),
-              const SizedBox(height: 24),
-              Text(
-                'No vetted pros for this yet in\n$_selectedZip',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppTheme.navy700,
-                  fontSize: 19,
-                  fontWeight: FontWeight.w800,
-                  height: 1.25,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppTheme.gray,
-                  fontSize: 13,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 26),
-              SizedBox(
-                height: 46,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    await _returnToBrowsePage();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.orange500,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 0,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                  child: const Text(
-                    'Browse other categories',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -2774,11 +2664,7 @@ class _SearchTabState extends State<SearchTab> {
       controller: _searchController,
       focusNode: _searchFocusNode,
       hint: 'Search a service or pro',
-      borderColor: _searchFocusNode.hasFocus ||
-              _view == _BrowseView.searchFocused ||
-              _view == _BrowseView.typeAhead
-          ? AppTheme.blue
-          : AppTheme.cardBorder,
+      borderColor: AppTheme.border,
       onTap: focusSearchField,
       // Keep suggestions mounted while dismissing the keyboard so the same
       // pointer gesture can still activate a Recent, Popular, or type-ahead
@@ -2821,7 +2707,7 @@ class _SearchTabState extends State<SearchTab> {
     final chips = <Widget>[
       _RailChip(
         label: 'All',
-        meta: _isLoadingCoverage ? '...' : '${_allProsCount} pros',
+        meta: _isLoadingCoverage ? '...' : '$_allProsCount pros',
         category: 'All',
         fallbackIcon: Icons.grid_view_rounded,
         accent: AppTheme.navy700,
@@ -2851,7 +2737,9 @@ class _SearchTabState extends State<SearchTab> {
     ];
 
     return SizedBox(
-      height: 64 + MediaQuery.textScalerOf(context).scale(24),
+      // Padding 16 + icon 28 + gap 4 (+2 spare) fixed; two caption lines
+      // (13/18) grow with the text scale.
+      height: 50 + MediaQuery.textScalerOf(context).scale(36),
       child: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(
           dragDevices: const {
@@ -2874,14 +2762,7 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Widget _buildSectionHeader(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        color: AppTheme.navy700,
-        fontSize: 20,
-        fontWeight: FontWeight.w700,
-      ),
-    );
+    return TwSectionHeader(title);
   }
 
   Widget _buildListChipRow({
@@ -2895,39 +2776,34 @@ class _SearchTabState extends State<SearchTab> {
       onTap: onTap,
       child: Container(
         constraints: const BoxConstraints(minHeight: 50),
+        padding: const EdgeInsets.only(top: 13, bottom: 12),
         decoration: const BoxDecoration(
           border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
         ),
         child: Row(
           children: [
             if (leading != null) ...[
-              Icon(leading, color: AppTheme.textSecondary, size: 20),
-              const SizedBox(width: 14),
+              Icon(leading, color: AppTheme.textSecondary, size: 18),
+              const SizedBox(width: TwSpace.s12),
             ],
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  color: AppTheme.navy,
-                  fontWeight: FontWeight.w400,
-                  fontSize: 16,
-                ),
+                style: TwType.body(color: AppTheme.navy),
               ),
             ),
-            if (trailing.isNotEmpty)
-              Text(
-                trailing,
-                style: const TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            if (showChevron)
+            if (trailing.isNotEmpty) ...[
+              const SizedBox(width: TwSpace.s12),
+              Text(trailing, style: TwType.meta()),
+            ],
+            if (showChevron) ...[
+              const SizedBox(width: TwSpace.s12),
               const Icon(
                 Icons.chevron_right_rounded,
+                size: 18,
                 color: AppTheme.textTertiary,
               ),
+            ],
           ],
         ),
       ),
@@ -2937,263 +2813,43 @@ class _SearchTabState extends State<SearchTab> {
   Widget _buildInlineState(String message) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(TwSpace.s16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppTheme.line),
+        color: AppTheme.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.cardBorder),
       ),
       child: Text(
         message,
         textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: AppTheme.gray,
-          fontSize: 13,
-        ),
+        style: TwType.bodySm(color: AppTheme.textSecondary),
       ),
     );
   }
 
   Widget _buildMiniProRow(_BrowsePro pro) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
+      padding: const EdgeInsets.only(bottom: TwSpace.s8),
+      child: TwCard(
         onTap: () => _openProProfile(pro),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.line),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: pro.category == 'Plumbing'
-                    ? AppTheme.navyTint
-                    : pro.category == 'Electrical'
-                        ? AppTheme.tealTint
-                        : AppTheme.navyTint,
-                child: Text(
-                  pro.initials,
-                  style: TextStyle(
-                    color: pro.category == 'Plumbing'
-                        ? AppTheme.navy700
-                        : pro.category == 'Electrical'
-                            ? AppTheme.teal700
-                            : AppTheme.navy700,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      pro.name,
-                      style: const TextStyle(
-                        color: AppTheme.navy700,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13.5,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${pro.category} · ${pro.distanceMiles.toStringAsFixed(1)} mi',
-                      style:
-                          const TextStyle(color: AppTheme.gray, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBrowseCard(_BrowsePro pro) {
-    final slot = _nextAvailableLabelFor(pro);
-    final nextAvailable = slot == 'Availability pending' ? slot : 'Next: $slot';
-    final selected = _compareIds.contains(_compareId(pro));
-    final canToggle = selected || _compareIds.length < 3;
-    return InkWell(
-      onTap: () => _openProProfile(pro),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppTheme.cardBorder),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.all(TwSpace.s12),
+        child: Row(
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildBrowseProfileImage(pro),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        pro.name,
-                        style: const TextStyle(
-                          color: AppTheme.navy,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          height: 1.1,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${pro.category} · ${pro.completedWorkOrders} jobs completed',
-                        style: const TextStyle(
-                          color: AppTheme.textSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                          height: 1.1,
-                        ),
-                      ),
-                      if (pro.selectedCertified)
-                        TextButton.icon(
-                          onPressed: () => showSelectCertifiedInfo(context),
-                          icon: const Icon(Icons.info_outline, size: 14),
-                          label: const Text('Select-certified'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppTheme.blue,
-                            minimumSize: const Size(44, 44),
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      pro.priceHeadline,
-                      style: const TextStyle(
-                        color: AppTheme.navy700,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 22,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      pro.priceNote,
-                      style: TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                        height: 1.25,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+            TwAvatar(
+              name: pro.name,
+              imageUrl: _safeNetworkImageUrl(pro.photoUrl),
+              size: 40,
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (pro.reviews > 0)
-                  RatingCapsule(rating: pro.rating, count: pro.reviews)
-                else
-                  const Text(
-                    'No reviews yet',
-                    style: TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                AvailabilityCapsule(label: nextAvailable),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Divider(
-              height: 1,
-              thickness: 1,
-              color: AppTheme.cardBorder,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              pro.footerText,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppTheme.body,
-                fontSize: 14,
-                height: 1.35,
+            const SizedBox(width: TwSpace.s12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(pro.name, style: TwType.title()),
+                  const SizedBox(height: 2),
+                  Text(pro.category, style: TwType.meta()),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: canToggle ? () => _toggleCompare(pro) : null,
-                    borderRadius: BorderRadius.circular(8),
-                    child: SizedBox(
-                      height: 44,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 20,
-                            height: 20,
-                            decoration: BoxDecoration(
-                              color: selected ? AppTheme.blue : Colors.white,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color:
-                                    selected ? AppTheme.blue : AppTheme.border,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: selected
-                                ? const Icon(Icons.check,
-                                    size: 15, color: Colors.white)
-                                : null,
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              selected ? 'Added to compare' : 'Compare',
-                              style: TextStyle(
-                                color: selected
-                                    ? AppTheme.blue
-                                    : canToggle
-                                        ? AppTheme.navy
-                                        : AppTheme.textTertiary,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => _openProProfile(pro),
-                  child: const Text('View profile'),
-                ),
-              ],
             ),
           ],
         ),
@@ -3201,42 +2857,151 @@ class _SearchTabState extends State<SearchTab> {
     );
   }
 
-  Widget _buildBrowseProfileImage(_BrowsePro pro) {
-    final borderRadius = BorderRadius.circular(8);
-    final imageUrl = _safeNetworkImageUrl(pro.photoUrl);
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: _avatarColorForCategory(pro.category),
-        borderRadius: borderRadius,
-      ),
-      child: ClipRRect(
-        borderRadius: borderRadius,
-        child: imageUrl != null
-            ? Image.network(
-                imageUrl,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return _buildBrowseProfileFallback(pro);
-                },
-                errorBuilder: (_, __, ___) => _buildBrowseProfileFallback(pro),
-              )
-            : _buildBrowseProfileFallback(pro),
-      ),
-    );
-  }
-
-  Widget _buildBrowseProfileFallback(_BrowsePro pro) {
-    return Center(
-      child: Text(
-        pro.initials,
-        style: TextStyle(
-          color: _avatarTextColorForCategory(pro.category),
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
+  Widget _buildBrowseCard(_BrowsePro pro) {
+    // B02 shows no availability capsule for a pro with no open slot.
+    final slot = _nextAvailableLabelFor(pro);
+    final selected = _compareIds.contains(_compareId(pro));
+    final canToggle = selected || _compareIds.length < 3;
+    // Compact or large text: the price moves under the name instead of
+    // squeezing the name into a narrow column (SPEC §1.2).
+    final stackPrice = TwLayout.stackRows(context);
+    final price = Column(
+      crossAxisAlignment:
+          stackPrice ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+      children: [
+        Text(
+          pro.priceHeadline,
+          textAlign: stackPrice ? TextAlign.start : TextAlign.end,
+          style: TwType.price(),
         ),
+        const SizedBox(height: 2),
+        Text(
+          pro.priceNote,
+          textAlign: stackPrice ? TextAlign.start : TextAlign.end,
+          style: TwType.caption(),
+        ),
+      ],
+    );
+    return TwCard(
+      onTap: () => _openProProfile(pro),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TwAvatar(
+                name: pro.name,
+                imageUrl: _safeNetworkImageUrl(pro.photoUrl),
+                size: 48,
+              ),
+              const SizedBox(width: TwSpace.s12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pro.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TwType.h3(),
+                    ),
+                    const SizedBox(height: TwSpace.s4),
+                    Text(
+                      '${pro.category} · ${pro.completedWorkOrders} jobs completed',
+                      style: TwType.meta(),
+                    ),
+                    if (stackPrice) ...[
+                      const SizedBox(height: TwSpace.s8),
+                      price,
+                    ],
+                  ],
+                ),
+              ),
+              if (!stackPrice) ...[
+                const SizedBox(width: TwSpace.s12),
+                SizedBox(width: 112, child: price),
+              ],
+            ],
+          ),
+          const SizedBox(height: TwSpace.s12),
+          Wrap(
+            spacing: TwSpace.s8,
+            runSpacing: TwSpace.s8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (pro.reviews > 0)
+                RatingCapsule(rating: pro.rating, count: pro.reviews)
+              else
+                Text('No reviews yet', style: TwType.meta()),
+              if (slot != null) AvailabilityCapsule(label: 'Next: $slot'),
+            ],
+          ),
+          const SizedBox(height: TwSpace.s12),
+          const Divider(
+            height: 1,
+            thickness: 1,
+            color: AppTheme.cardBorder,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            pro.footerText,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TwType.meta(color: AppTheme.body),
+          ),
+          const SizedBox(height: TwSpace.s4),
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: canToggle ? () => _toggleCompare(pro) : null,
+                  borderRadius: BorderRadius.circular(8),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 44),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: selected ? AppTheme.blue : AppTheme.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: selected ? AppTheme.blue : AppTheme.border,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: selected
+                              ? const Icon(Icons.check_rounded,
+                                  size: 15, color: AppTheme.white)
+                              : null,
+                        ),
+                        const SizedBox(width: TwSpace.s8),
+                        Flexible(
+                          child: Text(
+                            selected ? 'Added to compare' : 'Compare',
+                            style: TwType.link(
+                              color: selected
+                                  ? AppTheme.blue
+                                  : canToggle
+                                      ? AppTheme.navy
+                                      : AppTheme.textTertiary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => _openProProfile(pro),
+                child: const Text('View profile'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -3272,32 +3037,6 @@ class _SearchTabState extends State<SearchTab> {
     return category == null
         ? const []
         : _allCategories.where((item) => item.name == category).toList();
-  }
-
-  Color _avatarColorForCategory(String category) {
-    switch (category) {
-      case 'Plumbing':
-      case 'Appliance Repair':
-        return AppTheme.navyTint;
-      case 'Electrical':
-      case 'Water Treatment':
-        return AppTheme.tealTint;
-      default:
-        return AppTheme.navyTint;
-    }
-  }
-
-  Color _avatarTextColorForCategory(String category) {
-    switch (category) {
-      case 'Plumbing':
-      case 'Appliance Repair':
-        return AppTheme.navy700;
-      case 'Electrical':
-      case 'Water Treatment':
-        return AppTheme.teal700;
-      default:
-        return AppTheme.navy700;
-    }
   }
 
   String? _safeNetworkImageUrl(String? rawUrl) {
@@ -3346,7 +3085,9 @@ class _BrowsePro {
   final int reviews;
   final double distanceMiles;
   final int completedWorkOrders;
-  final String nextAvailable;
+
+  /// Raw next-slot value from search; null when the pro has none.
+  final String? nextAvailable;
   final double price;
   final String priceLabel;
   final String workOrderType;
@@ -3435,7 +3176,9 @@ class _BrowsePro {
     final workOrderType =
         read(map['workOrderType'], read(map['work_order_type']));
     final completedWorkOrders = readInt(map['completedWorkOrders'], reviews);
-    final nextAvailableRaw = read(map['nextAvailable']);
+    final nextAvailableText = read(map['nextAvailable']);
+    final String? nextAvailableRaw =
+        nextAvailableText.isEmpty ? null : nextAvailableText;
     String titleCase(String value) {
       if (value.trim().isEmpty) return value;
       return value
@@ -3525,7 +3268,6 @@ class _BrowsePro {
   String get footerText {
     final summaryText = summary.trim();
     if (summaryText.isNotEmpty) return summaryText;
-    if (selectedCertified) return 'Select-certified pro';
 
     final tradeText = trade.trim();
     final categoryText = category.trim();
@@ -3561,85 +3303,54 @@ class _RailChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final active = selected && enabled;
-    final foreground = active
-        ? Colors.white
-        : enabled
-            ? AppTheme.navy700
-            : AppTheme.gray;
+    final foreground = enabled ? AppTheme.navy : AppTheme.textTertiary;
     return Semantics(
       button: enabled,
       enabled: enabled,
+      selected: active,
       label: '$label, $meta${enabled ? '' : ', unavailable'}',
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: _SearchTabState._railTileWidth,
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
-          decoration: BoxDecoration(
-            color: active
-                ? accent
-                : enabled
-                    ? tint
-                    : AppTheme.pageBackground,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: active
-                  ? Colors.transparent
-                  : enabled
-                      ? accent.withOpacity(0.25)
-                      : AppTheme.line,
-            ),
-            boxShadow: enabled
-                ? [
-                    BoxShadow(
-                      color: accent.withOpacity(active ? 0.26 : 0.16),
-                      blurRadius: active ? 14 : 10,
-                      spreadRadius: active ? 1 : 0,
-                      offset: Offset(0, active ? 6 : 3),
-                    ),
-                  ]
-                : null,
+      child: Material(
+        color: active ? AppTheme.blueTint : AppTheme.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          side: BorderSide(
+            color: active ? AppTheme.blue : AppTheme.cardBorder,
+            width: active ? 1.5 : 1,
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ServiceCategoryIcon(
-                category: category,
-                size: 28,
-                fallbackIcon: fallbackIcon,
-                fallbackColor: active
-                    ? Colors.white
-                    : enabled
-                        ? accent
-                        : AppTheme.gray,
-              ),
-              const SizedBox(height: 5),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: foreground,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  height: 1.05,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          child: Container(
+            width: _SearchTabState._railTileWidth,
+            padding: const EdgeInsets.all(TwSpace.s8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ServiceCategoryIcon(
+                  category: category,
+                  size: 28,
+                  fallbackIcon: fallbackIcon,
+                  fallbackColor:
+                      enabled ? AppTheme.navy : AppTheme.textTertiary,
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                meta,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color:
-                      active ? Colors.white.withOpacity(0.82) : AppTheme.gray,
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w500,
+                const SizedBox(height: TwSpace.s4),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TwType.caption(color: foreground)
+                      .copyWith(fontWeight: FontWeight.w600),
                 ),
-              ),
-            ],
+                Text(
+                  meta,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TwType.caption(),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3662,62 +3373,42 @@ class _AllServiceListRow extends StatelessWidget {
     return Semantics(
       button: true,
       label: 'Browse ${service.name}',
-      child: InkWell(
+      child: TwCard(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppTheme.line),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: token.tint,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: ServiceCategoryIcon(
-                  category: service.category,
-                  size: 24,
-                  fallbackIcon: token.icon,
-                  fallbackColor: token.color,
-                ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppTheme.subtle,
+                borderRadius: BorderRadius.circular(AppTheme.radius),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      service.name,
-                      style: const TextStyle(
-                        color: AppTheme.navy700,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      service.category,
-                      style: const TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
+              child: ServiceCategoryIcon(
+                category: service.category,
+                size: 24,
+                fallbackIcon: token.icon,
+                fallbackColor: AppTheme.navy,
               ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppTheme.gray,
+            ),
+            const SizedBox(width: TwSpace.s12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(service.name, style: TwType.title()),
+                  const SizedBox(height: 2),
+                  Text(service.category, style: TwType.meta()),
+                ],
               ),
-            ],
-          ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: AppTheme.textTertiary,
+            ),
+          ],
         ),
       ),
     );

@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../../utils/work_order_labels.dart';
 import '../../widgets/transaction_guard.dart';
+import '../../ui/tw.dart';
 
 class LeaveReviewScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -144,17 +145,24 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-              title: const Text('Delete your review?'),
-              content: const Text(
-                  'Your rating and review will be removed from this pro’s profile.'),
+              title: Text('Delete your review?', style: TwType.h3()),
+              content: Text(
+                'Your rating and review will be removed from this pro’s profile.',
+                style: TwType.bodySm(),
+              ),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Keep review')),
+                    style:
+                        TextButton.styleFrom(minimumSize: const Size(44, 44)),
+                    child: Text('Keep review',
+                        style: TwType.button(color: AppTheme.navy))),
                 TextButton(
                     onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Delete review',
-                        style: TextStyle(color: AppTheme.red)))
+                    style:
+                        TextButton.styleFrom(minimumSize: const Size(44, 44)),
+                    child: Text('Delete review',
+                        style: TwType.button(color: AppTheme.red)))
               ],
             ));
     if (confirmed != true || !mounted) return;
@@ -177,127 +185,78 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
       blockedMessage: 'Please wait while your review is being submitted.',
       child: Scaffold(
         backgroundColor: Colors.white,
+        appBar: TwAppBar(
+          title: widget.hasExistingReview ? 'Edit your review' : 'Leave a review',
+          onBack: () => Navigator.pop(context),
+        ),
         body: Column(
           children: [
-            _screenHeader(widget.hasExistingReview
-                ? 'Edit your review'
-                : 'Leave a review'),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _proHeader(),
-                    const SizedBox(height: 22),
-                    Center(
-                      child: Column(
+                child: TwPage(
+                  top: TwSpace.s20,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _proHeader(),
+                      const SizedBox(height: TwSpace.s28),
+                      Text(
+                        'How was your experience?',
+                        textAlign: TextAlign.center,
+                        style: TwType.h2(),
+                      ),
+                      const SizedBox(height: TwSpace.s8),
+                      _stars(),
+                      const SizedBox(height: TwSpace.s28),
+                      const TwFieldLabel('Tell others about your experience'),
+                      TextField(
+                        controller: _controller,
+                        minLines: 5,
+                        maxLines: 5,
+                        style: TwType.body(color: AppTheme.navy),
+                        decoration: TwInputs.decoration(
+                          hint:
+                              'What should other homeowners know about working with this pro?',
+                        ),
+                      ),
+                      const SizedBox(height: TwSpace.s8),
+                      Text('At least 10 characters', style: TwType.caption()),
+                      const SizedBox(height: TwSpace.s28),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
                         children: [
-                          Text(
-                            'How was your experience?',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.headlineMedium,
+                          Expanded(
+                            child: Text('Quick tags', style: TwType.h2()),
                           ),
-                          const SizedBox(height: 10),
-                          _stars(),
+                          Text('Optional', style: TwType.caption()),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 22),
-                    const Text(
-                      'Tell others about your experience',
-                      style: TextStyle(
-                        color: AppTheme.ink,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w900,
+                      const SizedBox(height: TwSpace.s12),
+                      Wrap(
+                        spacing: TwSpace.s8,
+                        runSpacing: TwSpace.s8,
+                        children: [
+                          'On time',
+                          'Professional',
+                          'Clean work',
+                          'Great communication',
+                          'Fair price',
+                          if (_isCapApproval) 'Price stayed within the cap',
+                        ].map(_tagChip).toList(),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _controller,
-                      maxLines: 5,
-                      decoration: InputDecoration(
-                        hintText:
-                            'What should other homeowners know about working with this pro?',
-                        hintStyle: const TextStyle(
-                          color: AppTheme.gray,
-                          fontSize: 12.5,
-                          height: 1.35,
-                        ),
-                        filled: true,
-                        fillColor: AppTheme.pageBackground,
-                        contentPadding: const EdgeInsets.all(14),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: AppTheme.line),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: AppTheme.teal500),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'At least 10 characters',
-                      style: TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Quick tags',
-                            style: Theme.of(context).textTheme.headlineMedium,
-                          ),
-                        ),
-                        const Text(
-                          'Optional',
-                          style: TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 13,
+                      if (widget.hasExistingReview) ...[
+                        const SizedBox(height: TwSpace.s20),
+                        Center(
+                          child: TwTextAction(
+                            label: 'Delete your review',
+                            onPressed: _isSubmitting ? null : _delete,
+                            destructive: true,
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 10,
-                      children: [
-                        'On time',
-                        'Professional',
-                        'Clean work',
-                        'Great communication',
-                        'Fair price',
-                        if (_isCapApproval) 'Price stayed within the cap',
-                      ].map(_tagChip).toList(),
-                    ),
-                    if (widget.hasExistingReview) ...[
-                      const SizedBox(height: 20),
-                      Center(
-                        child: TextButton(
-                          onPressed: _isSubmitting ? null : _delete,
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppTheme.red,
-                            minimumSize: const Size(44, 44),
-                          ),
-                          child: const Text(
-                            'Delete your review',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -311,59 +270,29 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
   /// E06: who the review publishes as, the one primary action, and the
   /// disclosure that credits never depend on a review — in a sticky bar.
   Widget _bottomBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: AppTheme.cardBorder)),
-        boxShadow: AppTheme.floatShadow,
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
+    return TwStickyBar(
+      note:
+          'This will publish as $_publishingName and is tied to this work order.',
+      children: [
+        Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            TwPrimaryButton(
+              label:
+                  widget.hasExistingReview ? 'Save changes' : 'Submit review',
+              onPressed: _isSubmitting ? null : _submit,
+              loading: _isSubmitting,
+            ),
+            const SizedBox(height: TwSpace.s8),
             Text(
-              'This will publish as $_publishingName and is tied to this work order.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 52,
-              child: ElevatedButton(
-                onPressed: _isSubmitting ? null : _submit,
-                child: _isSubmitting
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppTheme.onOrange,
-                        ),
-                      )
-                    : Text(widget.hasExistingReview
-                        ? 'Save changes'
-                        : 'Submit review'),
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
               'Your credits come from what you spend, not from leaving a review.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 13,
-                height: 19 / 13,
-              ),
+              style: TwType.caption(),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 
@@ -408,53 +337,6 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     return text;
   }
 
-  String _initials(String value) {
-    final clean = value.replaceAll(RegExp(r'[^A-Za-z0-9 ]'), '').trim();
-    if (clean.isEmpty) return 'P';
-    return clean
-        .split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty)
-        .map((part) => part[0])
-        .take(2)
-        .join()
-        .toUpperCase();
-  }
-
-  Widget _screenHeader(String title) {
-    return Container(
-      width: double.infinity,
-      height: 50 + MediaQuery.of(context).padding.top,
-      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppTheme.line)),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned(
-            left: 16,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              icon: const Icon(Icons.arrow_back_rounded,
-                  color: AppTheme.navy700, size: 24),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _proHeader() {
     final proName = _proName();
     final meta = [
@@ -464,48 +346,20 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     ].whereType<String>().where((part) => part.isNotEmpty).join(' · ');
     return Row(
       children: [
-        Container(
-          width: 56,
-          height: 56,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: AppTheme.navy,
-            borderRadius: BorderRadius.circular(AppTheme.radius),
-          ),
-          child: Text(
-            _initials(proName),
-            style: AppTheme.headingStyle.copyWith(
-              color: Colors.white,
-              fontSize: 19,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
+        TwAvatar(name: proName, size: 56),
+        const SizedBox(width: TwSpace.s12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 proName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppTheme.ink,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                meta,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 14,
-                ),
+                style: TwType.h3(),
               ),
+              const SizedBox(height: TwSpace.s4),
+              Text(meta, style: TwType.meta()),
             ],
           ),
         ),
@@ -518,15 +372,18 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(5, (index) {
         final filled = index < _rating.round();
-        return IconButton(
-          tooltip: 'Rate ${index + 1} stars',
-          constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-          padding: EdgeInsets.zero,
-          onPressed: () => setState(() => _rating = index + 1),
-          icon: Icon(
-            filled ? Icons.star_rounded : Icons.star_border_rounded,
-            color: filled ? AppTheme.gold : AppTheme.line,
-            size: 28,
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: IconButton(
+            tooltip: 'Rate ${index + 1} stars',
+            constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+            padding: EdgeInsets.zero,
+            onPressed: () => setState(() => _rating = index + 1),
+            icon: Icon(
+              Icons.star_rounded,
+              color: filled ? AppTheme.gold : AppTheme.cardBorder,
+              size: 34,
+            ),
           ),
         );
       }),
@@ -535,32 +392,19 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
 
   Widget _tagChip(String label) {
     final selected = _tags.contains(label);
-    final enabled = !_isSubmitting;
-    return FilterChip(
-      label: Text(label),
+    return TwPill(
+      label: label,
       selected: selected,
-      onSelected: !enabled
-          ? null
-          : (value) {
-              setState(() {
-                if (value) {
-                  _tags.add(label);
-                } else {
-                  _tags.remove(label);
-                }
-              });
-            },
-      showCheckmark: false,
-      selectedColor: AppTheme.tealTint,
-      backgroundColor: Colors.white,
-      side: BorderSide(color: selected ? AppTheme.teal500 : AppTheme.line),
-      labelStyle: TextStyle(
-        color: selected ? AppTheme.teal500 : AppTheme.ink,
-        fontSize: 12,
-        fontWeight: selected ? FontWeight.w900 : FontWeight.w500,
-      ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      onTap: () {
+        if (_isSubmitting) return;
+        setState(() {
+          if (selected) {
+            _tags.remove(label);
+          } else {
+            _tags.add(label);
+          }
+        });
+      },
     );
   }
 }

@@ -9,6 +9,7 @@ import '../../utils/work_order_labels.dart';
 import '../../widgets/alert_row.dart';
 import '../../widgets/app_notification.dart';
 import '../../widgets/transaction_guard.dart';
+import '../../ui/tw.dart';
 import 'reschedule_work_order.dart' show jobUrgencyLevel;
 
 /// A pro asked to move a Booked visit (E02; Sep 30). The homeowner accepts or
@@ -83,26 +84,11 @@ class _RescheduleProposalScreenState extends State<RescheduleProposalScreen> {
       blockedMessage: 'Please wait while your answer is being sent.',
       child: Scaffold(
         backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          centerTitle: true,
-          foregroundColor: AppTheme.navy,
-          title: Text(
-            'Reschedule booking',
-            style: AppTheme.headingStyle
-                .copyWith(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(1),
-            child: Divider(height: 1, color: AppTheme.cardBorder),
-          ),
-        ),
+        appBar: TwAppBar(title: 'Reschedule booking'),
         body: SafeArea(
           top: false,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          child: SingleChildScrollView(child: TwPage(top: TwSpace.s20, child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
                 title,
@@ -210,51 +196,21 @@ class _RescheduleProposalScreenState extends State<RescheduleProposalScreen> {
                 ),
               ),
             ],
-          ),
+          ))),
         ),
-        bottomNavigationBar: Container(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: AppTheme.cardBorder)),
-            boxShadow: AppTheme.floatShadow,
-          ),
-          child: SafeArea(
-            top: false,
-            child: Row(
-              children: [
-                SizedBox(
-                  height: 50,
-                  child: OutlinedButton(
-                    onPressed:
-                        _responding ? null : () => _respond(accept: false),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 22),
-                    ),
-                    child: const Text('Decline'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SizedBox(
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed:
-                          _responding ? null : () => _respond(accept: true),
-                      child: _responding
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                  color: AppTheme.onOrange, strokeWidth: 2),
-                            )
-                          : const Text('Accept new time'),
-                    ),
-                  ),
-                ),
-              ],
+        bottomNavigationBar: TwStickyBar(
+          children: [
+            TwSecondaryButton(
+              label: 'Decline',
+              onPressed: _responding ? null : () => _respond(accept: false),
+              height: 52,
             ),
-          ),
+            TwPrimaryButton(
+              label: 'Accept new time',
+              onPressed: _responding ? null : () => _respond(accept: true),
+              loading: _responding,
+            ),
+          ],
         ),
       ),
     );

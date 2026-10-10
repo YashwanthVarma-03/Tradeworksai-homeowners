@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../ui/tw.dart';
 import 'package:intl/intl.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
@@ -22,23 +22,10 @@ class InboxScreen extends StatelessWidget {
   const InboxScreen({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: true,
-          title: Text(
-            'Inbox',
-            style: GoogleFonts.outfit(
-              color: AppTheme.navy,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(1),
-            child: Divider(height: 1, thickness: 1, color: AppTheme.cardBorder),
-          ),
+        backgroundColor: AppTheme.pageBackground,
+        appBar: TwAppBar(
+          title: 'Inbox',
+          onBack: () => Navigator.maybePop(context),
         ),
         body: const InboxTab(),
       );
@@ -127,6 +114,7 @@ class _InboxTabState extends State<InboxTab> {
     }
     return StreamChat(
         client: StreamService.instance.client!,
+        streamChatThemeData: twStreamChatTheme,
         child: StreamChannelListView(
           controller: _channels!,
           loadingBuilder: (_) => const SkeletonPage(
@@ -134,11 +122,16 @@ class _InboxTabState extends State<InboxTab> {
             label: 'Loading conversations',
           ),
           emptyBuilder: (_) => const Center(
-              child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                      'Start a conversation from a contractor profile or booking flow.',
-                      textAlign: TextAlign.center))),
+            child: Padding(
+              padding: EdgeInsets.all(TwSpace.s20),
+              child: TwEmptyState(
+                icon: Icons.chat_bubble_outline_rounded,
+                title: 'No messages yet',
+                message:
+                    "Start a conversation from a pro's profile or a booking.",
+              ),
+            ),
+          ),
           itemBuilder: (context, channels, index, tile) {
             final channel = channels[index];
             return _ThreadRow(
@@ -152,26 +145,47 @@ class _InboxTabState extends State<InboxTab> {
   }
 
   @override
-  Widget build(BuildContext context) => DefaultTabController(
-      length: 2,
-      child: Column(children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(20, 4, 20, 0),
-          child: TabBar(
-              labelColor: AppTheme.blue,
-              unselectedLabelColor: AppTheme.body,
-              indicatorColor: AppTheme.blue,
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: AppTheme.cardBorder,
-              labelStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-              unselectedLabelStyle:
-                  TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-              tabs: [Tab(text: 'Messages'), Tab(text: 'Activity')]),
+  Widget build(BuildContext context) {
+    final gutter = TwLayout.gutter(context);
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: TwLayout.maxContent + gutter * 2),
+        child: DefaultTabController(
+          length: 2,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(gutter, TwSpace.s4, gutter, 0),
+                child: TabBar(
+                  labelColor: AppTheme.blue,
+                  unselectedLabelColor: AppTheme.body,
+                  indicatorColor: AppTheme.blue,
+                  indicatorWeight: 2,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: AppTheme.cardBorder,
+                  labelStyle:
+                      TwType.title(color: AppTheme.blue).copyWith(fontSize: 15),
+                  unselectedLabelStyle: TwType.title(color: AppTheme.body)
+                      .copyWith(fontSize: 15, fontWeight: FontWeight.w500),
+                  tabs: const [
+                    Tab(height: 48, text: 'Messages'),
+                    Tab(height: 48, text: 'Activity'),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [_messages(), const InboxActivityView()],
+                ),
+              ),
+            ],
+          ),
         ),
-        Expanded(
-            child:
-                TabBarView(children: [_messages(), const InboxActivityView()])),
-      ]));
+      ),
+    );
+  }
 }
 
 /// One thread row (A08): initials tile, pro name and date, last message —
@@ -209,41 +223,35 @@ class _ThreadRow extends StatelessWidget {
         return InkWell(
           onTap: onTap,
           child: Container(
+            constraints: const BoxConstraints(minHeight: 44),
             padding: const EdgeInsets.symmetric(vertical: 14),
-            margin: const EdgeInsets.symmetric(horizontal: 20),
+            margin: EdgeInsets.symmetric(horizontal: TwLayout.gutter(context)),
             decoration: const BoxDecoration(
               border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
             ),
             child: Row(
               children: [
-                _InitialsTile(name: name),
+                TwAvatar(name: name, size: 48),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             child: Text(
                               name,
-                              maxLines: 1,
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.navy,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: TwType.title(),
                             ),
                           ),
-                          if (date != null)
-                            Text(
-                              _shortDate(date),
-                              style: const TextStyle(
-                                color: AppTheme.textSecondary,
-                                fontSize: 13,
-                              ),
-                            ),
+                          if (date != null) ...[
+                            const SizedBox(width: TwSpace.s8),
+                            Text(_shortDate(date), style: TwType.caption()),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 3),
@@ -254,19 +262,18 @@ class _ThreadRow extends StatelessWidget {
                               preview,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
+                              style: TwType.meta(
                                 color: unread
                                     ? AppTheme.navy
                                     : AppTheme.textSecondary,
-                                fontSize: 14,
-                                height: 20 / 14,
+                              ).copyWith(
                                 fontWeight:
                                     unread ? FontWeight.w500 : FontWeight.w400,
                               ),
                             ),
                           ),
                           if (unread) ...[
-                            const SizedBox(width: 8),
+                            const SizedBox(width: TwSpace.s8),
                             const _UnreadDot(),
                           ],
                         ],
@@ -291,39 +298,6 @@ String _shortDate(DateTime date) {
   return sameDay
       ? DateFormat.jm().format(date)
       : DateFormat.MMMd().format(date);
-}
-
-class _InitialsTile extends StatelessWidget {
-  const _InitialsTile({required this.name});
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    final initials = name
-        .split(RegExp(r'\s+'))
-        .where((part) =>
-            part.isNotEmpty && RegExp(r'[A-Za-z0-9]').hasMatch(part[0]))
-        .take(2)
-        .map((part) => part[0].toUpperCase())
-        .join();
-    return Container(
-      width: 48,
-      height: 48,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: AppTheme.navy,
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-      ),
-      child: Text(
-        initials.isEmpty ? 'P' : initials,
-        style: GoogleFonts.outfit(
-          color: Colors.white,
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
 }
 
 class _UnreadDot extends StatelessWidget {
@@ -524,6 +498,7 @@ class _InboxActivityViewState extends State<InboxActivityView> {
       final who = pro.isEmpty ? 'Your pro' : pro;
       for (final step in [
         ('status', '$who marked $service en route', timeline['enRouteAt']),
+        ('status', '$who arrived for $service', timeline['arrivedAt']),
         (
           'status',
           '$who marked $service in progress',
@@ -559,7 +534,13 @@ class _InboxActivityViewState extends State<InboxActivityView> {
     final opened = job;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => WorkOrderDetailScreen(job: opened)),
+      MaterialPageRoute(
+        builder: (_) => WorkOrderDetailScreen(
+          job: opened,
+          // Like Home: a receipt row lands on Job money (A08b).
+          focusMoney: item.type == 'receipt',
+        ),
+      ),
     );
     if (mounted) _load(refresh: true);
   }
@@ -574,18 +555,21 @@ class _InboxActivityViewState extends State<InboxActivityView> {
         d.year == now.year && d.month == now.month && d.day == now.day;
     final today = _items.where((i) => isToday(i.date)).toList();
     final earlier = _items.where((i) => !isToday(i.date)).toList();
+    final gutter = TwLayout.gutter(context);
     return RefreshIndicator(
       onRefresh: () => _load(refresh: true),
+      color: AppTheme.navy,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        padding: EdgeInsets.fromLTRB(gutter, 0, gutter, TwSpace.s28),
         children: [
           if (_items.isEmpty)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 32),
-              child: Text('No activity yet.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.textSecondary)),
+              padding: EdgeInsets.symmetric(vertical: TwSpace.s40),
+              child: TwEmptyState(
+                icon: Icons.notifications_none_rounded,
+                title: 'No activity yet',
+              ),
             ),
           if (today.isNotEmpty) ...[
             _heading('Today', top: 20),
@@ -614,11 +598,7 @@ class _InboxActivityViewState extends State<InboxActivityView> {
         padding: EdgeInsets.only(top: top, bottom: 2),
         child: Text(
           text,
-          style: GoogleFonts.outfit(
-            color: AppTheme.navy,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TwType.h3().copyWith(fontSize: 15, height: 20 / 15),
         ),
       );
 }
@@ -646,7 +626,7 @@ class _ActivityRow extends StatelessWidget {
             AppTheme.amber
           ),
         'receipt' || 'credit' => (
-            Icons.receipt_long_outlined,
+            Icons.card_giftcard_outlined,
             AppTheme.purpleTint,
             AppTheme.purple
           ),
@@ -693,16 +673,8 @@ class _ActivityRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    item.title,
-                    style: const TextStyle(
-                      color: AppTheme.navy,
-                      fontSize: 15,
-                      height: 21 / 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
+                  Text(item.title, style: TwType.title()),
+                  const SizedBox(height: TwSpace.s4),
                   Text.rich(
                     TextSpan(children: [
                       if (item.waitingOnYou) ...[
@@ -733,24 +705,20 @@ class _ActivityRow extends StatelessWidget {
                       ],
                       TextSpan(text: meta),
                     ]),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 13,
-                      height: 18 / 13,
-                    ),
+                    style: TwType.caption(),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: TwSpace.s8),
             if (item.unread) ...[
               const _UnreadDot(),
-              const SizedBox(width: 8),
+              const SizedBox(width: TwSpace.s8),
             ],
             const Icon(Icons.chevron_right_rounded,
-                color: AppTheme.textTertiary, size: 20),
+                color: AppTheme.textTertiary, size: 18),
           ],
         ),
       ),

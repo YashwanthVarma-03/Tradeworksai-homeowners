@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/auth_service.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/app_notification.dart';
 import '../widgets/transaction_guard.dart';
@@ -165,87 +166,68 @@ class _SignupPageState extends State<SignupPage> {
         e,
         fallback: 'We couldn\'t create your account. Please try again.',
       );
-  InputDecoration _field(String hint, {Widget? suffix}) => InputDecoration(
-      hintText: hint,
-      suffixIcon: suffix,
-      filled: true,
-      fillColor: AppTheme.subtle,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
-      border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppTheme.cardBorder)),
-      enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppTheme.cardBorder)));
   @override
   Widget build(BuildContext context) => TransactionGuard(
       isProcessing: _loading,
       blockedMessage: 'Please wait while your account is being created.',
       child: Scaffold(
           backgroundColor: AppTheme.pageBackground,
+          appBar: authBackBar(context),
           body: SafeArea(
-              child: Align(
-                  alignment: Alignment.topCenter,
-                  child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              child: SingleChildScrollView(
+                  child: TwPage(
+                      top: TwSpace.s8,
                       child: Form(
                           key: _formKey,
                           child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                const Text('Create your account',
+                                Text('Create your account',
                                     textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                        color: AppTheme.navy700,
-                                        fontSize: 29,
-                                        fontWeight: FontWeight.w900)),
-                                const SizedBox(height: 5),
-                                const Text(
+                                    style: TwType.h1(context)),
+                                const SizedBox(height: 6),
+                                Text(
                                     'Book trusted local pros and keep every job in one place.',
                                     textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                        color: AppTheme.textSecondary,
-                                        fontSize: 15)),
+                                    style: TwType.body(
+                                        color: AppTheme.textSecondary)),
                                 const SizedBox(height: 24),
-                                const Text('Full name',
-                                    style: TextStyle(
-                                        color: AppTheme.ink, fontSize: 13)),
-                                const SizedBox(height: 8),
+                                const TwFieldLabel('Full name'),
                                 TextFormField(
                                     controller: _name,
+                                    style: TwType.body(color: AppTheme.navy),
                                     enabled: !_loading,
                                     textCapitalization:
                                         TextCapitalization.words,
-                                    decoration: _field('Your name'),
+                                    decoration:
+                                        TwInputs.decoration(hint: 'Your name'),
                                     validator: (v) =>
                                         v == null || v.trim().isEmpty
                                             ? 'Please enter your name'
                                             : null),
-                                const SizedBox(height: 16),
-                                const Text('Email address',
-                                    style: TextStyle(
-                                        color: AppTheme.ink, fontSize: 13)),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: TwSpace.s16),
+                                const TwFieldLabel('Email address'),
                                 TextFormField(
                                     controller: _email,
+                                    style: TwType.body(color: AppTheme.navy),
                                     enabled: !_loading,
                                     keyboardType: TextInputType.emailAddress,
-                                    decoration: _field('you@example.com'),
+                                    decoration: TwInputs.decoration(
+                                        hint: 'you@example.com'),
                                     validator: (v) => v == null ||
                                             !RegExp(r'^[\w.+-]+@([\w-]+\.)+[a-zA-Z]{2,}$')
                                                 .hasMatch(v.trim())
                                         ? 'Please enter a valid email'
                                         : null),
-                                const SizedBox(height: 16),
-                                const Text('Password',
-                                    style: TextStyle(
-                                        color: AppTheme.ink, fontSize: 13)),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: TwSpace.s16),
+                                const TwFieldLabel('Password'),
                                 TextFormField(
                                     controller: _password,
+                                    style: TwType.body(color: AppTheme.navy),
                                     enabled: !_loading,
                                     obscureText: _obscure,
-                                    decoration: _field('8+ characters',
+                                    decoration: TwInputs.decoration(
+                                        hint: '8+ characters',
                                         suffix: IconButton(
                                             tooltip: _obscure
                                                 ? 'Show password'
@@ -255,135 +237,72 @@ class _SignupPageState extends State<SignupPage> {
                                                     ? Icons
                                                         .visibility_off_outlined
                                                     : Icons.visibility_outlined,
+                                                size: 20,
                                                 color: AppTheme.textSecondary),
                                             onPressed: () => setState(
                                                 () => _obscure = !_obscure))),
                                     validator: (v) => v == null || v.length < 8
                                         ? 'Password must be at least 8 characters'
                                         : null),
-                                const SizedBox(height: 16),
-                                FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      TextButton(
-                                        onPressed: _loading
-                                            ? null
-                                            : _openTermsOfService,
-                                        style: TextButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 4),
-                                          minimumSize: const Size(48, 48),
-                                        ),
-                                        child: const Text('Terms of Service',
-                                            style: TextStyle(
-                                                color: AppTheme.blue,
-                                                decoration:
-                                                    TextDecoration.underline)),
-                                      ),
-                                      const Text('·',
-                                          style: TextStyle(
-                                              color: AppTheme.textSecondary)),
-                                      TextButton(
-                                        onPressed: _loading
-                                            ? null
-                                            : _openPrivacyPolicy,
-                                        style: TextButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 4),
-                                          minimumSize: const Size(48, 48),
-                                        ),
-                                        child: const Text(
-                                            'Read our Privacy Policy',
-                                            style: TextStyle(
-                                                color: AppTheme.blue,
-                                                decoration:
-                                                    TextDecoration.underline)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                    height: 54,
-                                    child: ElevatedButton(
-                                        onPressed: _loading ? null : _submit,
-                                        style: ElevatedButton.styleFrom(
-                                            backgroundColor: AppTheme.orange500,
-                                            foregroundColor: AppTheme.navy,
-                                            shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(14))),
-                                        child: _loading
-                                            ? const CircularProgressIndicator(
-                                                color: AppTheme.navy)
-                                            : const Text('Create account',
-                                                style: TextStyle(
-                                                    fontWeight: FontWeight.w900,
-                                                    fontSize: 15)))),
-                                const SizedBox(height: 20),
-                                const Row(children: [
-                                  Expanded(child: Divider()),
-                                  Padding(
-                                      padding:
-                                          EdgeInsets.symmetric(horizontal: 16),
-                                      child: Text('or',
-                                          style: TextStyle(
-                                              color: AppTheme.textSecondary))),
-                                  Expanded(child: Divider())
-                                ]),
-                                const SizedBox(height: 20),
-                                SizedBox(
-                                    height: 54,
-                                    child: OutlinedButton.icon(
-                                        onPressed: _loading ? null : _apple,
-                                        icon: const Icon(Icons.apple,
-                                            color: AppTheme.navy700, size: 22),
-                                        label: const Text('Continue with Apple',
-                                            style: TextStyle(
-                                                color: AppTheme.navy700,
-                                                fontWeight: FontWeight.w800)),
-                                        style: OutlinedButton.styleFrom(
-                                            shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(14)),
-                                            side: const BorderSide(
-                                                color: AppTheme.cardBorder)))),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                    height: 54,
-                                    child: OutlinedButton.icon(
-                                        onPressed: _loading ? null : _google,
-                                        icon: const Text('G',
-                                            style: TextStyle(
-                                                color: AppTheme.teal500,
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.w900)),
-                                        label: const Text(
-                                            'Continue with Google',
-                                            style: TextStyle(
-                                                color: AppTheme.navy700,
-                                                fontWeight: FontWeight.w800)),
-                                        style: OutlinedButton.styleFrom(
-                                            shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(14)),
-                                            side: const BorderSide(
-                                                color: AppTheme.cardBorder)))),
-                                const SizedBox(height: 30),
+                                const SizedBox(height: TwSpace.s8),
+                                // Wraps onto two lines on Compact or at large
+                                // text sizes (was a FittedBox that shrank it).
                                 Wrap(
-                                    alignment: WrapAlignment.center,
-                                    children: [
-                                      const Text('Already have an account? ',
-                                          style: TextStyle(
-                                              color: AppTheme.textSecondary)),
-                                      InkWell(
-                                          onTap: _loading ? null : _openLogin,
-                                          child: const Text('Log in',
-                                              style: TextStyle(
-                                                  color: AppTheme.blue,
-                                                  fontWeight: FontWeight.w900)))
-                                    ])
+                                  alignment: WrapAlignment.center,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: TwSpace.s8,
+                                  children: [
+                                    TwTextAction(
+                                      label: 'Terms of Service',
+                                      onPressed: () {
+                                        if (!_loading) _openTermsOfService();
+                                      },
+                                    ),
+                                    Text('·', style: TwType.meta()),
+                                    TwTextAction(
+                                      label: 'Read our Privacy Policy',
+                                      onPressed: () {
+                                        if (!_loading) _openPrivacyPolicy();
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: TwSpace.s8),
+                                TwPrimaryButton(
+                                  label: 'Create account',
+                                  onPressed: _submit,
+                                  loading: _loading,
+                                ),
+                                const SizedBox(height: TwSpace.s20),
+                                const AuthOrDivider(),
+                                const SizedBox(height: TwSpace.s20),
+                                AuthSocialButton(
+                                  label: 'Continue with Apple',
+                                  icon: const Icon(Icons.apple,
+                                      color: AppTheme.navy, size: 22),
+                                  onPressed: _loading ? null : _apple,
+                                ),
+                                const SizedBox(height: TwSpace.s12),
+                                AuthSocialButton(
+                                  label: 'Continue with Google',
+                                  icon: const GoogleMark(),
+                                  onPressed: _loading ? null : _google,
+                                ),
+                                const SizedBox(height: TwSpace.s28),
+                                Wrap(
+                                  alignment: WrapAlignment.center,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text('Already have an account? ',
+                                        style: TwType.bodySm(
+                                            color: AppTheme.textSecondary)),
+                                    TwTextAction(
+                                      label: 'Log in',
+                                      onPressed: () {
+                                        if (!_loading) _openLogin();
+                                      },
+                                    ),
+                                  ],
+                                ),
                               ])))))));
 }

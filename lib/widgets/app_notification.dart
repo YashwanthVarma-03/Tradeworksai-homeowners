@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../utils/app_error_utils.dart';
 
 enum AppNotificationTone { error, success, info }
@@ -69,6 +70,9 @@ class AppNotification {
   }
 }
 
+/// v3.3: the notification reads like an alert row — white card, hairline,
+/// radius 14, `floatShadow`, a 36 tinted circle with an 18 icon and an ink
+/// sentence. No white text on a coloured fill. Centred, max 560.
 class _TopNotification extends StatelessWidget {
   const _TopNotification({
     required this.message,
@@ -82,81 +86,96 @@ class _TopNotification extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (background, icon, label) = switch (tone) {
+    final (tint, iconColor, icon, label) = switch (tone) {
       AppNotificationTone.error => (
+          AppTheme.redTint,
           AppTheme.red,
           Icons.error_outline_rounded,
           'Error',
         ),
       AppNotificationTone.success => (
-          AppTheme.success,
+          AppTheme.greenTint,
+          AppTheme.green,
           Icons.check_circle_outline_rounded,
           'Success',
         ),
       AppNotificationTone.info => (
-          AppTheme.navy700,
+          AppTheme.blueTint,
+          AppTheme.blue,
           Icons.info_outline_rounded,
           'Information',
         ),
     };
+    final gutter = TwLayout.gutter(context);
 
     return Positioned(
       top: MediaQuery.paddingOf(context).top + 12,
-      left: 16,
-      right: 16,
-      child: Semantics(
-        liveRegion: true,
-        label: '$label: $message',
-        child: Material(
-          color: Colors.transparent,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: 1),
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            builder: (context, value, child) => Transform.translate(
-              offset: Offset(0, -12 * (1 - value)),
-              child: Opacity(opacity: value, child: child),
-            ),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 640),
-              margin: const EdgeInsets.symmetric(horizontal: 0),
-              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-              decoration: BoxDecoration(
-                color: background,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.navy.withOpacity(0.2),
-                    blurRadius: 18,
-                    offset: Offset(0, 8),
+      left: gutter,
+      right: gutter,
+      child: Align(
+        alignment: Alignment.topCenter,
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: TwLayout.maxContent),
+          child: Semantics(
+            liveRegion: true,
+            label: '$label: $message',
+            child: Material(
+              color: Colors.transparent,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, child) => Transform.translate(
+                  offset: Offset(0, -12 * (1 - value)),
+                  child: Opacity(opacity: value, child: child),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppTheme.cardBorder),
+                    boxShadow: AppTheme.floatShadow,
                   ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Icon(icon, color: Colors.white, size: 22),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      message,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        height: 1.3,
-                        fontWeight: FontWeight.w600,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: tint,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(icon, color: iconColor, size: 18),
                       ),
-                    ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          message,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: TwType.bodySm(color: AppTheme.navy)
+                              .copyWith(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Dismiss notification',
+                        onPressed: onDismiss,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 44,
+                          height: 44,
+                        ),
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: AppTheme.textSecondary,
+                          size: 20,
+                        ),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    tooltip: 'Dismiss notification',
-                    onPressed: onDismiss,
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.close_rounded,
-                        color: Colors.white, size: 20),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../utils/work_order_status.dart';
 
 /// Design standard v3.3, rule 7: alerts are rows, not banners — a 36px tinted
-/// circle with an icon, a bold line, one sentence and a blue text action,
-/// inside a hairline card.
+/// circle with an 18 icon (or a 44 round pro photo via [leading]), a status
+/// line, a bold line, one sentence and blue text actions (44 tall), inside a
+/// hairline card, radius 14, padding 16. Matches A01–A03.
 class AlertRow extends StatelessWidget {
   const AlertRow({
     super.key,
@@ -15,6 +17,7 @@ class AlertRow extends StatelessWidget {
     this.footer,
     this.tint = AppTheme.amberTint,
     this.iconColor = AppTheme.amber,
+    this.leading,
   });
 
   final IconData icon;
@@ -29,25 +32,29 @@ class AlertRow extends StatelessWidget {
   final Color tint;
   final Color iconColor;
 
+  /// Replaces the tinted icon circle — a 44 round pro photo.
+  final Widget? leading;
+
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppTheme.cardBorder),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
-            child: Icon(icon, size: 18, color: iconColor),
-          ),
+          leading ??
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+                child: Icon(icon, size: 18, color: iconColor),
+              ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -57,6 +64,7 @@ class AlertRow extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
+                    fontFamily: AppTheme.fontInter,
                     color: AppTheme.navy,
                     fontSize: 15,
                     height: 21 / 15,
@@ -68,13 +76,24 @@ class AlertRow extends StatelessWidget {
                   Text(
                     body!,
                     style: const TextStyle(
+                      fontFamily: AppTheme.fontInter,
                       color: AppTheme.body,
                       fontSize: 14,
                       height: 20 / 14,
                     ),
                   ),
                 ],
-                if (footer != null) ...[const SizedBox(height: 2), footer!],
+                if (footer != null) ...[
+                  const SizedBox(height: 2),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 44),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      heightFactor: 1,
+                      child: footer!,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -85,30 +104,10 @@ class AlertRow extends StatelessWidget {
 }
 
 /// The amber "Waiting on you" mark: a dot and the words (v3.3 status rule).
+/// Drawn by the shared [StatusMark] so it matches Bookings and the work order.
 class WaitingOnYouMark extends StatelessWidget {
   const WaitingOnYouMark({super.key});
 
   @override
-  Widget build(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(
-              color: AppTheme.amber,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 6),
-          const Text(
-            'Waiting on you',
-            style: TextStyle(
-              color: AppTheme.amber,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      );
+  Widget build(BuildContext context) => const StatusMark.waiting();
 }

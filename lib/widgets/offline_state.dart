@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../theme.dart';
+import '../ui/tw.dart';
 import '../utils/app_error_utils.dart';
 
+/// v3.3 empty-state look (§4 Empty states): 56 `subtle` icon well with an
+/// ink icon, `h3` title, one `bodySm` meta sentence and one secondary
+/// "Retry" button. Centred, max width 320. No card, no shadow, no white
+/// label on orange.
 class OfflineState extends StatelessWidget {
   final VoidCallback onRetry;
   final String? message;
@@ -23,91 +27,15 @@ class OfflineState extends StatelessWidget {
         ? message!.trim()
         : AppErrorUtils.noInternetMessage;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: AppTheme.line.withOpacity(0.8)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 66,
-                  height: 66,
-                  decoration: BoxDecoration(
-                    color: AppTheme.amberTint,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppTheme.amber.withOpacity(0.2),
-                    ),
-                  ),
-                  child: Icon(
-                    icon,
-                    size: 34,
-                    color: AppTheme.amber,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  text,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppTheme.gray,
-                    fontSize: 13.5,
-                    height: 1.45,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: onRetry,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.orange500,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: const Text(
-                      'Retry',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return TwEmptyState(
+      icon: icon,
+      title: title,
+      message: text,
+      action: TwSecondaryButton(
+        label: 'Retry',
+        icon: Icons.refresh_rounded,
+        expand: false,
+        onPressed: onRetry,
       ),
     );
   }

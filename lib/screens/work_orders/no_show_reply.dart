@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
 import '../../widgets/app_notification.dart';
+import '../../ui/tw.dart';
 
 /// The pro reported that nobody was home; the homeowner tells TradeWorks what
 /// happened (E05). Up to 2,000 characters, read by support.
@@ -65,90 +66,56 @@ class _NoShowReplyScreenState extends State<NoShowReplyScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
         backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          centerTitle: true,
-          foregroundColor: AppTheme.navy,
-          title: Text(
-            'Tell us what happened',
-            style: AppTheme.headingStyle
-                .copyWith(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(1),
-            child: Divider(height: 1, color: AppTheme.cardBorder),
-          ),
-        ),
+        appBar: TwAppBar(title: 'Tell us what happened'),
         body: SafeArea(
           top: false,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-            children: [
-              const Text(
-                'Your pro reported that nobody was home for this visit. If '
-                'that’s not right, let us know — we read every reply.',
-                style: TextStyle(
-                  color: AppTheme.body,
-                  fontSize: 16,
-                  height: 25 / 16,
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Your reply',
-                style: TextStyle(
-                  color: AppTheme.navy,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _text,
-                minLines: 7,
-                maxLines: 12,
-                maxLength: _maxLength,
-                enabled: !_sending,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  hintText: 'What happened?',
-                  counterText: '',
-                ),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  '${_count(_text.text.length)} / 2,000',
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 13,
+          child: SingleChildScrollView(
+            child: TwPage(
+              top: TwSpace.s20,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Your pro reported that nobody was home for this visit. If '
+                    'that’s not right, let us know — we read every reply.',
+                    style: TwType.body(),
                   ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        bottomNavigationBar: Container(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: AppTheme.cardBorder)),
-            boxShadow: AppTheme.floatShadow,
-          ),
-          child: SafeArea(
-            top: false,
-            child: SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: _sending || _text.text.trim().isEmpty ? null : _send,
-                child: Text(_sending ? 'Sending…' : 'Send reply'),
+                  const SizedBox(height: TwSpace.s20),
+                  const TwFieldLabel('Your reply'),
+                  TextField(
+                    controller: _text,
+                    minLines: 7,
+                    maxLines: 12,
+                    maxLength: _maxLength,
+                    enabled: !_sending,
+                    textCapitalization: TextCapitalization.sentences,
+                    style: TwType.body(color: AppTheme.navy),
+                    decoration: TwInputs.decoration(
+                      hint: 'What happened?',
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: TwSpace.s8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '${_count(_text.text.length)} / 2,000',
+                      style: TwType.caption(),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+        ),
+        bottomNavigationBar: TwStickyBar(
+          children: [
+            TwPrimaryButton(
+              label: 'Send reply',
+              onPressed: _sending || _text.text.trim().isEmpty ? null : _send,
+              loading: _sending,
+            ),
+          ],
         ),
       );
 }

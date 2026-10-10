@@ -4,6 +4,8 @@ import 'package:homeowners_app/utils/work_order_status.dart';
 import 'package:homeowners_app/utils/arrival_check_state.dart';
 import 'package:homeowners_app/utils/session_pro_order.dart';
 import 'package:homeowners_app/screens/work_orders/leave_review.dart';
+import 'package:homeowners_app/screens/work_orders/work_order_detail.dart';
+import 'package:homeowners_app/ui/tw.dart';
 
 void main() {
   test('legacy statuses map to the four manual states', () {
@@ -13,6 +15,27 @@ void main() {
         WorkOrderStatus.from('wrapping_up').state, WorkOrderState.inProgress);
     expect(WorkOrderStatus.from('complete').state, WorkOrderState.completed);
     expect(WorkOrderStatus.from('unknown').state, WorkOrderState.booked);
+  });
+  test('contractor arrival is a visible event within the four states', () {
+    expect(WorkOrderStatus.proOnSite({'status': 'arrived'}), isTrue);
+    expect(WorkOrderStatus.proOnSite({'status': 'en_route'}), isFalse);
+    expect(WorkOrderStatus.proOnSite({'status': 'in_progress'}), isFalse);
+  });
+  testWidgets('work order shows the pro arrival without a no-show action',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: WorkOrderDetailScreen(job: {
+        'workOrderId': 24163,
+        'status': 'arrived',
+        'serviceCategory': 'AC repair',
+        'pro': {'businessName': 'Hutchins Plumbing'},
+        'timeline': {'arrivedAt': '2026-10-09T10:30:00Z'},
+      }),
+    ));
+    await tester.pump();
+    expect(find.text('Hutchins Plumbing has arrived'), findsOneWidget);
+    expect(find.textContaining('Arrived on site'), findsOneWidget);
+    expect(find.text('Report a no-show'), findsNothing);
   });
   test('waiting is an overlay and cancellation does not invent an actor', () {
     final waiting = WorkOrderStatus.fromJob(
@@ -31,7 +54,7 @@ void main() {
     expect(WorkOrderStatus.from('customer_no_show').isTerminalWithoutProgress,
         isTrue);
   });
-  test('server arrival flags override the provisional grace fallback', () {
+  test('server arrival flags override the window-end fallback', () {
     final now = DateTime.utc(2026, 9, 26, 12);
     final job = <String, dynamic>{
       'status': 'accepted',
@@ -50,6 +73,8 @@ void main() {
         ArrivalCheckState.pending(
             {...job, 'scheduledEnd': '2026-09-26T11:00:00Z'},
             now: now),
+        isTrue);
+    expect(ArrivalCheckState.pending({...job, 'status': 'en_route'}, now: now),
         isFalse);
   });
   test(
@@ -93,18 +118,17 @@ void main() {
       (tester) async {
     await tester.pumpWidget(const MaterialApp(
         home: LeaveReviewScreen(job: {'status': 'completed'}, jobId: 17)));
-    expect(find.byIcon(Icons.star_rounded), findsNothing);
+    expect(find.byIcon(Icons.star_rounded), findsNWidgets(5));
     expect(find.text('Great service'), findsNothing);
-    expect(find.widgetWithText(FilterChip, 'Price stayed within the cap'),
+    expect(find.widgetWithText(TwPill, 'Price stayed within the cap'),
         findsNothing);
 
     await tester.pumpWidget(const MaterialApp(
         home: LeaveReviewScreen(
             job: {'status': 'completed', 'workOrderType': 'nte'}, jobId: 18)));
-    final capChip =
-        find.widgetWithText(FilterChip, 'Price stayed within the cap');
+    final capChip = find.widgetWithText(TwPill, 'Price stayed within the cap');
     expect(capChip, findsOneWidget);
-    expect(tester.widget<FilterChip>(capChip).onSelected, isNotNull);
+    expect(tester.widget<TwPill>(capChip).onTap, isNotNull);
     expect(tester.takeException(), isNull);
   });
   testWidgets('review edit is identified and preserves existing rating',

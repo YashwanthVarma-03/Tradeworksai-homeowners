@@ -3,11 +3,12 @@ import 'package:url_launcher/url_launcher_string.dart';
 import '../theme.dart';
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
+import '../ui/tw.dart';
 import '../utils/work_order_labels.dart';
 import '../widgets/app_notification.dart';
 
 class SupportPage extends StatefulWidget {
-  const SupportPage({Key? key}) : super(key: key);
+  const SupportPage({super.key});
 
   @override
   State<SupportPage> createState() => _SupportPageState();
@@ -132,55 +133,49 @@ class _SupportPageState extends State<SupportPage> {
 
   final List<Map<String, String>> _faqs = [
     {
-      'cat': '🏡 Home & Search Page FAQs',
+      'cat': 'Home & search',
       'q': 'How does the TradeWorks One network work?',
       'a':
-          'You join for free, browse vetted and insured home service professionals across 31 categories, and see upfront pricing before you book. You book directly on their calendar, and you earn 3–8% back in service credits on what you pay.'
+          'You join for free and book vetted, insured home service professionals who serve your ZIP. Each service shows how it\'s priced: a fixed price you see before you book; a diagnostic fee, after which the pro sends a not-to-exceed cap you approve before any repair starts; or a free visit, after which the pro sends an estimate you accept or decline. You book a 2-hour window on the pro\'s calendar, pay your pro directly, and earn 3–8% back in service credits on what you pay.'
     },
     {
-      'cat': '🏡 Home & Search Page FAQs',
+      'cat': 'Home & search',
       'q': 'How are contractors vetted?',
       'a':
           'Every contractor in the network is verified for active state licenses and general liability insurance before taking any job. We verify credentials so you don\'t have to chase proof of coverage.'
     },
     {
-      'cat': '🏡 Home & Search Page FAQs',
-      'q': 'What does Select-certified mean?',
+      'cat': 'Home & search',
+      'q': 'How does TradeWorks choose its pros?',
       'a':
           'We vet every pro on TradeWorks ourselves — licence, insurance and workmanship — and hand-pick who gets listed. It isn\'t a rating and it isn\'t bought.'
     },
     {
-      'cat': '🏡 Home & Search Page FAQs',
-      'q': 'What is GEO/AEO optimization?',
-      'a':
-          'Generative Engine Optimization (GEO) and Answer Engine Optimization (AEO) are strategies to optimize your contractor website so it gets cited by AI search tools like ChatGPT, Claude, Perplexity, and Google AI Overviews, ensuring your business stays visible where modern buyers search.'
-    },
-    {
-      'cat': '📅 Bookings Page FAQs',
+      'cat': 'Bookings',
       'q': 'Can I cancel or reschedule a booking?',
       'a':
-          'Yes, you can cancel or reschedule any future booked job before the work begins for free with no homeowner fees. Cancellations or reschedules are handled directly via the Bookings tab.'
+          'You can cancel any future booked job before the work begins, with no homeowner fees, from the Bookings tab. Standard bookings can be rescheduled while they\'re still booked: propose a new 2-hour window from your pro\'s open time, and your original time stands until your pro accepts. Urgent and Emergency bookings can\'t be rescheduled — they\'re a 24-hour or 4-hour commitment.'
     },
     {
-      'cat': '🏆 Rewards Page FAQs',
+      'cat': 'Rewards',
       'q': 'How do TradeWorks service credits work?',
       'a':
           'Qualifying customer-paid spend earns 3%, 4%, 5%, 6% and 8% across five marginal bands in your rewards year, which resets on your signup anniversary. Upload your paid receipt to unlock earnings. Applied credits do not earn more credits. Band earnings are capped at \$1,915 plus \$750 in milestones per rewards year. Credits have no cash value and cannot be transferred.'
     },
     {
-      'cat': '🏆 Rewards Page FAQs',
+      'cat': 'Rewards',
       'q': 'Do my service credits expire?',
       'a':
           'Band credits expire after 24 months; milestone credits expire after 90 days. Your Rewards ledger shows the expiry date for each credit.'
     },
     {
-      'cat': '🏆 Rewards Page FAQs',
+      'cat': 'Rewards',
       'q': 'How do I use my service credits?',
       'a':
           'Your credits show on your account and on any booking. When you book, our team applies the credits you want to use — there are no codes, and nothing is applied without you asking. Credits come off what you pay your pro.'
     },
     {
-      'cat': '👤 Profile & Home Profile FAQs',
+      'cat': 'Profile & home profile',
       'q': 'How is my Home Profile information used?',
       'a':
           'Your home profile holds property details, systems and documents for a booked pro. Getting-in notes require a confirmed booking at that address and access ends when the job closes.'
@@ -211,39 +206,27 @@ class _SupportPageState extends State<SupportPage> {
       },
       child: Scaffold(
         backgroundColor: AppTheme.white,
-        appBar: AppBar(
-          backgroundColor: AppTheme.white,
-          elevation: 0,
-          leading: _viewIndex > 0 && _viewIndex < 2
-              ? IconButton(
-                  icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
-                  onPressed: () {
-                    setState(() {
-                      _viewIndex = 0;
-                    });
-                  },
-                )
-              : IconButton(
-                  icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
-                  onPressed: () => Navigator.pop(context),
-                ),
-          title: Text(
-            _viewIndex == 0
-                ? 'Help & Support'
-                : (_viewIndex == 1 ? 'Contact support' : ''),
-            style: const TextStyle(
-                color: AppTheme.navy700,
-                fontWeight: FontWeight.bold,
-                fontSize: 16),
-          ),
-          centerTitle: true,
+        appBar: TwAppBar(
+          title: _viewIndex == 0
+              ? 'Help & Support'
+              : (_viewIndex == 1 ? 'Contact support' : ''),
+          onBack: _viewIndex == 1
+              ? () {
+                  setState(() {
+                    _viewIndex = 0;
+                  });
+                }
+              : () => Navigator.pop(context),
         ),
         body: SafeArea(
           child: Column(
             children: [
               Expanded(
                 child: SingleChildScrollView(
-                  child: _buildBody(),
+                  child: TwPage(
+                    top: TwSpace.s20,
+                    child: _buildBody(),
+                  ),
                 ),
               ),
               if (_viewIndex < 2) _buildFooter(),
@@ -260,461 +243,342 @@ class _SupportPageState extends State<SupportPage> {
     return _buildSuccessView();
   }
 
-  Widget _buildFaqView() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
+  /// F09 search: a grey pill, 48 high, search icon at 16.
+  Widget _searchField() {
+    return Container(
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppTheme.subtle,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppTheme.cardBorder),
+      ),
+      padding: const EdgeInsets.only(left: TwSpace.s16, right: TwSpace.s16),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded, color: AppTheme.navy, size: 20),
+          const SizedBox(width: TwSpace.s8),
+          Expanded(
+            child: TextField(
+              style: TwType.body(color: AppTheme.navy),
+              textAlignVertical: TextAlignVertical.center,
+              decoration: TwInputs.borderless(hint: 'Search help articles'),
+              onChanged: (val) {
+                setState(() {
+                  _searchQuery = val.toLowerCase();
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// F09 contact tile: hairline card radius 14, padding 16, a grey round
+  /// icon well with a navy icon, title, blue value, optional caption.
+  Widget _contactTile({
+    required IconData icon,
+    required String title,
+    required String value,
+    String? note,
+    required VoidCallback onTap,
+  }) {
+    return TwCard(
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Search Box
-          Container(
-            decoration: BoxDecoration(
-              color: AppTheme.pageBackground,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppTheme.line),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                const Icon(Icons.search, color: AppTheme.gray, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    decoration: const InputDecoration(
-                      hintText: 'Search help articles',
-                      hintStyle: TextStyle(color: AppTheme.gray, fontSize: 13),
-                      border: InputBorder.none,
-                    ),
-                    onChanged: (val) {
-                      setState(() {
-                        _searchQuery = val.toLowerCase();
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Contact Tiles
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: () =>
-                      _openSupportLink('tel:8134777350', 'make a call'),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.white,
-                      border: Border.all(color: AppTheme.line),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.tealTint,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.phone,
-                              color: AppTheme.teal500, size: 18),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text('Call us',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.navy700,
-                                fontSize: 12.5)),
-                        const SizedBox(height: 2),
-                        const Text('(813) 477-7350',
-                            style: TextStyle(
-                                color: AppTheme.blue,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        const Text('Opens your phone’s dialer',
-                            style: TextStyle(
-                                color: AppTheme.textSecondary,
-                                fontSize: 13,
-                                height: 18 / 13)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: InkWell(
-                  onTap: () => _openSupportLink(
-                    'mailto:support@tradeworksai.com',
-                    'write an email',
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.white,
-                      border: Border.all(color: AppTheme.line),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.tealTint,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.mail_outline,
-                              color: AppTheme.teal500, size: 18),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text('Email us',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.navy700,
-                                fontSize: 12.5)),
-                        const SizedBox(height: 2),
-                        const Text('support@tradeworksai.com',
-                            style: TextStyle(
-                                color: AppTheme.blue,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Calls may be recorded for quality. Florida is a two-party-consent state — you’ll hear a notice at the start of any call.',
-            style: TextStyle(color: AppTheme.gray, fontSize: 10.5),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Common questions',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const SizedBox(height: 8),
-          ...(() {
-            final filtered = _faqs
-                .where((faq) =>
-                    faq['q']!.toLowerCase().contains(_searchQuery) ||
-                    faq['a']!.toLowerCase().contains(_searchQuery))
-                .toList();
-            final Map<String, List<Map<String, String>>> grouped = {};
-            for (var faq in filtered) {
-              final cat = faq['cat'] ?? 'General';
-              grouped.putIfAbsent(cat, () => []).add(faq);
-            }
+          TwIconWell(icon, size: 36),
+          const SizedBox(height: TwSpace.s8),
+          Text(title, style: TwType.title()),
+          const SizedBox(height: TwSpace.s4),
+          Text(value, style: TwType.link(size: 14)),
+          if (note != null) ...[
+            const SizedBox(height: TwSpace.s4),
+            Text(note, style: TwType.caption()),
+          ],
+          const SizedBox(height: TwSpace.s4),
+        ],
+      ),
+    );
+  }
 
-            final List<Widget> widgets = [];
-            for (var cat in grouped.keys) {
-              widgets.add(Padding(
-                padding:
-                    const EdgeInsets.only(top: 16.0, bottom: 8.0, left: 4.0),
-                child: Text(
-                  cat,
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+  Widget _contactTiles() {
+    final call = _contactTile(
+      icon: Icons.phone_outlined,
+      title: 'Call us',
+      value: '(813) 477-7350',
+      note: 'Opens your phone’s dialer',
+      onTap: () => _openSupportLink('tel:8134777350', 'make a call'),
+    );
+    final email = _contactTile(
+      icon: Icons.mail_outline_rounded,
+      title: 'Email us',
+      value: 'support@tradeworksai.com',
+      onTap: () => _openSupportLink(
+        'mailto:support@tradeworksai.com',
+        'write an email',
+      ),
+    );
+    // Compact or large text: one tile per row so the email never squeezes.
+    if (TwLayout.stackRows(context)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [call, const SizedBox(height: TwSpace.s12), email],
+      );
+    }
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: call),
+          const SizedBox(width: TwSpace.s12),
+          Expanded(child: email),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFaqView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _searchField(),
+        const SizedBox(height: TwSpace.s16),
+        _contactTiles(),
+        const SizedBox(height: TwSpace.s12),
+        Text(
+          'Calls may be recorded for quality. Florida is a two-party-consent state — you’ll hear a notice at the start of any call.',
+          style: TwType.caption(),
+        ),
+        const SizedBox(height: TwSpace.s28),
+        Text('Common questions', style: TwType.h2()),
+        ...(() {
+          final filtered = _faqs
+              .where((faq) =>
+                  faq['q']!.toLowerCase().contains(_searchQuery) ||
+                  faq['a']!.toLowerCase().contains(_searchQuery))
+              .toList();
+          final Map<String, List<Map<String, String>>> grouped = {};
+          for (var faq in filtered) {
+            final cat = faq['cat'] ?? 'General';
+            grouped.putIfAbsent(cat, () => []).add(faq);
+          }
+
+          final List<Widget> widgets = [];
+          for (var cat in grouped.keys) {
+            widgets.add(Padding(
+              padding:
+                  const EdgeInsets.only(top: TwSpace.s20, bottom: TwSpace.s4),
+              child: Text(
+                cat,
+                style: TwType.label(color: AppTheme.textSecondary),
+              ),
+            ));
+            final group = grouped[cat]!;
+            for (var i = 0; i < group.length; i++) {
+              final faq = group[i];
+              final last = i == group.length - 1;
+              widgets.add(DecoratedBox(
+                decoration: BoxDecoration(
+                  border: last
+                      ? null
+                      : const Border(
+                          bottom: BorderSide(color: AppTheme.cardBorder)),
                 ),
-              ));
-              for (var faq in grouped[cat]!) {
-                widgets.add(Theme(
+                child: Theme(
                   data: Theme.of(context)
                       .copyWith(dividerColor: Colors.transparent),
                   child: ExpansionTile(
+                    key: ValueKey(faq['q']),
+                    initiallyExpanded:
+                        faq['q'] == 'How does TradeWorks choose its pros?',
                     tilePadding: EdgeInsets.zero,
+                    iconColor: AppTheme.navy,
+                    collapsedIconColor: AppTheme.navy,
+                    expandedAlignment: Alignment.centerLeft,
+                    expandedCrossAxisAlignment: CrossAxisAlignment.start,
                     title: Text(
                       faq['q']!,
-                      style: const TextStyle(
-                          color: AppTheme.navy,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16),
+                      style: TwType.title(),
                     ),
                     children: [
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0),
+                        padding: const EdgeInsets.only(bottom: TwSpace.s16),
                         child: Text(
                           faq['a']!,
-                          style: const TextStyle(
-                              color: AppTheme.body,
-                              fontSize: 15,
-                              height: 23 / 15),
+                          style: TwType.bodySm(),
                         ),
                       ),
                     ],
                   ),
-                ));
-              }
+                ),
+              ));
             }
-            return widgets;
-          })(),
-        ],
-      ),
+          }
+          return widgets;
+        })(),
+      ],
     );
   }
 
   Widget _buildContactForm() {
-    const labelStyle = TextStyle(
-        fontWeight: FontWeight.w600, fontSize: 14, color: AppTheme.navy);
-    final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppTheme.radius),
-      borderSide: const BorderSide(color: AppTheme.cardBorder),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const TwFieldLabel('Topic'),
+        DropdownButtonFormField<String>(
+          value: _topic,
+          isExpanded: true,
+          style: TwType.body(color: AppTheme.navy),
+          decoration: TwInputs.decoration(),
+          items: _topics
+              .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+              .toList(),
+          onChanged: _sending
+              ? null
+              : (v) => setState(() => _topic = v ?? _topics.first),
+        ),
+        const SizedBox(height: TwSpace.s16),
+        const TwFieldLabel('Related work order', optional: true),
+        DropdownButtonFormField<String?>(
+          value: _relatedId,
+          isExpanded: true,
+          style: TwType.body(color: AppTheme.navy),
+          decoration: TwInputs.decoration(),
+          items: [
+            const DropdownMenuItem<String?>(value: null, child: Text('None')),
+            for (final row in _workOrders)
+              DropdownMenuItem<String?>(
+                value: row.id,
+                child: Text(row.label, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: _sending ? null : (v) => setState(() => _relatedId = v),
+        ),
+        const SizedBox(height: TwSpace.s16),
+        const TwFieldLabel('Message'),
+        TextField(
+          controller: _message,
+          enabled: !_sending,
+          minLines: 5,
+          maxLines: 8,
+          textCapitalization: TextCapitalization.sentences,
+          style: TwType.body(color: AppTheme.navy),
+          decoration: TwInputs.decoration(hint: 'Tell us what’s going on...'),
+        ),
+      ],
     );
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Topic', style: labelStyle),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            value: _topic,
-            isExpanded: true,
-            decoration: InputDecoration(
-                enabledBorder: border, border: border, isDense: true),
-            items: _topics
-                .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                .toList(),
-            onChanged: _sending
-                ? null
-                : (v) => setState(() => _topic = v ?? _topics.first),
+  }
+
+  /// One reassurance line on "Message sent": grey icon well + sentence.
+  Widget _successNote(IconData icon, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TwIconWell(icon, size: 36),
+        const SizedBox(width: TwSpace.s12),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 7),
+            child: Text(text, style: TwType.bodySm()),
           ),
-          const SizedBox(height: 16),
-          const Text('Related work order (optional)', style: labelStyle),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String?>(
-            value: _relatedId,
-            isExpanded: true,
-            decoration: InputDecoration(
-                enabledBorder: border, border: border, isDense: true),
-            items: [
-              const DropdownMenuItem<String?>(value: null, child: Text('None')),
-              for (final row in _workOrders)
-                DropdownMenuItem<String?>(
-                  value: row.id,
-                  child: Text(row.label, overflow: TextOverflow.ellipsis),
-                ),
-            ],
-            onChanged: _sending ? null : (v) => setState(() => _relatedId = v),
-          ),
-          const SizedBox(height: 16),
-          const Text('Message', style: labelStyle),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _message,
-            enabled: !_sending,
-            minLines: 4,
-            maxLines: 8,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: InputDecoration(
-              hintText: 'Tell us what’s going on...',
-              enabledBorder: border,
-              border: border,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildSuccessView() {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const SizedBox(height: 20),
-          Container(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Container(
             width: 64,
             height: 64,
             decoration: const BoxDecoration(
-              color: AppTheme.success,
+              color: AppTheme.greenTint,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.check, color: Colors.white, size: 32),
+            child: const Icon(Icons.check_rounded,
+                color: AppTheme.greenMark, size: 32),
           ),
-          const SizedBox(height: 16),
-          const Text('Message sent',
-              style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.navy700)),
-          const SizedBox(height: 8),
-          Text(
-            AuthService.instance.userEmail == null
-                ? 'We’ll reply by email within 1 business day.'
-                : 'We’ll reply to ${AuthService.instance.userEmail} within 1 business day.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppTheme.line),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                for (var i = 0; i < _summaryRows.length; i++) ...[
-                  if (i > 0) const Divider(height: 24, color: AppTheme.line),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(_summaryRows[i].$1,
-                          style: const TextStyle(
-                              color: AppTheme.textSecondary, fontSize: 14)),
-                      const SizedBox(width: 16),
-                      Flexible(
-                        child: Text(_summaryRows[i].$2,
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                                color: AppTheme.navy,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14)),
-                      ),
-                    ],
-                  ),
-                ],
+        ),
+        const SizedBox(height: TwSpace.s16),
+        Text('Message sent',
+            textAlign: TextAlign.center, style: TwType.h1(context)),
+        const SizedBox(height: TwSpace.s8),
+        Text(
+          AuthService.instance.userEmail == null
+              ? 'We’ll reply by email within 1 business day.'
+              : 'We’ll reply to ${AuthService.instance.userEmail} within 1 business day.',
+          textAlign: TextAlign.center,
+          style: TwType.bodySm(color: AppTheme.textSecondary),
+        ),
+        const SizedBox(height: TwSpace.s28),
+        TwFactPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < _summaryRows.length; i++) ...[
+                if (i > 0) const SizedBox(height: TwSpace.s8),
+                TwDetailRow(
+                  label: _summaryRows[i].$1,
+                  value: _summaryRows[i].$2,
+                ),
               ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                    color: AppTheme.tealTint,
-                    borderRadius: BorderRadius.circular(6)),
-                child: const Icon(Icons.mail_outline,
-                    color: AppTheme.teal500, size: 16),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'We’ll email your reply — just reply to that email to keep the thread going.',
-                  style: TextStyle(
-                      color: AppTheme.ink, fontSize: 12.5, height: 1.4),
-                ),
-              ),
             ],
           ),
-          const SizedBox(height: 16),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                    color: AppTheme.tealTint,
-                    borderRadius: BorderRadius.circular(6)),
-                child: const Icon(Icons.confirmation_number_outlined,
-                    color: AppTheme.teal500, size: 16),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'You choose how much credit to apply when you book. Your pro receives the remaining payment directly.',
-                  style: TextStyle(
-                      color: AppTheme.ink, fontSize: 12.5, height: 1.4),
-                ),
-              ),
-            ],
+        ),
+        const SizedBox(height: TwSpace.s28),
+        _successNote(
+          Icons.mail_outline_rounded,
+          'We’ll email your reply — just reply to that email to keep the thread going.',
+        ),
+        const SizedBox(height: TwSpace.s16),
+        _successNote(
+          Icons.confirmation_number_outlined,
+          'You choose how much credit to apply when you book. Your pro receives the remaining payment directly.',
+        ),
+        const SizedBox(height: TwSpace.s28),
+        TwSecondaryButton(
+          label: 'Done',
+          onPressed: () => Navigator.pop(context),
+        ),
+        const SizedBox(height: TwSpace.s8),
+        Center(
+          child: TwTextAction(
+            label: 'Back to help',
+            onPressed: () {
+              setState(() {
+                _viewIndex = 0;
+              });
+            },
           ),
-          const SizedBox(height: 32),
-          SizedBox(
-            width: double.infinity,
-            child: TextButton(
-              onPressed: () {
-                setState(() {
-                  _viewIndex = 0;
-                });
-              },
-              style: TextButton.styleFrom(
-                foregroundColor: AppTheme.navy,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              child: const Text('Back to Help',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () => Navigator.pop(context),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.line),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              child: const Text('Done',
-                  style: TextStyle(
-                      color: AppTheme.navy700, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildFooter() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: AppTheme.white,
-        border: Border(top: BorderSide(color: AppTheme.line)),
-      ),
-      child: Column(
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                if (_viewIndex == 0) {
-                  setState(() {
-                    _viewIndex = 1;
-                  });
-                } else if (_viewIndex == 1 && !_sending) {
-                  _sendRequest();
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.orange500,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              child: Text(
-                _viewIndex == 0 ? 'Contact support' : 'Send request',
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'We usually reply by email within 1 business day.',
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-          ),
-        ],
-      ),
+    return TwStickyBar(
+      note: 'We usually reply by email within 1 business day.',
+      noteBelow: true,
+      children: [
+        TwPrimaryButton(
+          label: _viewIndex == 0 ? 'Contact support' : 'Send request',
+          loading: _viewIndex == 1 && _sending,
+          onPressed: () {
+            if (_viewIndex == 0) {
+              setState(() {
+                _viewIndex = 1;
+              });
+            } else if (_viewIndex == 1 && !_sending) {
+              _sendRequest();
+            }
+          },
+        ),
+      ],
     );
   }
 }

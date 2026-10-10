@@ -8,6 +8,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../services/intake_service.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../utils/app_error_utils.dart';
 import 'transaction_guard.dart';
 
@@ -295,16 +296,20 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
   @override
   Widget build(BuildContext context) {
     final isVoiceMode = widget.initialMode == 'voice';
+    final gutter = TwLayout.gutter(context);
 
+    // v3.3 A06: grabber 36×4, Outfit 22/700 title, 15/22 body subline,
+    // 24 to the content, one orange "Find pros" (navy label, radius 12).
+    // The content scrolls inside the sheet so nothing clips at 1.3× text.
     return TransactionGuard(
       isProcessing: _isSubmitting || _isUploadingPhoto,
       blockedMessage: 'Please wait while your request is being prepared.',
       child: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 14,
+            left: gutter,
+            right: gutter,
+            top: 10,
             bottom: MediaQuery.of(context).viewInsets.bottom + 20,
           ),
           child: Column(
@@ -312,23 +317,19 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                width: 44,
-                height: 5,
+                width: 36,
+                height: 4,
                 decoration: BoxDecoration(
-                  color: AppTheme.line,
-                  borderRadius: BorderRadius.circular(999),
+                  color: AppTheme.border,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: TwSpace.s20),
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   isVoiceMode ? 'Voice intake' : 'Camera intake',
-                  style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TwType.sheetTitle(),
                 ),
               ),
               const SizedBox(height: 6),
@@ -338,11 +339,7 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                   isVoiceMode
                       ? 'Describe what you need done in your own words and our AI will match the right pro.'
                       : 'Take or choose photos of the problem area to match with the right service.',
-                  style: const TextStyle(
-                    color: AppTheme.gray,
-                    fontSize: 13,
-                    height: 1.45,
-                  ),
+                  style: TwType.bodySm(),
                 ),
               ),
               const SizedBox(height: 24),
@@ -353,54 +350,21 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppTheme.navyTint,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppTheme.line),
+                    color: AppTheme.subtle,
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     _message!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppTheme.navy700,
-                      fontSize: 13,
-                      height: 1.4,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: TwType.bodySm(color: AppTheme.navy),
                   ),
                 ),
               ],
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed:
-                      _isSubmitting || _isUploadingPhoto ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.orange500,
-                    foregroundColor: AppTheme.navy,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: AppTheme.navy700,
-                          ),
-                        )
-                      : const Text(
-                          'Find pros',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
-                          ),
-                        ),
-                ),
+              const SizedBox(height: TwSpace.s20),
+              TwPrimaryButton(
+                label: 'Find pros',
+                loading: _isSubmitting,
+                onPressed: _isSubmitting || _isUploadingPhoto ? null : _submit,
               ),
             ],
           ),
@@ -466,41 +430,25 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                   : (_speechReady
                       ? 'Tap the microphone to start speaking'
                       : 'Type what you need help with')),
-          style: TextStyle(
-            color: _isListening ? AppTheme.blue : AppTheme.navy700,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TwType.title(
+            color: _isListening ? AppTheme.blue : AppTheme.navy,
+          ).copyWith(fontSize: 15),
         ),
         const SizedBox(height: 16),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            color: AppTheme.pageBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTheme.line),
+        TextField(
+          minLines: 3,
+          maxLines: 5,
+          enabled: !_isSubmitting,
+          controller: _spokenTextController,
+          onChanged: (value) {
+            setState(() {
+              _spokenText = value;
+            });
+          },
+          decoration: TwInputs.decoration(
+            hint: 'Describe the problem in a few words...',
           ),
-          child: TextField(
-            minLines: 3,
-            maxLines: 5,
-            enabled: !_isSubmitting,
-            controller: _spokenTextController,
-            onChanged: (value) {
-              setState(() {
-                _spokenText = value;
-              });
-            },
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              hintText: 'Describe the problem in a few words...',
-            ),
-            style: const TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 14,
-              height: 1.4,
-            ),
-          ),
+          style: TwType.body(color: AppTheme.navy),
         ),
         if (_spokenText.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -508,29 +456,26 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: AppTheme.pageBackground,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.line),
+              color: AppTheme.subtle,
+              borderRadius: BorderRadius.circular(AppTheme.radius),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Icon(Icons.format_quote_rounded,
-                    color: AppTheme.teal500, size: 20),
+                    color: AppTheme.navy, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     _spokenText,
-                    style: const TextStyle(
-                      color: AppTheme.navy700,
-                      fontSize: 14,
-                      fontStyle: FontStyle.italic,
-                      height: 1.4,
-                    ),
+                    style: TwType.bodySm(color: AppTheme.navy)
+                        .copyWith(fontStyle: FontStyle.italic),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: AppTheme.gray),
+                  tooltip: 'Clear',
+                  icon: const Icon(Icons.close_rounded,
+                      size: 18, color: AppTheme.textSecondary),
                   onPressed: () {
                     setState(() {
                       _spokenText = '';
@@ -538,7 +483,8 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                     });
                   },
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  constraints:
+                      const BoxConstraints.tightFor(width: 44, height: 44),
                 ),
               ],
             ),
@@ -556,87 +502,85 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
             decoration: BoxDecoration(
-              color: AppTheme.pageBackground,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: AppTheme.line,
-                style: BorderStyle.solid,
-              ),
+              color: AppTheme.subtle,
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Column(
               children: [
                 Container(
-                  width: 58,
-                  height: 58,
+                  width: 56,
+                  height: 56,
                   decoration: const BoxDecoration(
                     border: Border.fromBorderSide(
                         BorderSide(color: AppTheme.cardBorder)),
-                    color: AppTheme.navyTint,
+                    color: AppTheme.white,
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
-                    Icons.add_a_photo_outlined,
-                    color: AppTheme.teal500,
-                    size: 28,
+                    Icons.add_photo_alternate_outlined,
+                    color: AppTheme.navy,
+                    size: 26,
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   kIsWeb
                       ? 'Upload photos of what needs fixing'
                       : 'Add photos of what needs fixing',
-                  style: TextStyle(
-                    color: AppTheme.navy700,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
+                  textAlign: TextAlign.center,
+                  style: TwType.title(),
                 ),
                 const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _isUploadingPhoto
-                            ? null
-                            : () => _pickPhoto(ImageSource.camera),
-                        icon: Icon(
-                          kIsWeb
+                // Side by side; stacked on Compact or large text so the
+                // labels never clip.
+                if (TwLayout.stackRows(context)) ...[
+                  TwSecondaryButton(
+                    label: kIsWeb ? 'Upload photo' : 'Take photo',
+                    icon: kIsWeb
+                        ? Icons.upload_file_outlined
+                        : Icons.photo_camera_outlined,
+                    height: 50,
+                    onPressed: _isUploadingPhoto
+                        ? null
+                        : () => _pickPhoto(ImageSource.camera),
+                  ),
+                  const SizedBox(height: 12),
+                  TwSecondaryButton(
+                    label: kIsWeb ? 'Choose file' : 'Gallery',
+                    icon: Icons.photo_library_outlined,
+                    height: 50,
+                    onPressed: _isUploadingPhoto
+                        ? null
+                        : () => _pickPhoto(ImageSource.gallery),
+                  ),
+                ] else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TwSecondaryButton(
+                          label: kIsWeb ? 'Upload photo' : 'Take photo',
+                          icon: kIsWeb
                               ? Icons.upload_file_outlined
-                              : Icons.camera_alt_outlined,
-                          size: 18,
-                        ),
-                        label: Text(kIsWeb ? 'Upload photo' : 'Take photo'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.navy700,
-                          side: const BorderSide(color: AppTheme.line),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                              : Icons.photo_camera_outlined,
+                          height: 50,
+                          onPressed: _isUploadingPhoto
+                              ? null
+                              : () => _pickPhoto(ImageSource.camera),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _isUploadingPhoto
-                            ? null
-                            : () => _pickPhoto(ImageSource.gallery),
-                        icon:
-                            const Icon(Icons.photo_library_outlined, size: 18),
-                        label: Text(kIsWeb ? 'Choose file' : 'Gallery'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.navy700,
-                          side: const BorderSide(color: AppTheme.line),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TwSecondaryButton(
+                          label: kIsWeb ? 'Choose file' : 'Gallery',
+                          icon: Icons.photo_library_outlined,
+                          height: 50,
+                          onPressed: _isUploadingPhoto
+                              ? null
+                              : () => _pickPhoto(ImageSource.gallery),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
               ],
             ),
           )
@@ -657,23 +601,19 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
                     child: Container(
                       width: 100,
                       decoration: BoxDecoration(
-                        color: AppTheme.pageBackground,
+                        color: AppTheme.subtle,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppTheme.line),
                       ),
-                      child: const Column(
+                      child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.add_rounded,
-                              size: 28, color: AppTheme.teal500),
-                          SizedBox(height: 4),
+                          const Icon(Icons.add_rounded,
+                              size: 24, color: AppTheme.navy),
+                          const SizedBox(height: 4),
                           Text(
                             'Add more',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.navy700,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: TwType.caption(color: AppTheme.navy)
+                                .copyWith(fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
@@ -719,8 +659,10 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
             ),
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          // Wraps instead of overflowing on Compact or at 1.3x text.
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               TextButton.icon(
                 onPressed: _isUploadingPhoto
@@ -759,8 +701,8 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
               Text(
                 'Uploading photo...',
                 style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.gray,
+                  fontSize: 13,
+                  color: AppTheme.textSecondary,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -772,11 +714,9 @@ class _AiIntakeSheetState extends State<AiIntakeSheet>
   }
 
   void _showPhotoSourceSheet() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+    TwSheet.show<void>(
+      context,
+      scrollControlled: false,
       builder: (ctx) {
         return SafeArea(
           child: Padding(

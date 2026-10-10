@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/arrival_check_state.dart';
-import 'work_orders/arrival_check.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../widgets/custom_widgets.dart';
 import 'book_flow.dart';
 import 'account/home_profile.dart';
@@ -49,40 +47,9 @@ class _DashboardShellState extends State<DashboardShell>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (AuthService.instance.isAuthenticated) {
-        unawaited(_checkArrivalOnOpen());
         _startBackgroundSync();
       }
     });
-  }
-
-  Future<void> _checkArrivalOnOpen() async {
-    final uid = AuthService.instance.userId;
-    if (uid == null) return;
-    try {
-      final data =
-          await HomeownerService.instance.fetchWorkOrders(forceRefresh: true);
-      final tabs = data['tabs'];
-      if (tabs is! Map) return;
-      final prefs = await SharedPreferences.getInstance();
-      for (final rows in tabs.values.whereType<List>()) {
-        for (final row in rows.whereType<Map>()) {
-          final job = Map<String, dynamic>.from(row);
-          if (!ArrivalCheckState.pending(job)) continue;
-          final key =
-              'arrival_check_seen:$uid:${ArrivalCheckState.identity(job)}';
-          if (prefs.getBool(key) == true) continue;
-          if (!mounted ||
-              AuthService.instance.userId != uid ||
-              ModalRoute.of(context)?.isCurrent != true) return;
-          await prefs.setBool(key, true);
-          if (!mounted || AuthService.instance.userId != uid) return;
-          await openArrivalCheck(context, job);
-          return;
-        }
-      }
-    } catch (_) {
-      // The persistent Home and booking-detail cards remain available on retry.
-    }
   }
 
   @override
@@ -400,7 +367,7 @@ class _DashboardShellState extends State<DashboardShell>
     ];
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.pageBackground,
       body: PopScope(
         canPop: false,
         onPopInvoked: (didPop) {
@@ -451,20 +418,11 @@ class BrowseScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.pageBackground,
       appBar: showAppBar
-          ? AppBar(
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios, color: AppTheme.navy700),
-                onPressed: () => Navigator.pop(context),
-              ),
-              elevation: 0,
-              backgroundColor: Colors.white,
-              bottom: const PreferredSize(
-                preferredSize: Size.fromHeight(0.5),
-                child:
-                    Divider(height: 0.5, thickness: 0.5, color: AppTheme.line),
-              ),
+          ? TwAppBar(
+              title: '',
+              onBack: () => Navigator.pop(context),
             )
           : null,
       body: SunriseBackground(

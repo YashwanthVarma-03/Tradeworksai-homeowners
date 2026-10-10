@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,7 +14,6 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
-    GoogleFonts.config.allowRuntimeFetching = false;
     final materialIcons = FontLoader('MaterialIcons')
       ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
     final inter = FontLoader('Inter')
@@ -133,9 +131,9 @@ void main() {
 
       await tester.tap(find.text('Filters'));
       await tester.pumpAndSettle();
-      expect(find.text('Within 5 miles'), findsOneWidget);
+      expect(find.text('Within 5 miles'), findsNothing);
       expect(find.text('4.8+ stars'), findsOneWidget);
-      await tester.tap(find.text('Quote request'));
+      await tester.tap(find.text('Free visit'));
       await tester.tap(find.text('Apply filters'));
       await tester.pumpAndSettle();
       expect(searchCalls, 1);

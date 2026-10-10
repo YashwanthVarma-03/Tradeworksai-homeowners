@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../utils/display_format.dart';
 import '../widgets/app_notification.dart';
 import '../widgets/main_bottom_navigation.dart';
+import '../ui/tw.dart';
 import 'chat_screen.dart';
 import 'work_orders/work_order_detail.dart';
 
@@ -80,6 +81,20 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
     final amount = readAmount(raw);
     return amount == null ? raw : formatUsd(amount);
   }
+
+  String get _workOrderType => _text(widget.workOrder?['work_order_type'],
+      _text(widget.workOrder?['workOrderType'], 'rate_card'));
+
+  /// The price row's label, by work-order type (TW-SHARED-DECISIONS §2).
+  String get _priceTypeLabel => switch (_workOrderType) {
+        'nte' => 'Diagnostic · you approve the cap next',
+        'quote_request' => 'Free visit · estimate to follow',
+        _ => 'Upfront price',
+      };
+
+  /// A free visit costs nothing at booking; never "From $…" or a blank.
+  String get _priceValue =>
+      _workOrderType == 'quote_request' ? formatUsd(0) : _price;
 
   double? get _creditsApplied => readAmount(
         widget.workOrder?['creditsApplied'] ??
@@ -193,8 +208,10 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final price = _price;
     final trade = widget.trade?.trim() ?? '';
+    final rowLabel = TwType.bodySm(color: AppTheme.body);
+    final rowValue =
+        TwType.bodySm(color: AppTheme.navy).copyWith(fontWeight: FontWeight.w600);
 
     return PopScope(
       canPop: _exitRequested,
@@ -202,266 +219,165 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
         if (!didPop) _finishToBrowse();
       },
       child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          leading: IconButton(
-            tooltip: 'Back to search',
-            onPressed: _finishToBrowse,
-            icon: const Icon(Icons.arrow_back_rounded),
-          ),
-        ),
+        backgroundColor: AppTheme.pageBackground,
+        appBar: TwAppBar(title: '', onBack: _finishToBrowse),
         bottomNavigationBar: MainBottomNavigation(
           currentIndex: 2,
           onTap: _navigateToAppTab,
         ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+        body: SingleChildScrollView(
+          child: TwPage(
+            top: TwSpace.s28,
+            bottom: TwSpace.s28,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: AppTheme.greenMark,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: Colors.white,
+                      size: 36,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: TwSpace.s16),
+                Text(
+                  'Booking confirmed',
+                  textAlign: TextAlign.center,
+                  style: TwType.h1(context),
+                ),
+                const SizedBox(height: TwSpace.s8),
+                Text(
+                  _woNumber.isNotEmpty
+                      ? 'Your work order $_woNumber has been created.'
+                      : 'Your work order has been created.',
+                  textAlign: TextAlign.center,
+                  style: TwType.bodySm(color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 24),
+                TwFactPanel(
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: const BoxDecoration(
-                          color: AppTheme.success,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check_rounded,
-                          color: Colors.white,
-                          size: 42,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Booking confirmed',
-                        textAlign: TextAlign.center,
-                        style: AppTheme.headingStyle.copyWith(fontSize: 26),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _woNumber.isNotEmpty
-                            ? 'Your work order $_woNumber has been created.'
-                            : 'Your work order has been created.',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppTheme.textSecondary,
-                          fontSize: 15,
-                          height: 1.47,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppTheme.pageBackground,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+                      Row(
+                        children: [
+                          TwAvatar(name: _proName, size: 48),
+                          const SizedBox(width: TwSpace.s12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  width: 48,
-                                  height: 48,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.navy,
-                                    borderRadius:
-                                        BorderRadius.circular(AppTheme.radius),
-                                  ),
-                                  child: Text(
-                                    _proName
-                                        .split(RegExp(r'\s+'))
-                                        .where((part) => part.isNotEmpty)
-                                        .take(2)
-                                        .map((part) => part[0].toUpperCase())
-                                        .join(),
-                                    style: AppTheme.headingStyle.copyWith(
-                                      color: Colors.white,
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _proName,
-                                        style: AppTheme.headingStyle.copyWith(
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      if (trade.isNotEmpty)
-                                        Text(
-                                          trade,
-                                          style: const TextStyle(
-                                            color: AppTheme.body,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Divider(
-                                height: 29, color: AppTheme.cardBorder),
-                            _detailBlock('Service', _serviceName),
-                            const SizedBox(height: 14),
-                            _detailBlock(
-                              'Scheduled',
-                              _formatSchedule(_start, _end),
-                              meta: _urgencyLabel,
-                            ),
-                            if (_address.isNotEmpty) ...[
-                              const SizedBox(height: 14),
-                              _detailBlock('Location', _address),
-                            ],
-                            const Divider(
-                                height: 25, color: AppTheme.cardBorder),
-                            Row(
-                              children: [
-                                const Expanded(
-                                  child: Text(
-                                    'Upfront price',
-                                    style: TextStyle(
-                                      color: AppTheme.ink,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  price,
-                                  style: const TextStyle(
-                                    color: AppTheme.navy700,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if ((_creditsApplied ?? 0) > 0) ...[
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Credits applied',
-                                      style: TextStyle(
-                                        color: AppTheme.purple,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                  ),
+                                Text(_proName, style: TwType.h3()),
+                                if (trade.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
                                   Text(
-                                    '−${formatUsd(_creditsApplied!)}',
-                                    style: const TextStyle(
-                                      color: AppTheme.purple,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                    trade,
+                                    style: TwType.meta(color: AppTheme.body),
                                   ),
                                 ],
-                              ),
-                            ],
-                            if (_youPay != null) ...[
-                              const SizedBox(height: 14),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.baseline,
-                                textBaseline: TextBaseline.alphabetic,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'You pay $_proName',
-                                      style: const TextStyle(
-                                        color: AppTheme.navy,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    formatUsd(_youPay!),
-                                    style: AppTheme.headingStyle
-                                        .copyWith(fontSize: 22),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                (_creditsApplied ?? 0) > 0
-                                    ? 'You pay your pro directly. TradeWorks funds the ${formatUsd(_creditsApplied!)} credit.'
-                                    : 'You pay your pro directly. TradeWorks adds no markup and takes no fee.',
-                                style: const TextStyle(
-                                  color: AppTheme.textSecondary,
-                                  fontSize: 13,
-                                  height: 1.38,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: ElevatedButton(
-                          onPressed:
-                              _isOpeningWorkOrder ? null : _openWorkOrder,
-                          child: _isOpeningWorkOrder
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    color: AppTheme.onOrange,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text(
-                                  'View work order',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: OutlinedButton(
-                          onPressed:
-                              _contractorId.isEmpty ? null : _openMessage,
-                          child: Text(
-                            'Message $_proName',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
+                              ],
                             ),
                           ),
-                        ),
+                        ],
                       ),
+                      const Divider(height: 29, color: AppTheme.cardBorder),
+                      _detailBlock('Service', _serviceName),
+                      const SizedBox(height: 14),
+                      _detailBlock(
+                        'Scheduled',
+                        _formatSchedule(_start, _end),
+                        meta: _urgencyLabel,
+                      ),
+                      if (_address.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        _detailBlock('Location', _address),
+                      ],
+                      const Divider(height: 29, color: AppTheme.cardBorder),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(_priceTypeLabel, style: rowLabel),
+                          ),
+                          const SizedBox(width: TwSpace.s12),
+                          Text(_priceValue, style: rowValue),
+                        ],
+                      ),
+                      if ((_creditsApplied ?? 0) > 0) ...[
+                        const SizedBox(height: TwSpace.s8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Credits applied',
+                                style: TwType.bodySm(color: AppTheme.purple),
+                              ),
+                            ),
+                            const SizedBox(width: TwSpace.s12),
+                            Text(
+                              '−${formatUsd(_creditsApplied!)}',
+                              style: rowValue.copyWith(color: AppTheme.purple),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (_youPay != null) ...[
+                        const SizedBox(height: 14),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Expanded(
+                              child: Text('You pay $_proName', style: rowValue),
+                            ),
+                            const SizedBox(width: TwSpace.s12),
+                            Text(
+                              formatUsd(_youPay!),
+                              style: TwType.price().copyWith(
+                                fontSize: 22,
+                                height: 28 / 22,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: TwSpace.s4),
+                        Text(
+                          (_creditsApplied ?? 0) > 0
+                              ? 'You pay your pro directly. TradeWorks funds the ${formatUsd(_creditsApplied!)} credit.'
+                              : 'You pay your pro directly. TradeWorks adds no markup and takes no fee.',
+                          style: TwType.caption(),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: TwSpace.s20),
+                // _openWorkOrder ignores taps while it is already opening.
+                TwPrimaryButton(
+                  label: 'View work order',
+                  loading: _isOpeningWorkOrder,
+                  onPressed: _openWorkOrder,
+                ),
+                const SizedBox(height: TwSpace.s12),
+                // _openMessage does nothing when there is no messaging id.
+                TwSecondaryButton(
+                  label: 'Message $_proName',
+                  icon: Icons.chat_bubble_outline_rounded,
+                  height: 50,
+                  onPressed: _openMessage,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -489,28 +405,13 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-        ),
+        Text(label, style: TwType.caption()),
         const SizedBox(height: 2),
-        Text(
-          value,
-          style: const TextStyle(
-            color: AppTheme.navy,
-            fontSize: 16,
-            height: 1.44,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        Text(value, style: TwType.title()),
         if (meta != null && meta.isNotEmpty)
           Text(
             meta,
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
+            style: TwType.caption().copyWith(fontWeight: FontWeight.w500),
           ),
       ],
     );

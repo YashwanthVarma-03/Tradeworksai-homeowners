@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
+import '../../ui/tw.dart';
 import '../../widgets/app_notification.dart';
 import '../../widgets/transaction_guard.dart';
 
@@ -15,7 +16,6 @@ class ManageAddressesScreen extends StatefulWidget {
 
 class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
   static const Color _pageBackground = AppTheme.pageBackground;
-  static const Color _mutedText = AppTheme.textSecondary;
   static const Color _lineSoft = AppTheme.cardBorder;
 
   List<dynamic> _addresses = [];
@@ -139,7 +139,7 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
       },
       child: Scaffold(
         backgroundColor: _pageBackground,
-        appBar: _appBar('Addresses'),
+        appBar: TwAppBar(title: 'Addresses', onBack: _exit),
         body: _isLoading
             ? const SkeletonPage(layout: SkeletonLayout.cards)
             : RefreshIndicator(
@@ -147,26 +147,30 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
                 color: AppTheme.navy,
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  padding: EdgeInsets.zero,
                   children: [
-                    if (_addresses.isEmpty)
-                      _emptyState()
-                    else
-                      ..._addresses.map(
-                        (dynamic item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: _addressCard(_asMap(item)),
-                        ),
-                      ),
-                    _addAddressButton(),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Addresses pre-fill your bookings and confirm whether a pro covers your ZIP.',
-                      style: TextStyle(
-                        color: _mutedText,
-                        fontSize: 14,
-                        height: 1.45,
-                        fontWeight: FontWeight.w500,
+                    TwPage(
+                      top: TwSpace.s20,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_addresses.isEmpty)
+                            _emptyState()
+                          else
+                            ..._addresses.map(
+                              (dynamic item) => Padding(
+                                padding: const EdgeInsets.only(
+                                    bottom: TwSpace.s16),
+                                child: _addressCard(_asMap(item)),
+                              ),
+                            ),
+                          _addAddressButton(),
+                          const SizedBox(height: TwSpace.s16),
+                          Text(
+                            'Addresses pre-fill your bookings and confirm whether a pro covers your ZIP.',
+                            style: TwType.meta(),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -176,46 +180,12 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
     );
   }
 
-  PreferredSizeWidget _appBar(String title) {
-    return AppBar(
-      toolbarHeight: 56,
-      backgroundColor: Colors.white,
-      elevation: 0,
-      leadingWidth: 54,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded, size: 25),
-        color: AppTheme.navy700,
-        onPressed: _exit,
-      ),
-      titleSpacing: 0,
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: AppTheme.navy700,
-          fontSize: 20,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      bottom: const PreferredSize(
-        preferredSize: Size.fromHeight(1),
-        child: Divider(height: 1, color: _lineSoft),
-      ),
-    );
-  }
-
   Widget _addressCard(Map<String, dynamic> address) {
     final id = address['id'];
     final isDefault =
         address['isDefault'] == true || address['isDefault'] == 'true';
     final busy = _busyAddressId == id?.toString();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _lineSoft),
-      ),
+    return TwCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -224,47 +194,50 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
               Expanded(
                 child: Text(
                   _string(address['label']) ?? 'Address',
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTheme.headingStyle.copyWith(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TwType.h3(),
                 ),
               ),
               if (isDefault) _defaultMark(),
               if (busy) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: TwSpace.s8),
                 const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: AppTheme.teal500,
+                    color: AppTheme.navy,
                   ),
                 ),
               ],
             ],
           ),
-          const SizedBox(height: 11),
+          const SizedBox(height: 10),
           Text(
             _addressLine(address),
-            style: const TextStyle(
-              color: AppTheme.body,
-              fontSize: 15,
-              height: 22 / 15,
-            ),
+            style: TwType.bodySm(),
           ),
           const SizedBox(height: 10),
           const Divider(height: 1, color: _lineSoft),
-          const SizedBox(height: 10),
+          const SizedBox(height: TwSpace.s4),
           Wrap(
             spacing: 24,
             children: [
-              _textAction('Edit', () => _addOrEditAddress(address)),
-              if (!isDefault) _textAction('Set default', () => _setDefault(id)),
-              _textAction('Delete', () => _deleteAddress(id),
-                  color: AppTheme.red),
+              TwTextAction(
+                label: 'Edit',
+                onPressed: () => _addOrEditAddress(address),
+              ),
+              if (!isDefault)
+                TwTextAction(
+                  label: 'Set default',
+                  onPressed: () => _setDefault(id),
+                ),
+              TwTextAction(
+                label: 'Delete',
+                onPressed: () => _deleteAddress(id),
+                destructive: true,
+              ),
             ],
           ),
         ],
@@ -285,45 +258,11 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
   }
 
   Widget _emptyState() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _lineSoft),
-      ),
-      child: const Text(
-        'No saved addresses yet.',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: _mutedText,
-          fontSize: 13.5,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  /// Blue text link by default; [color] only for the destructive Delete.
-  /// 44px tall so each is a full tap target.
-  Widget _textAction(String label, VoidCallback onTap, {Color? color}) {
-    return InkWell(
-      onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 44),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          widthFactor: 1,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: color ?? AppTheme.blue,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
+    return const Padding(
+      padding: EdgeInsets.only(bottom: TwSpace.s16),
+      child: TwEmptyState(
+        icon: Icons.location_on_outlined,
+        title: 'No saved addresses yet.',
       ),
     );
   }
@@ -354,8 +293,12 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
     final state = _string(address['state']);
     final zip = _string(address['zip']);
     final line1 = [street, unit].whereType<String>().join(' ');
-    final line2 = [city, state, zip].whereType<String>().join(', ');
-    // Street on one line, city / state / ZIP on the next (F06).
+    final stateZip = [state, zip].whereType<String>().join(' ');
+    final line2 = [city, stateZip]
+        .whereType<String>()
+        .where((part) => part.isNotEmpty)
+        .join(', ');
+    // Street on one line, "Riverview, FL 33578" on the next (F06).
     return [line1, line2].where((part) => part.isNotEmpty).join('\n');
   }
 
@@ -394,8 +337,6 @@ class EditAddressScreen extends StatefulWidget {
 
 class _EditAddressScreenState extends State<EditAddressScreen> {
   static const Color _pageBackground = AppTheme.pageBackground;
-  static const Color _inkStrong = AppTheme.navy;
-  static const Color _lineSoft = AppTheme.cardBorder;
 
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _labelCtrl;
@@ -476,108 +417,74 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
       blockedMessage: 'Please wait while this address is being saved.',
       child: Scaffold(
         backgroundColor: _pageBackground,
-        appBar: AppBar(
-          toolbarHeight: 56,
-          backgroundColor: Colors.white,
-          elevation: 0,
-          leadingWidth: 54,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded, size: 25),
-            color: AppTheme.navy700,
-            onPressed: () => Navigator.pop(context),
-          ),
-          titleSpacing: 0,
-          title: Text(
-            editing ? 'Edit address' : 'Add address',
-            style: const TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(1),
-            child: Divider(height: 1, color: _lineSoft),
-          ),
+        appBar: TwAppBar(
+          title: editing ? 'Edit address' : 'Add address',
+          onBack: () => Navigator.pop(context),
         ),
         body: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
+            padding: EdgeInsets.zero,
             children: [
-              _field('Label', _labelCtrl, required: true),
-              const SizedBox(height: 14),
-              _field('Street address', _streetCtrl, required: true),
-              const SizedBox(height: 14),
-              _field('Unit', _unitCtrl),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(child: _field('City', _cityCtrl, required: true)),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 96,
-                    child: _field('State', _stateCtrl, required: true),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _field('ZIP code', _zipCtrl,
-                  required: true, keyboardType: TextInputType.number),
-              if (!editing) ...[
-                const SizedBox(height: 16),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _isDefault,
-                  activeColor: AppTheme.navy,
-                  title: const Text(
-                    'Set as default address',
-                    style: TextStyle(
-                      color: _inkStrong,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w800,
+              TwPage(
+                top: TwSpace.s20,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _field('Label', _labelCtrl, required: true),
+                    const SizedBox(height: TwSpace.s16),
+                    _field('Street address', _streetCtrl, required: true),
+                    const SizedBox(height: TwSpace.s16),
+                    _field('Unit', _unitCtrl),
+                    const SizedBox(height: TwSpace.s16),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                            child: _field('City', _cityCtrl, required: true)),
+                        const SizedBox(width: TwSpace.s12),
+                        SizedBox(
+                          width: 96,
+                          child: _field('State', _stateCtrl, required: true),
+                        ),
+                      ],
                     ),
-                  ),
-                  onChanged: (value) => setState(() => _isDefault = value),
+                    const SizedBox(height: TwSpace.s16),
+                    _field('ZIP code', _zipCtrl,
+                        required: true, keyboardType: TextInputType.number),
+                    if (!editing) ...[
+                      const SizedBox(height: TwSpace.s16),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: _isDefault,
+                        activeColor: AppTheme.white,
+                        activeTrackColor: AppTheme.blue,
+                        inactiveThumbColor: AppTheme.white,
+                        inactiveTrackColor: AppTheme.border,
+                        trackOutlineColor:
+                            const WidgetStatePropertyAll(Colors.transparent),
+                        title: Text(
+                          'Set as default address',
+                          style: TwType.title(),
+                        ),
+                        onChanged: (value) =>
+                            setState(() => _isDefault = value),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
+              ),
             ],
           ),
         ),
-        bottomNavigationBar: Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: _lineSoft)),
-          ),
-          child: ElevatedButton(
-            onPressed: _isLoading ? null : _save,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.orange500,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+        bottomNavigationBar: TwStickyBar(
+          children: [
+            TwPrimaryButton(
+              label: editing ? 'Save address' : 'Add address',
+              loading: _isLoading,
+              onPressed: _isLoading ? null : _save,
             ),
-            child: _isLoading
-                ? const SizedBox(
-                    width: 19,
-                    height: 19,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : Text(
-                    editing ? 'Save address' : 'Add address',
-                    style: const TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-          ),
+          ],
         ),
       ),
     );
@@ -592,15 +499,7 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: _inkStrong,
-            fontSize: 13.5,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 8),
+        TwFieldLabel(label),
         TextFormField(
           controller: controller,
           keyboardType: keyboardType,
@@ -610,33 +509,8 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
                   return text.isEmpty ? 'Required' : null;
                 }
               : null,
-          style: const TextStyle(
-            color: _inkStrong,
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-          ),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(11),
-              borderSide: const BorderSide(color: _lineSoft),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(11),
-              borderSide: const BorderSide(color: AppTheme.teal500, width: 1.3),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(11),
-              borderSide: const BorderSide(color: AppTheme.error),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(11),
-              borderSide: const BorderSide(color: AppTheme.error),
-            ),
-          ),
+          style: TwType.body(color: AppTheme.navy),
+          decoration: TwInputs.decoration(),
         ),
       ],
     );

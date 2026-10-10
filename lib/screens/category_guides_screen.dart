@@ -3,10 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import '../theme.dart';
+import '../ui/tw.dart';
 
 const _supportPhoneUri = 'tel:8134777350';
 
@@ -34,24 +34,11 @@ class _CategoryGuidesScreenState extends State<CategoryGuidesScreen> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.pageBackground,
-      appBar: AppBar(
-        backgroundColor: AppTheme.pageBackground,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          'Homeowner Guides',
-          style: AppTheme.headingStyle.copyWith(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
+      appBar: TwAppBar(title: 'Homeowner Guides'),
       body: FutureBuilder<List<CategoryGuideArticle>>(
         future: _articlesFuture,
         builder: (context, snapshot) {
@@ -61,10 +48,10 @@ class _CategoryGuidesScreenState extends State<CategoryGuidesScreen> {
           if (snapshot.hasError || !snapshot.hasData) {
             return Center(
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(TwLayout.gutter(context)),
                 child: Text(
                   'Unable to load category guides.',
-                  style: AppTheme.bodyStyle.copyWith(fontSize: 14),
+                  style: TwType.bodySm(),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -86,48 +73,56 @@ class _CategoryGuidesScreenState extends State<CategoryGuidesScreen> {
               articles.where((article) => article.kind == 'general').length;
           final categoryCount =
               articles.where((article) => article.kind == 'category').length;
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-            children: [
-              _GuidesHeroCard(
-                count: articles.length,
-                generalCount: generalCount,
-                categoryCount: categoryCount,
-              ),
-              const SizedBox(height: 14),
-              _GuideSearchAndTabs(
-                activeKind: _activeKind,
-                generalCount: generalCount,
-                categoryCount: categoryCount,
-                onKindChanged: (kind) {
-                  setState(() {
-                    _activeKind = kind;
-                  });
-                },
-                onQueryChanged: (query) {
-                  setState(() {
-                    _query = query;
-                  });
-                },
-              ),
-              const SizedBox(height: 18),
-              ...filteredArticles.map(
-                (article) => _GuideListCard(
-                  article: article,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CategoryGuideDetailScreen(
-                          article: article,
-                          onBrowseCategory: widget.onBrowseCategory,
-                        ),
+          return SingleChildScrollView(
+            child: TwPage(
+              top: TwSpace.s20,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _GuidesHeroCard(
+                    count: articles.length,
+                    generalCount: generalCount,
+                    categoryCount: categoryCount,
+                  ),
+                  const SizedBox(height: TwSpace.s20),
+                  _GuideSearchAndTabs(
+                    activeKind: _activeKind,
+                    generalCount: generalCount,
+                    categoryCount: categoryCount,
+                    onKindChanged: (kind) {
+                      setState(() {
+                        _activeKind = kind;
+                      });
+                    },
+                    onQueryChanged: (query) {
+                      setState(() {
+                        _query = query;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: TwSpace.s20),
+                  ...filteredArticles.map(
+                    (article) => Padding(
+                      padding: const EdgeInsets.only(bottom: TwSpace.s12),
+                      child: _GuideListCard(
+                        article: article,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CategoryGuideDetailScreen(
+                                article: article,
+                                onBrowseCategory: widget.onBrowseCategory,
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           );
         },
       ),
@@ -148,133 +143,54 @@ class CategoryGuideDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final serviceCategory = article.serviceCategory;
+    Future<void> browse() async {
+      if (onBrowseCategory != null) {
+        await onBrowseCategory!(serviceCategory);
+      }
+    }
+
+    // B04: flat page under a centred app bar (was a floating shadowed card
+    // with a left-aligned 15pt title). TwPage gives the gutter and caps the
+    // article at 560 on Wide.
     return Scaffold(
       backgroundColor: AppTheme.pageBackground,
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          color: Colors.white,
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-          child: Row(
+      appBar: TwAppBar(title: serviceCategory),
+      bottomNavigationBar: TwStickyBar(
+        children: [
+          TwSecondaryButton(
+            label: 'Call support',
+            height: 52,
+            onPressed: () => launchUrlString(_supportPhoneUri),
+          ),
+          TwPrimaryButton(
+            label: 'Browse $serviceCategory',
+            onPressed: browse,
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: TwPage(
+          top: TwSpace.s20,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => launchUrlString(_supportPhoneUri),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppTheme.navy700, width: 1.4),
-                    foregroundColor: AppTheme.navy700,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Call support',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
+              _ArticleTopBar(article: article),
+              _ArticleHeader(article: article),
+              const SizedBox(height: TwSpace.s20),
+              _TocCard(article: article),
+              for (int i = 0; i < article.sections.length; i++)
+                _ArticleSectionCard(
+                  section: article.sections[i],
+                  index: i,
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () async {
-                    if (onBrowseCategory != null) {
-                      await onBrowseCategory!(serviceCategory);
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.orange500,
-                    foregroundColor: AppTheme.navy,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    'Browse $serviceCategory',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
+              _FaqCard(article: article),
+              const SizedBox(height: TwSpace.s28),
+              _ArticleCtaCard(
+                article: article,
+                onBrowseTap: browse,
               ),
             ],
           ),
-        ),
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, color: AppTheme.navy700),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                Expanded(
-                  child: Text(
-                    article.serviceCategory,
-                    style: AppTheme.headingStyle.copyWith(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 820),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: AppTheme.pageBackground),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.navy.withOpacity(0.10),
-                        blurRadius: 30,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _ArticleTopBar(article: article),
-                      _ArticleHeader(article: article),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _TocCard(article: article),
-                            const SizedBox(height: 20),
-                            for (int i = 0; i < article.sections.length; i++)
-                              _ArticleSectionCard(
-                                section: article.sections[i],
-                                index: i,
-                              ),
-                            const SizedBox(height: 10),
-                            _FaqCard(article: article),
-                            const SizedBox(height: 20),
-                            _ArticleCtaCard(
-                              article: article,
-                              onBrowseTap: () async {
-                                if (onBrowseCategory != null) {
-                                  await onBrowseCategory!(serviceCategory);
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -468,47 +384,25 @@ class _GuidesHeroCard extends StatelessWidget {
     required this.categoryCount,
   });
 
+  // Flat page header, same pattern as the B04 article header (eyebrow,
+  // Outfit h1, reading text) — no card, no blue eyebrow.
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: AppTheme.cardBorder),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'TradeWorks Homeowner Guides',
-            style: GoogleFonts.inter(
-              color: AppTheme.blue,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'Helpful guides for every home project',
-            style: GoogleFonts.outfit(
-              color: AppTheme.navy,
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              height: 1.15,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Browse $generalCount homeowner guides and $categoryCount service category guides with practical advice, FAQs, pricing context, safety notes, and quick ways to book vetted pros.',
-            style: GoogleFonts.inter(
-              color: AppTheme.textSecondary,
-              fontSize: 13.5,
-              height: 1.5,
-            ),
-          ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('TradeWorks Homeowner Guides', style: TwType.caption()),
+        const SizedBox(height: 10),
+        Text(
+          'Helpful guides for every home project',
+          style: TwType.h1(context),
+        ),
+        const SizedBox(height: TwSpace.s8),
+        Text(
+          'Browse $generalCount homeowner guides and $categoryCount service category guides with practical advice, FAQs, pricing context, safety notes, and quick ways to book vetted pros.',
+          style: TwType.bodySm(),
+        ),
+      ],
     );
   }
 }
@@ -531,96 +425,41 @@ class _GuideSearchAndTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppTheme.line),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: TextField(
-            onChanged: onQueryChanged,
-            decoration: const InputDecoration(
-              icon: Icon(Icons.search, color: AppTheme.gray),
-              border: InputBorder.none,
-              hintText: 'Search guides',
-              hintStyle: TextStyle(color: AppTheme.gray, fontSize: 13),
-            ),
+        TextField(
+          onChanged: onQueryChanged,
+          style: TwType.body(color: AppTheme.navy),
+          decoration: TwInputs.decoration(
+            hint: 'Search guides',
+            prefix: const Icon(Icons.search, size: 20, color: AppTheme.navy),
           ),
         ),
-        const SizedBox(height: 10),
-        Row(
+        const SizedBox(height: TwSpace.s12),
+        // Pills (blue tint when selected) replace the navy-filled tabs with
+        // white labels; they wrap on Compact instead of squeezing.
+        Wrap(
+          spacing: TwSpace.s8,
+          runSpacing: TwSpace.s8,
           children: [
-            _GuideTab(
-              label: 'All',
-              count: generalCount + categoryCount,
+            TwPill(
+              label: 'All (${generalCount + categoryCount})',
               selected: activeKind == 'all',
               onTap: () => onKindChanged('all'),
             ),
-            const SizedBox(width: 8),
-            _GuideTab(
-              label: 'General',
-              count: generalCount,
+            TwPill(
+              label: 'General ($generalCount)',
               selected: activeKind == 'general',
               onTap: () => onKindChanged('general'),
             ),
-            const SizedBox(width: 8),
-            _GuideTab(
-              label: 'Category',
-              count: categoryCount,
+            TwPill(
+              label: 'Category ($categoryCount)',
               selected: activeKind == 'category',
               onTap: () => onKindChanged('category'),
             ),
           ],
         ),
       ],
-    );
-  }
-}
-
-class _GuideTab extends StatelessWidget {
-  final String label;
-  final int count;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _GuideTab({
-    required this.label,
-    required this.count,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Material(
-        color: selected ? AppTheme.navy700 : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 11),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: selected ? AppTheme.navy700 : AppTheme.line,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              '$label ($count)',
-              style: TextStyle(
-                color: selected ? Colors.white : AppTheme.navy700,
-                fontWeight: FontWeight.w700,
-                fontSize: 12.5,
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -636,83 +475,54 @@ class _GuideListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            padding: const EdgeInsets.all(18),
+    return TwCard(
+      onTap: onTap,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Was a navy-to-blue gradient tile with a white number.
+          Container(
+            width: 48,
+            height: 48,
+            padding: const EdgeInsets.all(TwSpace.s4),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppTheme.line),
+              color: AppTheme.subtle,
+              borderRadius: BorderRadius.circular(AppTheme.radius),
             ),
-            child: Row(
+            alignment: Alignment.center,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                article.id.replaceAll('CAT-', '').replaceAll('GEN-', ''),
+                style: TwType.h3(),
+              ),
+            ),
+          ),
+          const SizedBox(width: TwSpace.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppTheme.navy700, AppTheme.teal500],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    article.id.replaceAll('CAT-', '').replaceAll('GEN-', ''),
-                    style: GoogleFonts.outfit(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                Text(article.title, style: TwType.h3()),
+                const SizedBox(height: TwSpace.s4),
+                Text(
+                  '${article.kindLabel} · ${article.subtitle}',
+                  style: TwType.meta(),
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        article.title,
-                        style: AppTheme.headingStyle.copyWith(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${article.kindLabel} · ${article.subtitle}',
-                        style: TextStyle(
-                          color: article.isGeneral
-                              ? AppTheme.navy700
-                              : AppTheme.teal700,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        article.metaDescription,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTheme.bodyStyle.copyWith(
-                          color: AppTheme.gray,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ],
-                  ),
+                const SizedBox(height: TwSpace.s8),
+                Text(
+                  article.metaDescription,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TwType.bodySm(),
                 ),
-                const SizedBox(width: 10),
-                const Icon(Icons.arrow_forward_ios,
-                    color: AppTheme.gray, size: 16),
               ],
             ),
           ),
-        ),
+          const SizedBox(width: TwSpace.s8),
+          const Icon(Icons.chevron_right_rounded,
+              color: AppTheme.textSecondary, size: 20),
+        ],
       ),
     );
   }
@@ -725,16 +535,9 @@ class _ArticleTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      child: Text(
-        'TradeWorks Homeowner Guide · ${article.kindLabel}',
-        style: const TextStyle(
-          color: AppTheme.textSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
+    return Text(
+      'TradeWorks Homeowner Guide · ${article.kindLabel}',
+      style: TwType.caption(),
     );
   }
 }
@@ -748,75 +551,38 @@ class _ArticleHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final overview =
         article.sections.isNotEmpty ? article.sections.first : null;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            article.title,
-            style: GoogleFonts.outfit(
-              color: AppTheme.navy700,
-              fontSize: 29,
-              fontWeight: FontWeight.w700,
-              height: 1.08,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            article.subtitle,
-            style: AppTheme.bodyStyle.copyWith(
-              color: AppTheme.teal700,
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 18),
-          _ImagePlaceholder(
-            title: article.serviceCategory,
-            subtitle: article.isGeneral ? 'Homeowner guide' : 'Service guide',
-            icon: Icons.auto_awesome,
-          ),
-          if (overview != null && overview.paragraphs.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.blueTint),
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [AppTheme.blueTint, Colors.white],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 10),
+        Text(article.title, style: TwType.h1(context)),
+        const SizedBox(height: 10),
+        // B04: body grey 16/600 (was blue).
+        Text(
+          article.subtitle,
+          style: TwType.body().copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 18),
+        const _ImagePlaceholder(),
+        if (overview != null && overview.paragraphs.isNotEmpty) ...[
+          const SizedBox(height: TwSpace.s16),
+          // B04: "Quick answer" is a navy 14/600 label on a grey panel (was
+          // a tracked blue eyebrow on a blue gradient).
+          TwFactPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Quick answer', style: TwType.label()),
+                const SizedBox(height: 6),
+                Text(
+                  overview.paragraphs.first,
+                  style: TwType.body(color: AppTheme.navy),
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Quick answer',
-                    style: GoogleFonts.outfit(
-                      color: AppTheme.teal700,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    overview.paragraphs.first,
-                    style: AppTheme.bodyStyle.copyWith(
-                      fontSize: 15,
-                      height: 1.55,
-                      color: AppTheme.navy,
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 }
@@ -826,50 +592,37 @@ class _TocCard extends StatelessWidget {
 
   const _TocCard({required this.article});
 
+  // B04: grey panel, "Contents" 14/600, navy 14/500 outline chips (was a
+  // 12pt tracked label and blue 12.5 chips). Chips wrap their text on
+  // Compact rather than clipping.
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.pageBackground,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.line),
-      ),
+    return TwFactPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Contents',
-            style: GoogleFonts.outfit(
-              color: AppTheme.navy700,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
-            ),
-          ),
+          Text('Contents', style: TwType.label()),
           const SizedBox(height: 10),
           Wrap(
-            runSpacing: 10,
-            spacing: 10,
+            runSpacing: TwSpace.s8,
+            spacing: TwSpace.s8,
             children: [
               for (int i = 0; i < article.tocSections.length; i++)
                 Container(
+                  constraints: const BoxConstraints(minHeight: 36),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
+                    horizontal: 14,
+                    vertical: TwSpace.s8,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.white,
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppTheme.line),
+                    border: Border.all(color: AppTheme.border),
                   ),
                   child: Text(
                     '${i + 1}. ${article.tocSections[i].heading}',
-                    style: AppTheme.bodyStyle.copyWith(
-                      fontSize: 12.5,
-                      color: AppTheme.teal700,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TwType.meta(color: AppTheme.navy)
+                        .copyWith(fontWeight: FontWeight.w500),
                   ),
                 ),
             ],
@@ -892,50 +645,31 @@ class _ArticleSectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOverview = index == 0;
+    final paragraphs =
+        (isOverview ? section.paragraphs.skip(1) : section.paragraphs).toList();
+    // B04: sections are 28 apart (20 after Contents for the rest of the
+    // overview), heading h2 20/26, 12 between every block.
+    final blocks = <Widget>[
+      if (!isOverview) Text(section.heading, style: TwType.h2()),
+      for (final paragraph in paragraphs)
+        if (_isBulletLike(paragraph))
+          _BulletRow(text: paragraph)
+        else if (_isAlertLike(paragraph))
+          _AlertCallout(text: paragraph)
+        else
+          Text(paragraph, style: TwType.body()),
+      ..._moduleForSection(section),
+    ];
+    if (blocks.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
+      padding: EdgeInsets.only(top: isOverview ? TwSpace.s20 : TwSpace.s28),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!isOverview)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Text(
-                section.heading,
-                style: GoogleFonts.outfit(
-                  color: AppTheme.navy700,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ...(isOverview ? section.paragraphs.skip(1) : section.paragraphs)
-              .toList()
-              .asMap()
-              .entries
-              .map((entry) {
-            final paragraph = entry.value;
-            final isBulletLike = _isBulletLike(paragraph);
-            final isAlert = _isAlertLike(paragraph);
-            if (isBulletLike) {
-              return _BulletRow(text: paragraph);
-            }
-            if (isAlert) {
-              return _AlertCallout(text: paragraph);
-            }
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                paragraph,
-                style: AppTheme.bodyStyle.copyWith(
-                  fontSize: 15.3,
-                  height: 1.62,
-                  color: AppTheme.navy,
-                ),
-              ),
-            );
-          }),
-          ..._moduleForSection(section),
+          for (int i = 0; i < blocks.length; i++) ...[
+            if (i > 0) const SizedBox(height: TwSpace.s12),
+            blocks[i],
+          ],
         ],
       ),
     );
@@ -1014,41 +748,31 @@ class _BulletRow extends StatelessWidget {
 
   const _BulletRow({required this.text});
 
+  // Spacing between rows now comes from the parent list.
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 20,
-            height: 20,
-            margin: const EdgeInsets.only(top: 2),
-            decoration: const BoxDecoration(
-              border:
-                  Border.fromBorderSide(BorderSide(color: AppTheme.cardBorder)),
-              color: AppTheme.pageBackground,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.check,
-              size: 13,
-              color: AppTheme.navy700,
-            ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 20,
+          height: 20,
+          margin: const EdgeInsets.only(top: 1),
+          decoration: const BoxDecoration(
+            color: AppTheme.subtle,
+            shape: BoxShape.circle,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: AppTheme.bodyStyle.copyWith(
-                fontSize: 14.5,
-                height: 1.55,
-              ),
-            ),
+          child: const Icon(
+            Icons.check_rounded,
+            size: 12,
+            color: AppTheme.navy,
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(text, style: TwType.bodySm()),
+        ),
+      ],
     );
   }
 }
@@ -1058,33 +782,35 @@ class _AlertCallout extends StatelessWidget {
 
   const _AlertCallout({required this.text});
 
+  // B04 + Batch 21 R9: white hairline card, amber icon in an amber-tint
+  // well, navy title, body-colour text (was a gold icon and amber text on an
+  // amber gradient).
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.amberTint),
-        gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [AppTheme.amberTint, Colors.white],
-        ),
+        color: AppTheme.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.cardBorder),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber_rounded, color: AppTheme.gold),
-          const SizedBox(width: 10),
+          const TwIconWell(
+            Icons.warning_amber_rounded,
+            background: AppTheme.amberTint,
+            color: AppTheme.amber,
+          ),
+          const SizedBox(width: TwSpace.s12),
           Expanded(
-            child: Text(
-              text,
-              style: AppTheme.bodyStyle.copyWith(
-                fontSize: 14.2,
-                color: AppTheme.amber,
-                height: 1.55,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Safety note', style: TwType.title()),
+                const SizedBox(height: TwSpace.s4),
+                Text(text, style: TwType.meta(color: AppTheme.body)),
+              ],
             ),
           ),
         ],
@@ -1178,51 +904,22 @@ class _SeasonCard extends StatelessWidget {
 
   const _SeasonCard({required this.data});
 
+  // Hairline card with an h3 title (was a coloured header band with a white
+  // label). Colour is kept for status only, so data.color is no longer drawn.
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.line),
-      ),
+    return TwCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
-            decoration: BoxDecoration(
-              color: data.color,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(14)),
-            ),
-            child: Text(
-              data.title,
-              style: GoogleFonts.outfit(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ...data.tasks.map((task) => _BulletRow(text: task)),
-                Text(
-                  data.proLine,
-                  style: GoogleFonts.outfit(
-                    color: AppTheme.teal700,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          Text(data.title, style: TwType.h3()),
+          const SizedBox(height: TwSpace.s12),
+          for (final task in data.tasks) ...[
+            _BulletRow(text: task),
+            const SizedBox(height: 10),
+          ],
+          const SizedBox(height: 2),
+          Text(data.proLine, style: TwType.meta()),
         ],
       ),
     );
@@ -1265,21 +962,18 @@ class _PricingModule extends StatelessWidget {
           title: 'Upfront price',
           label: 'Upfront price',
           text: 'Routine, predictable jobs show a clear price before booking.',
-          color: AppTheme.green,
         ),
         _PricingCard(
           title: 'You approve the cap',
           label: 'Cap Approval',
           text:
               'You approve a not-to-exceed cap before work begins. The final price may be lower — never higher.',
-          color: AppTheme.blue,
         ),
         _PricingCard(
           title: 'Free visit',
           label: 'Free estimate',
           text:
               'The pro visits, then sends you an estimate to accept or decline.',
-          color: AppTheme.navy,
         ),
       ],
     );
@@ -1290,68 +984,26 @@ class _PricingCard extends StatelessWidget {
   final String title;
   final String label;
   final String text;
-  final Color color;
 
   const _PricingCard({
     required this.title,
     required this.label,
     required this.text,
-    required this.color,
   });
 
+  // B04: hairline card — Outfit 17/600 title, 13 meta type name, 15/22
+  // description (was a coloured header band with a white 12.5 label).
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.line),
-      ),
+    return TwCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(14)),
-            ),
-            child: Text(
-              title,
-              style: GoogleFonts.outfit(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 12.5,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(13),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.outfit(
-                    color: AppTheme.navy700,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  text,
-                  style: AppTheme.bodyStyle.copyWith(
-                    color: AppTheme.navy,
-                    fontSize: 12.5,
-                    height: 1.45,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          Text(title, style: TwType.h3()),
+          const SizedBox(height: TwSpace.s4),
+          Text(label, style: TwType.caption()),
+          const SizedBox(height: TwSpace.s8),
+          Text(text, style: TwType.bodySm()),
         ],
       ),
     );
@@ -1367,7 +1019,7 @@ class _DiyVsProModule extends StatelessWidget {
       children: [
         _ChecklistPanel(
           title: 'Safe to DIY',
-          color: AppTheme.teal700,
+          icon: Icons.build_outlined,
           items: [
             'Changing filters and testing detectors',
             'Basic caulking, sealing, and weatherproofing',
@@ -1377,7 +1029,7 @@ class _DiyVsProModule extends StatelessWidget {
         ),
         _ChecklistPanel(
           title: 'Call a vetted pro',
-          color: AppTheme.navy700,
+          icon: Icons.shield_outlined,
           items: [
             'HVAC, furnace, roof, chimney, and tree work',
             'Electrical, gas, and permit-regulated work',
@@ -1392,47 +1044,35 @@ class _DiyVsProModule extends StatelessWidget {
 
 class _ChecklistPanel extends StatelessWidget {
   final String title;
-  final Color color;
+  final IconData icon;
   final List<String> items;
 
   const _ChecklistPanel({
     required this.title,
-    required this.color,
+    required this.icon,
     required this.items,
   });
 
+  // B04: hairline card, outline icon 20 + Outfit 17/600 title (was a
+  // coloured header band with a white label).
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.line),
-      ),
+    return TwCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(14)),
-            ),
-            child: Text(
-              title,
-              style: GoogleFonts.outfit(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+          Row(
+            children: [
+              Icon(icon, size: 20, color: AppTheme.navy),
+              const SizedBox(width: 10),
+              Expanded(child: Text(title, style: TwType.h3())),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              children: items.map((item) => _BulletRow(text: item)).toList(),
-            ),
-          ),
+          const SizedBox(height: TwSpace.s12),
+          for (int i = 0; i < items.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            _BulletRow(text: items[i]),
+          ],
         ],
       ),
     );
@@ -1442,76 +1082,48 @@ class _ChecklistPanel extends StatelessWidget {
 class _AiExperienceModule extends StatelessWidget {
   const _AiExperienceModule();
 
+  // B04: light hairline card (was a navy header with white text).
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(top: 4, bottom: 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppTheme.pageBackground),
-      ),
+    return TwCard(
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: const BoxDecoration(
-              color: AppTheme.navy700,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Describe it. We'll handle the rest.",
-                  style: GoogleFonts.outfit(
-                    color: Colors.white,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'The assistant points you to the right service, then you browse, choose and book. You see each step as your pro marks it.',
-                  style: AppTheme.bodyStyle.copyWith(
-                    color: Colors.white,
-                    fontSize: 13.5,
-                  ),
-                ),
-              ],
-            ),
+          Text(
+            "Describe it. We'll handle the rest.",
+            style: TwType.h2(),
           ),
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _AiStepRow(
-                  step: '1',
-                  title: 'Describe the task',
-                  text:
-                      'Use plain language, photos, or the problem you noticed.',
-                ),
-                _AiStepRow(
-                  step: '2',
-                  title: 'See the right service',
-                  text:
-                      'AI-assisted routing turns the issue into a clear service path.',
-                ),
-                _AiStepRow(
-                  step: '3',
-                  title: 'Browse and choose',
-                  text:
-                      'Compare vetted pros, pricing, ratings, and availability.',
-                ),
-                _AiStepRow(
-                  step: '4',
-                  title: 'Book and follow along',
-                  text:
-                      'Book in the app and see each status your pro sets, through to Completed.',
-                ),
-              ],
-            ),
+          const SizedBox(height: 14),
+          Text(
+            'The assistant points you to the right service, then you browse, choose and book. You see each step as your pro marks it.',
+            style: TwType.bodySm(),
+          ),
+          const SizedBox(height: 14),
+          const _AiStepRow(
+            step: '1',
+            title: 'Describe the task',
+            text: 'Use plain language, photos, or the problem you noticed.',
+          ),
+          const SizedBox(height: 14),
+          const _AiStepRow(
+            step: '2',
+            title: 'See the right service',
+            text:
+                'AI-assisted routing turns the issue into a clear service path.',
+          ),
+          const SizedBox(height: 14),
+          const _AiStepRow(
+            step: '3',
+            title: 'Browse and choose',
+            text: 'Compare vetted pros, pricing, ratings, and availability.',
+          ),
+          const SizedBox(height: 14),
+          const _AiStepRow(
+            step: '4',
+            title: 'Book and follow along',
+            text:
+                'Book in the app and see each status your pro sets, through to Completed.',
           ),
         ],
       ),
@@ -1532,54 +1144,31 @@ class _AiStepRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppTheme.blueTint,
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(color: AppTheme.teal700),
-            ),
-            child: Text(
-              step,
-              style: GoogleFonts.outfit(
-                color: AppTheme.teal700,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppTheme.blueTint,
+            borderRadius: BorderRadius.circular(10),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.outfit(
-                    color: AppTheme.navy700,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  text,
-                  style: AppTheme.bodyStyle.copyWith(
-                    color: AppTheme.gray,
-                    fontSize: 12.2,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
+          child: Text(step, style: TwType.h3(color: AppTheme.blue)),
+        ),
+        const SizedBox(width: TwSpace.s12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: TwType.title()),
+              const SizedBox(height: 2),
+              Text(text, style: TwType.meta()),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1593,65 +1182,53 @@ class _GuideTable extends StatelessWidget {
     required this.rows,
   });
 
+  // Hairline card with an h3 title (was a navy header with a white label).
+  // Rows stack (label above value) on Compact or at large text sizes.
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(top: 4, bottom: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.line),
-      ),
+    final stack = TwLayout.stackRows(context);
+    return TwCard(
+      padding: EdgeInsets.zero,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: const BoxDecoration(
-              color: AppTheme.navy700,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: Text(
-              title,
-              style: GoogleFonts.outfit(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text(title, style: TwType.h3()),
           ),
-          ...rows.map(
-            (row) => Container(
+          for (int i = 0; i < rows.length; i++)
+            Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppTheme.line)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 112,
-                    child: Text(
-                      row.$1,
-                      style: GoogleFonts.outfit(
-                        color: AppTheme.navy700,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
+              decoration: i == rows.length - 1
+                  ? null
+                  : const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: AppTheme.cardBorder),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      row.$2,
-                      style: AppTheme.bodyStyle.copyWith(
-                        fontSize: 13,
-                        height: 1.45,
-                      ),
+              child: stack
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(rows[i].$1, style: TwType.label()),
+                        const SizedBox(height: TwSpace.s4),
+                        Text(rows[i].$2, style: TwType.bodySm()),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 112,
+                          child: Text(rows[i].$1, style: TwType.label()),
+                        ),
+                        const SizedBox(width: TwSpace.s12),
+                        Expanded(
+                          child: Text(rows[i].$2, style: TwType.bodySm()),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
             ),
-          ),
         ],
       ),
     );
@@ -1663,21 +1240,19 @@ class _ResponsiveModuleGrid extends StatelessWidget {
 
   const _ResponsiveModuleGrid({required this.children});
 
+  // B04 stacks module cards at every size. The old fixed-aspect GridView
+  // clipped text at large text sizes, and the article column is now capped
+  // at 560, so a multi-column grid never had room anyway.
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 620;
-        return GridView.count(
-          crossAxisCount: isWide ? children.length.clamp(2, 3) : 1,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: isWide ? 1.35 : 1.85,
-          children: children,
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (int i = 0; i < children.length; i++) ...[
+          if (i > 0) const SizedBox(height: TwSpace.s12),
+          children[i],
+        ],
+      ],
     );
   }
 }
@@ -1687,62 +1262,40 @@ class _FaqCard extends StatelessWidget {
 
   const _FaqCard({required this.article});
 
+  // B04: h2 heading, then flat rows split by hairlines with a 16/600
+  // question and a grey chevron (was bordered cards, 14.2 questions, 22
+  // heading).
   @override
   Widget build(BuildContext context) {
     if (article.faqs.isEmpty) {
       return const SizedBox.shrink();
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Frequently asked questions',
-          style: GoogleFonts.outfit(
-            color: AppTheme.navy700,
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ...article.faqs.map(
-          (faq) => Container(
-            margin: const EdgeInsets.only(bottom: 9),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.line),
-            ),
-            child: ExpansionTile(
-              tilePadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              collapsedIconColor: AppTheme.teal700,
-              iconColor: AppTheme.teal700,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(12)),
-              ),
-              title: Text(
-                faq.question,
-                style: GoogleFonts.outfit(
-                  color: AppTheme.navy700,
-                  fontSize: 14.2,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+    const divider = Border(bottom: BorderSide(color: AppTheme.cardBorder));
+    return Padding(
+      padding: const EdgeInsets.only(top: TwSpace.s28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Frequently asked questions', style: TwType.h2()),
+          const SizedBox(height: TwSpace.s4),
+          ...article.faqs.map(
+            (faq) => ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: TwSpace.s16),
+              expandedAlignment: Alignment.centerLeft,
+              expandedCrossAxisAlignment: CrossAxisAlignment.start,
+              collapsedIconColor: AppTheme.textSecondary,
+              iconColor: AppTheme.textSecondary,
+              shape: divider,
+              collapsedShape: divider,
+              title: Text(faq.question, style: TwType.title()),
               children: [
-                Text(
-                  faq.answer,
-                  style: AppTheme.bodyStyle.copyWith(
-                    fontSize: 13.8,
-                    height: 1.58,
-                    color: AppTheme.navy,
-                  ),
-                ),
+                Text(faq.answer, style: TwType.body()),
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1756,72 +1309,32 @@ class _ArticleCtaCard extends StatelessWidget {
     required this.onBrowseTap,
   });
 
+  // B04: light hairline card, orange primary with a navy label, neutral
+  // outline secondary, both full width (was a navy card with white text and
+  // a white label on orange — Batch 20 Part C).
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: AppTheme.navy700,
-        borderRadius: BorderRadius.circular(18),
-      ),
+    return TwCard(
+      padding: const EdgeInsets.all(TwSpace.s20),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             article.ctaTitle.isNotEmpty ? article.ctaTitle : 'Need help?',
-            style: GoogleFonts.outfit(
-              color: Colors.white,
-              fontSize: 21,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TwType.h2(),
           ),
-          const SizedBox(height: 8),
-          Text(
-            article.ctaBody,
-            style: AppTheme.bodyStyle.copyWith(
-              color: Colors.white,
-              fontSize: 14,
-              height: 1.55,
-            ),
+          const SizedBox(height: TwSpace.s12),
+          Text(article.ctaBody, style: TwType.bodySm()),
+          const SizedBox(height: TwSpace.s12),
+          TwPrimaryButton(
+            label: 'Browse vetted ${article.serviceCategory} pros',
+            onPressed: onBrowseTap,
           ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              ElevatedButton(
-                onPressed: onBrowseTap,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.orange500,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  'Browse vetted ${article.serviceCategory.toLowerCase()} pros',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              OutlinedButton(
-                onPressed: () => launchUrlString(_supportPhoneUri),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.white.withOpacity(0.45)),
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'Call (813) 477-7350',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
+          const SizedBox(height: TwSpace.s12),
+          TwSecondaryButton(
+            label: 'Call (813) 477-7350',
+            height: 52,
+            onPressed: () => launchUrlString(_supportPhoneUri),
           ),
         ],
       ),
@@ -1830,62 +1343,23 @@ class _ArticleCtaCard extends StatelessWidget {
 }
 
 class _ImagePlaceholder extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
+  const _ImagePlaceholder();
 
-  const _ImagePlaceholder({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-  });
-
+  // B04: plain grey box with an outline image icon (was a blue box with a
+  // tracked ALL-CAPS "SERVICE GUIDE" label and a white icon on blue).
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      height: 180,
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.teal500, width: 1.5),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppTheme.blueTint, AppTheme.blueTint],
-        ),
+        color: AppTheme.subtle,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
       ),
-      child: Column(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: AppTheme.teal500,
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(icon, color: Colors.white),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle.toUpperCase(),
-            style: GoogleFonts.outfit(
-              color: AppTheme.teal700,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.0,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.outfit(
-              color: AppTheme.navy700,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
+      child: const Icon(
+        Icons.image_outlined,
+        size: 32,
+        color: AppTheme.navy,
       ),
     );
   }

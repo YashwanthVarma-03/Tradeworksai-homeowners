@@ -4,8 +4,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
@@ -13,10 +11,14 @@ import '../services/stream_service.dart';
 import '../theme.dart';
 import '../widgets/app_notification.dart';
 import '../widgets/capsules.dart';
-import '../widgets/select_certified_info.dart';
+import '../ui/tw.dart';
+import '../utils/display_format.dart';
 import 'book_flow.dart';
 import 'chat_screen.dart';
 import 'login_page.dart';
+
+String _shortBusinessName(String name) =>
+    name.replaceFirst(RegExp(r' Co\.?$'), '');
 
 class ProProfileScreen extends StatefulWidget {
   final Map<String, dynamic> pro;
@@ -43,128 +45,165 @@ class _ProfileFact {
 class _ProfileService {
   final String category;
   final String name;
+
+  /// The amount with cents ("$89.00"). Empty for a Free visit.
   final String price;
-  final String rateLabel;
-  final String description;
-  final String minCharge;
-  final String duration;
+
+  /// 'rate_card' = Upfront price · 'nte' = Cap Approval ·
+  /// 'quote_request' = Free estimate.
+  final String workOrderType;
 
   const _ProfileService({
     required this.category,
     required this.name,
     required this.price,
-    required this.rateLabel,
-    required this.description,
-    required this.minCharge,
-    required this.duration,
+    this.workOrderType = 'rate_card',
   });
-}
 
-class _ProfileCredential {
-  final IconData icon;
-  final String title;
-  final String detail;
+  /// The big part of the price: "$129.00", "$89.00", "Free visit".
+  String get amount => switch (workOrderType) {
+        'quote_request' => 'Free visit',
+        'nte' => price.isEmpty ? 'Diagnostic' : price,
+        _ => price,
+      };
 
-  const _ProfileCredential({
-    required this.icon,
-    required this.title,
-    required this.detail,
-  });
+  /// The word after the amount: "diagnostic" for Cap Approval, else none.
+  String get amountSuffix =>
+      workOrderType == 'nte' && price.isNotEmpty ? 'diagnostic' : '';
+
+  /// The only place a service's price is worded (TW-SHARED-DECISIONS §2):
+  /// "$129.00", "$89.00 diagnostic", "Free visit". Never "From $…".
+  String get headline =>
+      amountSuffix.isEmpty ? amount : '$amount $amountSuffix';
+
+  String get typeLabel => switch (workOrderType) {
+        'nte' => 'You approve the cap',
+        'quote_request' => 'The pro sends you an estimate',
+        _ => 'Upfront price',
+      };
 }
 
 class _FigmaProfileSurface extends StatelessWidget {
   // Values taken from the supplied ProProfile_Top Figma frame.
   static const Color _ink = AppTheme.navy;
   static const Color _muted = AppTheme.textSecondary;
-  static const Color _panelColor = AppTheme.pageBackground;
   static const Color _line = AppTheme.cardBorder;
-  static const Color _blue = AppTheme.navy;
-  static const Color _teal = AppTheme.blue;
-  static const Color _orange = AppTheme.orange;
   static const Color _green = AppTheme.green;
 
   final String businessName;
   final String category;
   final String service;
-  final String distance;
+  final String requestZip;
+
+  /// Identity meta: the pro's categories ("Plumbing · AC / HVAC ·
+  /// Electrical · +2 more"). No distance, no "Serves {ZIP}" (settled Oct 1).
+  final String categoryLine;
+
+  /// Price-card amount ("$89.00", "$129.00", "Free visit") and the word after
+  /// it ("diagnostic" for Cap Approval, else empty). Never "From".
   final String price;
+  final String priceSuffix;
+
+  /// "AC repair · You approve the cap"
   final String priceDetail;
+
+  /// What happens next, for Cap Approval and Free estimate only.
+  final String priceNote;
+
+  /// Bottom-bar caption: "Upfront price" / "You approve the cap" /
+  /// "The pro sends you an estimate".
+  final String priceTypeLabel;
   final String nextSlot;
   final String rating;
   final String reviewCount;
-  final bool selectCertified;
   final String? profileImageUrl;
   final String tagline;
   final String about;
   final List<String> mediaUrls;
   final int mediaCount;
-  final int videoCount;
+  final VoidCallback onSeeAllPhotos;
   final List<_ProfileFact> overview;
   final List<MapEntry<String, String>> hours;
   final String timeZone;
   final List<MapEntry<String, String>> responseTimes;
-  final List<MapEntry<String, String>> pricing;
   final List<_ProfileService> services;
-  final List<_ProfileCredential> credentials;
-  final List<String> serviceCities;
-  final String serviceAreaNote;
+
+  /// The searched service's category; the list opens on it.
+  final String searchedCategory;
+  final bool showAllServices;
+  final VoidCallback onShowAllServices;
+
+  /// "card", "check", "cash" … from Public profile › How customers can pay
+  /// you. Empty hides How you pay.
+  final List<String> paymentMethods;
   final Map<int, double> ratingBreakdown;
   final List<Map<String, dynamic>> reviews;
-  final String reviewQuery;
-  final String responseSummary;
   final bool loading;
   final bool bookActionLoading;
   final String bookActionLabel;
   final VoidCallback onBack;
-  final VoidCallback onShare;
   final VoidCallback onBook;
   final VoidCallback onMessage;
   final VoidCallback onSeeAllReviews;
-  final ValueChanged<String> onReviewQueryChanged;
   final ScrollController scrollController;
-  final GlobalKey _pricingKey = GlobalKey();
 
-  _FigmaProfileSurface({
+  const _FigmaProfileSurface({
     required this.businessName,
     required this.category,
     required this.service,
-    required this.distance,
+    required this.requestZip,
+    required this.categoryLine,
     required this.price,
+    required this.priceSuffix,
     required this.priceDetail,
+    required this.priceNote,
+    required this.priceTypeLabel,
     required this.nextSlot,
     required this.rating,
     required this.reviewCount,
-    required this.selectCertified,
     required this.profileImageUrl,
     required this.tagline,
     required this.about,
     required this.mediaUrls,
     required this.mediaCount,
-    required this.videoCount,
+    required this.onSeeAllPhotos,
     required this.overview,
     required this.hours,
     required this.timeZone,
     required this.responseTimes,
-    required this.pricing,
     required this.services,
-    required this.credentials,
-    required this.serviceCities,
-    required this.serviceAreaNote,
+    required this.searchedCategory,
+    required this.showAllServices,
+    required this.onShowAllServices,
+    required this.paymentMethods,
     required this.ratingBreakdown,
     required this.reviews,
-    required this.reviewQuery,
-    required this.responseSummary,
     required this.loading,
     required this.bookActionLoading,
     required this.bookActionLabel,
     required this.onBack,
-    required this.onShare,
     required this.onBook,
     required this.onMessage,
     required this.onSeeAllReviews,
-    required this.onReviewQueryChanged,
     required this.scrollController,
   });
+
+  /// "32 reviews" / "1 review".
+  String get _reviewsLabel =>
+      '$reviewCount ${reviewCount == '1' ? 'review' : 'reviews'}';
+
+  bool get _hasPriceCard => price.isNotEmpty || nextSlot.isNotEmpty;
+
+  /// The searched service's category first; the rest sit behind
+  /// "See all N services" (B02b).
+  List<_ProfileService> get _visibleServices {
+    if (showAllServices || searchedCategory.isEmpty) return services;
+    final inCategory =
+        services.where((s) => s.category == searchedCategory).toList();
+    return inCategory.isEmpty ? services : inCategory;
+  }
+
+  bool get _servicesTrimmed => _visibleServices.length < services.length;
 
   bool get _hasRating =>
       (num.tryParse(rating) ?? 0) > 0 && (num.tryParse(reviewCount) ?? 0) > 0;
@@ -174,71 +213,81 @@ class _FigmaProfileSurface extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
             _topBar(),
             Expanded(
               child: loading
-                  ? const SkeletonPage(
-                      layout: SkeletonLayout.profile,
-                      label: 'Loading pro profile')
+                  ? const SafeArea(
+                      top: false,
+                      child: SkeletonPage(
+                          layout: SkeletonLayout.profile,
+                          label: 'Loading pro profile'),
+                    )
                   : ListView(
                       controller: scrollController,
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
+                      padding: EdgeInsets.zero,
                       children: [
-                        _identity(),
-                        const SizedBox(height: 20),
-                        _priceCard(),
-                        const SizedBox(height: 16),
-                        _requestCard(),
-                        if (_hasAboutContent) ...[
-                          const SizedBox(height: 18),
-                          _section('About this pro', _about()),
-                        ],
-                        if (mediaUrls.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          _mediaSection(),
-                        ],
-                        if (overview.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          _section('Overview', _factsPanel()),
-                        ],
-                        if (hours.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          _section('Business Hours', _hoursPanel()),
-                        ],
-                        if (responseTimes.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          _section('Response Times', _responsePanel(),
-                              trailing: 'Set by $businessName'),
-                        ],
-                        if (pricing.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          Container(
-                            key: _pricingKey,
-                            child: _section('Upfront Pricing', _pricingList()),
+                        TwPage(
+                          top: TwSpace.s4,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _identity(context),
+                              const SizedBox(height: TwSpace.s20),
+                              if (_hasPriceCard) ...[
+                                _priceCard(context),
+                                const SizedBox(height: TwSpace.s12),
+                              ],
+                              _requestCard(),
+                              if (_hasAboutContent) ...[
+                                const SizedBox(height: TwSpace.s28),
+                                _section('About this pro', _about()),
+                              ],
+                              if (mediaUrls.isNotEmpty) ...[
+                                const SizedBox(height: TwSpace.s28),
+                                _mediaSection(),
+                              ],
+                              if (overview.isNotEmpty) ...[
+                                const SizedBox(height: TwSpace.s28),
+                                _section('Overview', _factsPanel()),
+                              ],
+                              if (hours.isNotEmpty) ...[
+                                const SizedBox(height: TwSpace.s28),
+                                _section('Business hours', _hoursPanel()),
+                              ],
+                              if (responseTimes.isNotEmpty) ...[
+                                const SizedBox(height: TwSpace.s28),
+                                _section('Response times', _responsePanel(),
+                                    trailing:
+                                        'Set by ${_shortBusinessName(businessName)}'),
+                              ],
+                              if (services.isNotEmpty) ...[
+                                const SizedBox(height: TwSpace.s28),
+                                _section(
+                                  'Services & prices',
+                                  _servicesSection(),
+                                  trailing: _servicesTrimmed
+                                      ? searchedCategory
+                                      : null,
+                                ),
+                              ],
+                              if (paymentMethods.isNotEmpty) ...[
+                                const SizedBox(height: TwSpace.s28),
+                                _section('How you pay', _howYouPay()),
+                              ],
+                              if (_hasRating) ...[
+                                const SizedBox(height: TwSpace.s28),
+                                _reviewSection(context),
+                              ],
+                            ],
                           ),
-                        ],
-                        if (services.isNotEmpty) ...[
-                          const SizedBox(height: 18),
-                          _section('Services & rates', _servicesSection()),
-                        ],
-                        if (_hasRating) ...[
-                          const SizedBox(height: 16),
-                          _reviewSection(),
-                        ],
-                        if (credentials.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          _section('Credentials', _credentialsSection()),
-                        ],
-                        if (serviceCities.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          _section('Service area', _serviceAreaSection()),
-                        ],
+                        ),
                       ],
                     ),
             ),
-            if (!loading) _bottomBar(),
+            if (!loading) _bottomBar(context),
           ],
         ),
       ),
@@ -246,92 +295,54 @@ class _FigmaProfileSurface extends StatelessWidget {
   }
 
   Widget _topBar() {
-    return SizedBox(
-      height: 44,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        child: Row(
-          children: [
-            IconButton(
-              tooltip: 'Back',
-              onPressed: onBack,
-              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.arrow_back_rounded, color: _ink, size: 20),
-            ),
-            const Spacer(),
-            IconButton(
-              tooltip: 'Share contractor',
-              onPressed: onShare,
-              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.share, color: _ink, size: 20),
-            ),
-          ],
+    return Padding(
+      padding:
+          const EdgeInsets.fromLTRB(TwSpace.s12, TwSpace.s12, TwSpace.s12, 0),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: IconButton(
+          tooltip: 'Back',
+          onPressed: onBack,
+          constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+          padding: EdgeInsets.zero,
+          icon: const Icon(Icons.arrow_back_ios_new, color: _ink, size: 20),
         ),
       ),
     );
   }
 
-  Widget _identity() {
+  Widget _identity(BuildContext context) {
+    final compact = TwLayout.size(context) == TwSize.compact;
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _logo(),
-        const SizedBox(width: 16),
+        TwAvatar(
+          name: businessName,
+          imageUrl: profileImageUrl,
+          size: compact ? 56 : 64,
+        ),
+        const SizedBox(width: TwSpace.s16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      businessName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 20,
-                        height: 1.15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  if (selectCertified) ...[
-                    const SizedBox(width: 6),
-                    Builder(
-                        builder: (buttonContext) => TextButton.icon(
-                              onPressed: () =>
-                                  showSelectCertifiedInfo(buttonContext),
-                              icon: const Icon(Icons.info_outline, size: 14),
-                              label: const Text('Select-certified'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: _teal,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 2),
-                                minimumSize: const Size(44, 44),
-                                textStyle: const TextStyle(
-                                    fontSize: 9, fontWeight: FontWeight.w800),
-                              ),
-                            )),
-                  ],
-                ],
+              // B02b: Outfit 24/30 700 — the h1 face at the mockup's size.
+              Text(
+                businessName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TwType.h1Sm(),
               ),
-              const SizedBox(height: 4),
-              if (distance.isNotEmpty)
-                Text(
-                  distance,
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+              if (categoryLine.isNotEmpty) ...[
+                const SizedBox(height: TwSpace.s4),
+                Text(categoryLine, style: TwType.meta()),
+              ],
               if (_hasRating) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: TwSpace.s8),
                 RatingCapsule(
                   rating: num.parse(rating),
                   count: num.parse(reviewCount).toInt(),
+                  compact: compact,
                 ),
               ],
             ],
@@ -341,94 +352,70 @@ class _FigmaProfileSurface extends StatelessWidget {
     );
   }
 
-  Widget _logo() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        width: 64,
-        height: 64,
-        child: profileImageUrl == null
-            ? Container(
-                color: _blue,
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.home_repair_service,
-                        color: Colors.white, size: 28),
-                    const SizedBox(height: 1),
-                    Text(category.toUpperCase(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 7,
-                            fontWeight: FontWeight.w900)),
-                  ],
-                ),
-              )
-            : Image.network(profileImageUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(color: _blue)),
-      ),
-    );
-  }
-
-  Widget _priceCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _panelDecoration(radius: 12, border: true),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _priceCard(BuildContext context) {
+    final stack = TwLayout.stackRows(context);
+    final Widget? capsule = nextSlot.isEmpty
+        ? null
+        : Container(
+            width: 112,
+            padding: const EdgeInsets.symmetric(
+                horizontal: TwSpace.s8, vertical: TwSpace.s4),
+            decoration: BoxDecoration(
+              color: AppTheme.greenTint,
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.calendar_today_outlined,
+                  size: 14, color: AppTheme.green),
+              const SizedBox(width: TwSpace.s4),
+              Expanded(
+                child: Text('Next:\n$nextSlot',
+                    style: TwType.caption(color: AppTheme.green)
+                        .copyWith(fontWeight: FontWeight.w600, height: 1.05)),
+              ),
+            ]),
+          );
+    // B02b: "$89.00" in display type, "diagnostic" after it in value type.
+    final Widget amount = price.isEmpty
+        ? const SizedBox.shrink()
+        : Text.rich(
+            TextSpan(
+              text: price,
+              style: TwType.display(context),
               children: [
-                Text(price,
-                    style: const TextStyle(
-                        color: _blue,
-                        fontSize: 28,
-                        height: 1,
-                        fontWeight: FontWeight.w900)),
-                const SizedBox(height: 8),
-                Text(priceDetail,
-                    style: const TextStyle(
-                        color: _muted,
-                        fontSize: 13,
-                        height: 1.35,
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(height: 2),
-                Semantics(
-                  button: true,
-                  label: 'View price details',
-                  child: TextButton(
-                    onPressed: _scrollToPricing,
-                    style: TextButton.styleFrom(
-                      foregroundColor: _teal,
-                      minimumSize: const Size(0, 36),
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      alignment: Alignment.centerLeft,
-                    ),
-                    child: const Text(
-                      'View price details',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
+                if (priceSuffix.isNotEmpty)
+                  TextSpan(text: '  $priceSuffix', style: TwType.value()),
               ],
             ),
+          );
+    return TwCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: amount),
+              if (capsule != null && !stack) ...[
+                const SizedBox(width: TwSpace.s12),
+                Padding(
+                  padding: const EdgeInsets.only(top: TwSpace.s4),
+                  child: capsule,
+                ),
+              ],
+            ],
           ),
-          if (nextSlot.isNotEmpty) ...[
-            const SizedBox(width: 10),
-            Padding(
-              padding: const EdgeInsets.only(top: 15),
-              child: AvailabilityCapsule(label: 'Next: $nextSlot'),
-            ),
+          if (capsule != null && stack) ...[
+            const SizedBox(height: TwSpace.s8),
+            capsule,
+          ],
+          if (priceDetail.isNotEmpty) ...[
+            const SizedBox(height: TwSpace.s8),
+            Text(priceDetail, style: TwType.label()),
+          ],
+          if (priceNote.isNotEmpty) ...[
+            const SizedBox(height: TwSpace.s4),
+            Text(priceNote, style: TwType.meta()),
           ],
         ],
       ),
@@ -436,89 +423,41 @@ class _FigmaProfileSurface extends StatelessWidget {
   }
 
   Widget _requestCard() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(13, 14, 13, 13),
-      decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _line)),
+    return TwCard(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.end,
+            spacing: TwSpace.s12,
+            runSpacing: TwSpace.s4,
             children: [
-              const Expanded(
-                  child: Text('Your Project Request',
-                      style: TextStyle(
-                          color: _ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800))),
+              Text('Your project request', style: TwType.h3()),
               if (service.isNotEmpty)
-                Flexible(
-                    child: Text(service,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                            color: _muted,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500))),
+                Text(
+                    [service, requestZip]
+                        .where((s) => s.isNotEmpty)
+                        .join(' · '),
+                    style: TwType.meta()),
             ],
           ),
-          const SizedBox(height: 13),
-          SizedBox(width: double.infinity, height: 46, child: _bookButton()),
-          const SizedBox(height: 12),
-          Text("Books directly on $businessName's calendar",
+          const SizedBox(height: TwSpace.s12),
+          _bookButton(),
+          const SizedBox(height: TwSpace.s12),
+          Text(
+              "Books directly on ${_shortBusinessName(businessName)}'s calendar",
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: _muted, fontSize: 12, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: OutlinedButton.icon(
-              onPressed: onMessage,
-              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
-              label: Text('Message $businessName',
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _teal,
-                side: const BorderSide(color: _teal),
-                textStyle:
-                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
+              style: TwType.caption()),
+          const SizedBox(height: TwSpace.s12),
+          TwSecondaryButton(
+            label: 'Message',
+            onPressed: onMessage,
+            icon: Icons.chat_bubble_outline_rounded,
+            height: 52,
           ),
-          if (responseSummary.isNotEmpty) ...[
-            const SizedBox(height: 11),
-            Text(responseSummary,
-                style: const TextStyle(
-                    color: AppTheme.textTertiary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500)),
-          ],
         ],
       ),
-    );
-  }
-
-  Future<void> _scrollToPricing() async {
-    final priceContext = _pricingKey.currentContext;
-    final priceRenderObject = priceContext?.findRenderObject();
-    if (priceRenderObject == null || !scrollController.hasClients) return;
-
-    final viewport = RenderAbstractViewport.of(priceRenderObject);
-    final targetOffset = viewport
-        .getOffsetToReveal(priceRenderObject, 0.08)
-        .offset
-        .clamp(0.0, scrollController.position.maxScrollExtent)
-        .toDouble();
-
-    await scrollController.animateTo(
-      targetOffset,
-      duration: const Duration(milliseconds: 360),
-      curve: Curves.easeOutCubic,
     );
   }
 
@@ -527,26 +466,18 @@ class _FigmaProfileSurface extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Expanded(
-                child: Text(title,
-                    style: const TextStyle(
-                        color: _ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800))),
-            if (trailing != null)
+            Expanded(child: Text(title, style: TwType.h2())),
+            if (trailing != null) ...[
+              const SizedBox(width: TwSpace.s12),
               Flexible(
                   child: Text(trailing,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                          color: _muted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500))),
+                      textAlign: TextAlign.right, style: TwType.caption())),
+            ],
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: TwSpace.s12),
         child,
       ],
     );
@@ -557,429 +488,280 @@ class _FigmaProfileSurface extends StatelessWidget {
   Widget _about() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (tagline.isNotEmpty)
-            Text(
-              tagline,
-              style: const TextStyle(
-                color: _ink,
-                fontSize: 17,
-                height: 1.35,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          if (tagline.isNotEmpty && about.isNotEmpty) const SizedBox(height: 9),
-          if (about.isNotEmpty)
-            Text(
-              about,
-              style: const TextStyle(
-                color: _ink,
-                fontSize: 14,
-                height: 1.55,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+          if (tagline.isNotEmpty) Text(tagline, style: TwType.h3()),
+          if (tagline.isNotEmpty && about.isNotEmpty)
+            const SizedBox(height: TwSpace.s8),
+          if (about.isNotEmpty) Text(about, style: TwType.body()),
         ],
       );
 
   Widget _mediaSection() {
-    final suffix = [
-      if (mediaCount > 0) '$mediaCount photos',
-      if (videoCount > 0) '$videoCount videos'
-    ].join(' · ');
+    // Photos only: the completion gate collects photos, not video.
+    final previewCount = mediaUrls.length < 2 ? mediaUrls.length : 2;
     return _section(
-      'Project photos & videos',
-      SizedBox(
-        height: 120,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          clipBehavior: Clip.hardEdge,
-          itemCount: mediaUrls.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 12),
-          itemBuilder: (context, index) => SizedBox(
-            width: 120,
-            height: 120,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    mediaUrls[index],
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(color: _panelColor),
-                  ),
-                  if (videoCount > 0 && index == 1)
-                    Center(
-                      child: CircleAvatar(
-                        radius: 16,
-                        backgroundColor: Colors.black.withOpacity(0.4),
-                        child: const Icon(
-                          Icons.play_arrow,
-                          color: Colors.white,
-                          size: 20,
+      'Recent work',
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const gap = 10.0;
+            final tile = (constraints.maxWidth - 2 * gap) / 3;
+            return SizedBox(
+              height: tile,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                clipBehavior: Clip.hardEdge,
+                itemCount: previewCount + 1,
+                separatorBuilder: (_, __) => const SizedBox(width: gap),
+                itemBuilder: (context, index) => SizedBox(
+                  width: tile,
+                  height: tile,
+                  child: index == previewCount
+                      ? Material(
+                          color: AppTheme.subtle,
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
+                          child: InkWell(
+                            borderRadius:
+                                BorderRadius.circular(AppTheme.radius),
+                            onTap: onSeeAllPhotos,
+                            child: Center(
+                                child: Text('See all',
+                                    style: TwType.label(color: AppTheme.blue))),
+                          ),
+                        )
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
+                          child: Image.network(
+                            mediaUrls[index],
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                Container(color: AppTheme.subtle),
+                          ),
                         ),
-                      ),
-                    ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
-      ),
-      trailing: suffix.isEmpty ? null : suffix,
+        const SizedBox(height: TwSpace.s8),
+        Text('Photos from this pro’s recent work', style: TwType.caption()),
+      ]),
     );
   }
 
-  Widget _factsPanel() => _panel(
-        Column(
-            children: overview
-                .map((fact) => Padding(
-                      padding: const EdgeInsets.only(bottom: 7),
-                      child: Row(children: [
-                        Icon(fact.icon, color: fact.color, size: 18),
-                        const SizedBox(width: 10),
-                        Expanded(
-                            child: Text(fact.label,
-                                style: const TextStyle(
-                                    color: _ink,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500)))
-                      ]),
-                    ))
-                .toList()),
+  Widget _factsPanel() => TwFactPanel(
+        child: Column(
+            children: List.generate(overview.length, (index) {
+          final fact = overview[index];
+          return Padding(
+            padding:
+                EdgeInsets.only(bottom: index == overview.length - 1 ? 0 : 14),
+            child: Row(children: [
+              Icon(fact.icon, color: fact.color, size: 20),
+              const SizedBox(width: TwSpace.s12),
+              Expanded(
+                  child: Text(fact.label, style: TwType.bodySm(color: _ink)))
+            ]),
+          );
+        })),
       );
 
-  Widget _hoursPanel() => _panel(Column(children: [
-        ...hours.map(_keyValue),
-        if (timeZone.isNotEmpty)
-          Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Times in $timeZone',
-                  style: const TextStyle(
-                      color: AppTheme.textTertiary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500))),
-      ]));
+  Widget _hoursPanel() => TwFactPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ...hours.map(_keyValue),
+            if (timeZone.isNotEmpty) Text(timeZone, style: TwType.caption()),
+          ],
+        ),
+      );
 
-  Widget _responsePanel() =>
-      _panel(Column(children: responseTimes.map(_keyValue).toList()));
+  Widget _responsePanel() => TwFactPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ...responseTimes.map(_keyValue),
+            Text('You choose one when you book. The fee goes to the pro.',
+                style: TwType.caption()),
+          ],
+        ),
+      );
 
   Widget _keyValue(MapEntry<String, String> item) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-              width: 122,
-              child: Text(item.key,
-                  style: const TextStyle(
-                      color: _ink, fontSize: 13, fontWeight: FontWeight.w500))),
-          Expanded(
-              child: Text(item.value,
-                  style: const TextStyle(
-                      color: _blue,
-                      fontSize: 13,
-                      height: 1.25,
-                      fontWeight: FontWeight.w800))),
-        ]),
+        padding: const EdgeInsets.only(bottom: TwSpace.s8),
+        child: TwDetailRow(label: item.key, value: item.value),
       );
 
-  Widget _pricingList() => Column(
-          children: List.generate(pricing.length, (index) {
-        final item = pricing[index];
-        return Container(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          decoration: BoxDecoration(
-              border: index == pricing.length - 1
-                  ? null
-                  : const Border(bottom: BorderSide(color: _line))),
-          child: Row(children: [
-            Expanded(
-                child: Text(item.key,
-                    style: const TextStyle(
-                        color: _ink,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500))),
-            const SizedBox(width: 12),
-            Text(item.value,
-                style: const TextStyle(
-                    color: _blue, fontSize: 13, fontWeight: FontWeight.w800))
-          ]),
-        );
-      }));
-
+  /// One list, one place. Opens on the searched service's category; the rest
+  /// sit behind "See all N services".
   Widget _servicesSection() {
-    final groups = <String, List<_ProfileService>>{};
-    for (final service in services) {
-      groups.putIfAbsent(service.category, () => []).add(service);
-    }
+    final visible = _visibleServices;
+    final hasCap = visible.any((s) => s.workOrderType == 'nte');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: groups.entries.expand((entry) {
-        return [
-          Text(
-            entry.key,
-            style: const TextStyle(
-              color: _ink,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-            ),
+      children: [
+        for (var i = 0; i < visible.length; i++)
+          _serviceRateRow(visible[i], last: i == visible.length - 1),
+        if (hasCap) ...[
+          const SizedBox(height: TwSpace.s8),
+          Text('With a cap, the final price may be lower — never higher.',
+              style: TwType.caption()),
+        ],
+        if (_servicesTrimmed) ...[
+          const SizedBox(height: TwSpace.s4),
+          TwTextAction(
+            label: 'See all ${services.length} services',
+            onPressed: onShowAllServices,
           ),
-          const SizedBox(height: 9),
-          ...entry.value.map(_serviceRateRow),
-          const SizedBox(height: 12),
-        ];
-      }).toList(),
+        ],
+      ],
     );
   }
 
-  Widget _serviceRateRow(_ProfileService service) => Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(
-            service.name,
-            style: const TextStyle(
-              color: _ink,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
+  Widget _serviceRateRow(_ProfileService s, {required bool last}) => Container(
+        padding: const EdgeInsets.symmetric(vertical: TwSpace.s12),
+        decoration: BoxDecoration(
+            border:
+                last ? null : const Border(bottom: BorderSide(color: _line))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Text(s.name, style: TwType.bodySm(color: _ink))),
+          const SizedBox(width: TwSpace.s12),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (s.amount.isNotEmpty)
+                  Text.rich(
+                    TextSpan(
+                      text: s.amount,
+                      style: TwType.value(),
+                      children: [
+                        if (s.amountSuffix.isNotEmpty)
+                          TextSpan(
+                            text: ' ${s.amountSuffix}',
+                            style: TwType.bodySm(color: _ink),
+                          ),
+                      ],
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                Text(s.typeLabel,
+                    textAlign: TextAlign.right, style: TwType.caption()),
+              ],
             ),
           ),
-          if (service.price.isNotEmpty || service.rateLabel.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            Text(
-              [service.price, service.rateLabel]
-                  .where((value) => value.isNotEmpty)
-                  .join(' · '),
-              style: const TextStyle(
-                color: _ink,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-          if (service.description.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            Text(
-              service.description,
-              style: const TextStyle(
-                color: _ink,
-                fontSize: 13,
-                height: 1.4,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-          if (service.minCharge.isNotEmpty || service.duration.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            Text(
-              [service.minCharge, service.duration]
-                  .where((value) => value.isNotEmpty)
-                  .join(' · '),
-              style: const TextStyle(
-                color: _muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
         ]),
       );
 
-  Widget _credentialsSection() => Column(
+  Widget _howYouPay() => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ...credentials.map(
-            (credential) => Padding(
-              padding: const EdgeInsets.only(bottom: 15),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(credential.icon, color: _ink, size: 21),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(credential.title,
-                            style: const TextStyle(
-                                color: _ink,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800)),
-                        if (credential.detail.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(credential.detail,
-                              style: const TextStyle(
-                                  color: _ink,
-                                  fontSize: 13,
-                                  height: 1.4,
-                                  fontWeight: FontWeight.w500)),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+          const TwIconWell(Icons.credit_card_outlined, size: 40),
+          const SizedBox(width: TwSpace.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${businessName.isEmpty ? 'This pro' : _shortBusinessName(businessName)} accepts ${_joinMethods(paymentMethods)}',
+                  style: TwType.value(),
+                ),
+                const SizedBox(height: TwSpace.s4),
+                Text(
+                  'You pay your pro directly. TradeWorks adds no markup and takes no fee — we only fund the credits you apply.',
+                  style: TwType.meta(),
+                ),
+              ],
             ),
           ),
-          const Text(
-            'Contractors carry their own general liability and workers’ comp, verified at onboarding.',
-            style: TextStyle(
-                color: _muted,
-                fontSize: 12,
-                height: 1.4,
-                fontStyle: FontStyle.italic),
-          ),
         ],
       );
 
-  Widget _serviceAreaSection() => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 20,
-            runSpacing: 10,
-            children: serviceCities
-                .map((city) => Text(city,
-                    style: const TextStyle(
-                        color: _ink,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800)))
-                .toList(),
-          ),
-          if (serviceAreaNote.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(serviceAreaNote,
-                style: const TextStyle(
-                    color: _muted,
-                    fontSize: 13,
-                    height: 1.4,
-                    fontWeight: FontWeight.w500)),
-          ],
-        ],
-      );
+  /// "card, check or cash"
+  static String _joinMethods(List<String> m) => m.length < 2
+      ? m.join()
+      : '${m.sublist(0, m.length - 1).join(', ')} or ${m.last}';
 
-  Widget _reviewSection() {
+  Widget _reviewSection(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _ratingCard(),
-      const SizedBox(height: 16),
-      Row(children: [
-        SizedBox(
-          height: 38,
-          width: 200,
-          child: TextField(
-            onChanged: onReviewQueryChanged,
-            textInputAction: TextInputAction.done,
-            style: const TextStyle(
-              color: _ink,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-            decoration: InputDecoration(
-              hintText: 'Search reviews',
-              hintStyle: const TextStyle(color: _muted, fontSize: 12),
-              prefixIcon: const Icon(Icons.search, size: 16, color: _muted),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(vertical: 10),
-              filled: true,
-              fillColor: _panelColor,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: const BorderSide(color: _line),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: const BorderSide(color: _line),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: const BorderSide(color: _teal, width: 1.5),
-              ),
-            ),
-          ),
-        ),
-      ]),
+      _ratingCard(context),
       if (reviews.isNotEmpty) ...[
-        const SizedBox(height: 10),
+        const SizedBox(height: TwSpace.s16),
         ...reviews.take(2).map(_reviewCard),
         Center(
           child: TextButton(
             onPressed: onSeeAllReviews,
             style: TextButton.styleFrom(
-              foregroundColor: _teal,
+              foregroundColor: AppTheme.blue,
               minimumSize: const Size(48, 44),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: TwSpace.s12),
             ),
-            child: Text(
-              'See all $reviewCount reviews',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-            ),
+            child: Text('See all $_reviewsLabel', style: TwType.link()),
           ),
         ),
       ] else
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24),
+          padding: const EdgeInsets.symmetric(vertical: TwSpace.s20),
           child: Center(
             child: Text(
-              reviewQuery.trim().isEmpty
-                  ? 'No written reviews yet'
-                  : 'No reviews match “${reviewQuery.trim()}”',
-              style: const TextStyle(
-                color: _muted,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+              'No written reviews yet',
+              textAlign: TextAlign.center,
+              style: TwType.bodySm(color: _muted),
             ),
           ),
         ),
     ]);
   }
 
-  Widget _ratingCard() => _panel(Row(children: [
+  Widget _ratingCard(BuildContext context) {
+    final compact = TwLayout.size(context) == TwSize.compact;
+    return TwFactPanel(
+      child: Row(children: [
         SizedBox(
-            width: 118,
+            width: compact ? 96 : 118,
             child: Column(children: [
-              Text(rating,
-                  style: const TextStyle(
-                      color: _ink,
-                      fontSize: 30,
-                      height: 1,
-                      fontWeight: FontWeight.w900)),
-              const SizedBox(height: 6),
+              Text(rating, style: TwType.number(context)),
+              const SizedBox(height: TwSpace.s4),
               const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14),
-                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14),
-                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14),
-                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14),
-                Icon(Icons.star_rounded, color: AppTheme.gold, size: 14)
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 16),
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 16),
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 16),
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 16),
+                Icon(Icons.star_rounded, color: AppTheme.gold, size: 16)
               ]),
-              const SizedBox(height: 4),
-              Text('$reviewCount ratings',
-                  style: const TextStyle(color: _muted, fontSize: 11)),
+              const SizedBox(height: TwSpace.s4),
+              Text(_reviewsLabel,
+                  textAlign: TextAlign.center, style: TwType.caption()),
             ])),
+        const SizedBox(width: TwSpace.s12),
         Expanded(
             child: Column(
                 children: [5, 4, 3, 2, 1].map((star) {
           final percent = ratingBreakdown[star] ?? 0;
           return Padding(
-              padding: const EdgeInsets.only(bottom: 3),
+              padding: const EdgeInsets.only(bottom: 7),
               child: Row(children: [
-                Text('$star',
-                    style: const TextStyle(color: _muted, fontSize: 10)),
-                const Icon(Icons.star_rounded, color: _muted, size: 10),
-                const SizedBox(width: 5),
-                Expanded(
-                    child: LinearProgressIndicator(
-                        value: (percent / 100).clamp(0, 1),
-                        minHeight: 5,
-                        color: AppTheme.blue,
-                        backgroundColor: AppTheme.cardBorder)),
-                const SizedBox(width: 7),
                 SizedBox(
-                    width: 25,
+                    width: 12, child: Text('$star', style: TwType.caption())),
+                const SizedBox(width: TwSpace.s8),
+                Expanded(
+                    child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                      value: (percent / 100).clamp(0, 1),
+                      minHeight: 6,
+                      color: AppTheme.gold,
+                      backgroundColor: AppTheme.cardBorder),
+                )),
+                const SizedBox(width: TwSpace.s8),
+                SizedBox(
+                    width: 40,
                     child: Text('${percent.toStringAsFixed(0)}%',
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(color: _muted, fontSize: 10)))
+                        textAlign: TextAlign.right, style: TwType.caption()))
               ]));
         }).toList())),
-      ]));
+      ]),
+    );
+  }
 
   Widget _reviewCard(Map<String, dynamic> review) {
     final name = (review['name'] ?? '').toString();
@@ -988,125 +770,124 @@ class _FigmaProfileSurface extends StatelessWidget {
     final age = (review['daysAgo'] ?? '').toString();
     final stars = (review['rating'] as num?)?.toInt() ?? 0;
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: TwSpace.s12),
+      padding: const EdgeInsets.all(TwSpace.s16),
       decoration: BoxDecoration(
+          color: Colors.white,
           border: Border.all(color: _line),
-          borderRadius: BorderRadius.circular(9)),
+          borderRadius: BorderRadius.circular(14)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Text(name,
-              style: const TextStyle(
-                  color: _ink, fontSize: 13, fontWeight: FontWeight.w800)),
-          if (review['completed'] == true) ...[
-            const SizedBox(width: 7),
-            Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                    color: AppTheme.greenTint,
-                    borderRadius: BorderRadius.circular(4)),
-                child: const Text('✓ Completed job',
-                    style: TextStyle(
-                        color: _green,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700)))
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: Wrap(
+              spacing: TwSpace.s8,
+              runSpacing: TwSpace.s4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(name, style: TwType.title()),
+                if (review['completed'] == true)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_rounded,
+                          size: 15, color: AppTheme.greenMark),
+                      const SizedBox(width: TwSpace.s4),
+                      Text('Verified job',
+                          style: TwType.caption(color: _green)
+                              .copyWith(fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          if (age.isNotEmpty) ...[
+            const SizedBox(width: TwSpace.s8),
+            Text(age, style: TwType.caption()),
           ],
-          const Spacer(),
-          Text(age, style: const TextStyle(color: _muted, fontSize: 10))
         ]),
         if (stars > 0)
           Padding(
-              padding: const EdgeInsets.only(top: 5),
+              padding: const EdgeInsets.only(top: TwSpace.s8),
               child: Row(
                   children: List.generate(
                       5,
                       (index) => Icon(Icons.star_rounded,
-                          size: 13,
+                          size: 14,
                           color: index < stars
                               ? AppTheme.gold
                               : AppTheme.cardBorder)))),
         if (text.isNotEmpty)
           Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(text,
-                  style: const TextStyle(
-                      color: _ink, fontSize: 12, height: 1.35))),
+              padding: const EdgeInsets.only(top: TwSpace.s8),
+              child: Text(text, style: TwType.bodySm(color: _ink))),
         if (tags.isNotEmpty)
           Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.only(top: TwSpace.s8),
               child: Text(tags,
-                  style: const TextStyle(
-                      color: _blue,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700))),
+                  style: TwType.caption(color: AppTheme.body)
+                      .copyWith(fontWeight: FontWeight.w600))),
         ReviewAnnotations(review: review, businessName: businessName),
       ]),
     );
   }
 
-  Widget _bottomBar() => SizedBox(
-        height: 66,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: AppTheme.cardBorder))),
-          child: Row(children: [
-            Expanded(
-                child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Text(price,
-                      style: const TextStyle(
-                          color: _blue,
-                          fontSize: 18,
-                          height: 1,
-                          fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 3),
-                  const Text('Upfront price',
-                      style: TextStyle(color: _muted, fontSize: 11))
-                ])),
-            const SizedBox(width: 12),
-            SizedBox(width: 145, height: 42, child: _bookButton()),
-          ]),
-        ),
-      );
-
-  Widget _bookButton() => ElevatedButton(
-        onPressed: bookActionLoading ? null : onBook,
-        style: ElevatedButton.styleFrom(
-            backgroundColor: _orange,
-            foregroundColor: AppTheme.navy,
-            elevation: 0,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-        child: bookActionLoading
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppTheme.navy,
-                ),
-              )
-            : Text(bookActionLabel,
-                style:
-                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-      );
-
-  Widget _panel(Widget child) => Container(
+  Widget _bottomBar(BuildContext context) {
+    final gutter = TwLayout.gutter(context);
+    final inset = MediaQuery.of(context).padding.bottom;
+    final stack = TwLayout.stackRows(context);
+    final barPrice = priceSuffix.isEmpty ? price : '$price $priceSuffix';
+    final priceBlock = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (barPrice.isNotEmpty)
+          Text.rich(
+            TextSpan(text: price, style: TwType.price(), children: [
+              if (priceSuffix.isNotEmpty)
+                TextSpan(text: ' $priceSuffix', style: TwType.label()),
+            ]),
+          ),
+        if (priceTypeLabel.isNotEmpty)
+          Text(priceTypeLabel, style: TwType.caption()),
+      ],
+    );
+    return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: _panelDecoration(radius: 8),
-      child: child);
+      padding:
+          EdgeInsets.fromLTRB(gutter, TwSpace.s12, gutter, TwSpace.s12 + inset),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: AppTheme.floatShadow,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: TwLayout.maxContent),
+          child: stack
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    priceBlock,
+                    const SizedBox(height: TwSpace.s12),
+                    _bookButton(),
+                  ],
+                )
+              : Row(children: [
+                  Expanded(child: priceBlock),
+                  const SizedBox(width: TwSpace.s12),
+                  _bookButton(expand: false),
+                ]),
+        ),
+      ),
+    );
+  }
 
-  BoxDecoration _panelDecoration(
-          {required double radius, bool border = false}) =>
-      BoxDecoration(
-          color: _panelColor,
-          borderRadius: BorderRadius.circular(radius),
-          border: border ? Border.all(color: _line) : null);
+  Widget _bookButton({bool expand = true}) => TwPrimaryButton(
+        label: bookActionLabel,
+        onPressed: onBook,
+        loading: bookActionLoading,
+        expand: expand,
+      );
 }
 
 class _AllReviewsScreen extends StatelessWidget {
@@ -1128,93 +909,64 @@ class _AllReviewsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final gutter = TwLayout.gutter(context);
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: TwAppBar(
+        title: 'Reviews${businessName.isEmpty ? '' : ' for $businessName'}',
+        onBack: () => Navigator.of(context).pop(),
+      ),
       body: SafeArea(
-        child: Column(
-          children: [
-            SizedBox(
-              height: 52,
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: 'Back to contractor profile',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(
-                      Icons.arrow_back_rounded,
-                      color: _ink,
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      'Reviews${businessName.isEmpty ? '' : ' for $businessName'}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                ],
-              ),
-            ),
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(20, 4, 20, 14),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppTheme.pageBackground,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.star_rounded,
-                      color: AppTheme.gold, size: 20),
-                  const SizedBox(width: 6),
-                  Text(
-                    rating,
-                    style: const TextStyle(
-                      color: _ink,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    '$reviewCount ${reviewCount == '1' ? 'review' : 'reviews'}',
-                    style: const TextStyle(
-                      color: _muted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: reviews.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No written reviews yet',
-                        style: TextStyle(
-                          color: _muted,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+        top: false,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints:
+                BoxConstraints(maxWidth: TwLayout.maxContent + 2 * gutter),
+            child: Column(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                      gutter, TwSpace.s16, gutter, TwSpace.s16),
+                  child: TwFactPanel(
+                    child: Row(
+                      children: [
+                        const Icon(Icons.star_rounded,
+                            color: AppTheme.gold, size: 20),
+                        const SizedBox(width: TwSpace.s8),
+                        Text(rating, style: TwType.price()),
+                        const SizedBox(width: TwSpace.s12),
+                        Expanded(
+                          child: Text(
+                            '$reviewCount ${reviewCount == '1' ? 'review' : 'reviews'}',
+                            style: TwType.meta(),
+                          ),
                         ),
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                      itemCount: reviews.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) =>
-                          _reviewCard(reviews[index]),
+                      ],
                     ),
+                  ),
+                ),
+                Expanded(
+                  child: reviews.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No written reviews yet',
+                            style: TwType.bodySm(color: _muted),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: EdgeInsets.fromLTRB(
+                              gutter, 0, gutter, TwSpace.s28),
+                          itemCount: reviews.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: TwSpace.s12),
+                          itemBuilder: (context, index) =>
+                              _reviewCard(reviews[index]),
+                        ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1228,75 +980,56 @@ class _AllReviewsScreen extends StatelessWidget {
     final tags = review['tags']?.toString().trim() ?? '';
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(TwSpace.s16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Text(
                   name.isEmpty ? 'Verified customer' : name,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TwType.title(),
                 ),
               ),
-              if (age.isNotEmpty)
-                Text(
-                  age,
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+              if (age.isNotEmpty) ...[
+                const SizedBox(width: TwSpace.s8),
+                Text(age, style: TwType.caption()),
+              ],
             ],
           ),
           if (stars > 0) ...[
-            const SizedBox(height: 5),
+            const SizedBox(height: TwSpace.s8),
             Row(
               children: List.generate(
                 5,
                 (index) => Icon(
                   Icons.star_rounded,
                   color: index < stars ? AppTheme.gold : AppTheme.cardBorder,
-                  size: 15,
+                  size: 14,
                 ),
               ),
             ),
           ],
           if (text.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              text,
-              style: const TextStyle(
-                color: _ink,
-                fontSize: 14,
-                height: 1.4,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            const SizedBox(height: TwSpace.s8),
+            Text(text, style: TwType.bodySm(color: _ink)),
           ],
           ReviewAnnotations(review: review, businessName: businessName),
           if (tags.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: TwSpace.s8),
             Text(
               tags,
-              style: const TextStyle(
-                color: AppTheme.blue,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+              style: TwType.caption(color: AppTheme.body)
+                  .copyWith(fontWeight: FontWeight.w600),
             ),
           ],
         ],
@@ -1310,8 +1043,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
 
   bool _isLoading = true;
   bool _isStartingBooking = false;
+  bool _showAllServices = false;
   Map<String, dynamic>? _profile;
-  String _reviewQuery = '';
   final ScrollController _profileScrollController = ScrollController();
 
   @override
@@ -1574,12 +1307,15 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
 
   String get _serviceLabel {
     final direct = _text(
-      _displayPro['selectedService'],
+      widget.pro['selectedService'],
       _text(
-        _displayPro['serviceName'],
+        _displayPro['selectedService'],
         _text(
-          _displayPro['service_name'],
-          _text(_displayPro['service']),
+          _displayPro['serviceName'],
+          _text(
+            _displayPro['service_name'],
+            _text(_displayPro['service']),
+          ),
         ),
       ),
     );
@@ -1666,24 +1402,78 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     );
   }
 
-  String get _price {
-    final fromPrice = _text(
-      _displayPro['fromPrice'],
-      _text(
-        _displayPro['from_price'],
-        _text(_displayPro['price'], _text(_displayPro['startingPrice'])),
-      ),
-    );
-    if (fromPrice.isEmpty) return '';
-    if (fromPrice.startsWith('From')) return fromPrice;
-    if (fromPrice.startsWith(r'$')) return 'From $fromPrice';
-    return 'From \$$fromPrice';
+  /// 'rate_card' · 'nte' · 'quote_request', or '' when not sent. Accepts the
+  /// contractor-side names too ("Cap Approval", "Free estimate").
+  String _workOrderType(dynamic raw) {
+    final value = _text(raw).toLowerCase();
+    if (value.isEmpty) return '';
+    if (value == 'nte' || value.contains('cap')) return 'nte';
+    if (value.contains('quote') ||
+        value.contains('estimate') ||
+        value.contains('free')) {
+      return 'quote_request';
+    }
+    return 'rate_card';
   }
 
+  /// The searched service as the search result described it — used when the
+  /// profile's own list doesn't carry that service.
+  _ProfileService? get _searchResultService {
+    final name = _serviceLabel;
+    final type = _workOrderType(
+        widget.pro['workOrderType'] ?? widget.pro['work_order_type']);
+    final price = _money2(widget.pro['fromPrice'] ??
+        widget.pro['from_price'] ??
+        widget.pro['price']);
+    if (name.isEmpty || (price.isEmpty && type != 'quote_request')) {
+      return null;
+    }
+    return _ProfileService(
+      category: _category.isEmpty ? 'Services' : _category,
+      name: name,
+      price: type == 'quote_request' ? '' : price,
+      workOrderType: type.isEmpty ? 'rate_card' : type,
+    );
+  }
+
+  /// The service the homeowner searched for, else the first listed service.
+  _ProfileService? get _searchedService {
+    final services = _services;
+    final wanted = _serviceLabel.toLowerCase();
+    for (final s in services) {
+      if (s.name.toLowerCase() == wanted) return s;
+    }
+    return _searchResultService ?? (services.isEmpty ? null : services.first);
+  }
+
+  /// Price-card amount: "$129.00", "$89.00", "Free visit".
+  String get _price => _searchedService?.amount ?? '';
+
+  /// "diagnostic" for Cap Approval, else empty.
+  String get _priceSuffix => _searchedService?.amountSuffix ?? '';
+
+  /// "AC repair · You approve the cap"
   String get _priceDetail {
-    final service = _serviceLabel.toLowerCase();
-    if (service.isEmpty) return 'Upfront price';
-    return 'Upfront price - $service (diagnose + fix)';
+    final s = _searchedService;
+    return s == null ? '' : '${s.name} · ${s.typeLabel}';
+  }
+
+  /// Bottom-bar caption: "Upfront price" / "You approve the cap" /
+  /// "The pro sends you an estimate".
+  String get _priceTypeLabel => _searchedService?.typeLabel ?? '';
+
+  /// What happens next, for the two types that are not a fixed price
+  /// (B02b; decisions §2).
+  String get _priceNote {
+    final who =
+        _businessName.isEmpty ? 'The pro' : _shortBusinessName(_businessName);
+    return switch (_searchedService?.workOrderType) {
+      'nte' =>
+        '$who diagnoses the problem, then sends you a not-to-exceed cap to approve before any repair starts.',
+      'quote_request' =>
+        '$who visits for free, then sends you an estimate to accept or decline.',
+      _ => '',
+    };
   }
 
   String get _nextSlot {
@@ -1720,24 +1510,70 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     return labels[weekday] ?? 'Soon';
   }
 
-  String get _distanceLine {
-    final miles = _number(_displayPro['distanceMiles']);
-    final distance =
-        miles == null || miles <= 0 ? '' : '${miles.toStringAsFixed(1)} mi';
-    return [_category, if (distance.isNotEmpty) distance]
-        .where((part) => part.isNotEmpty)
-        .join(' · ');
+  /// "Plumbing · AC / HVAC · Electrical · +2 more". No distance (the
+  /// platform never measures it) and no "Serves {ZIP}" (settled Oct 1).
+  String get _categoryLine {
+    final categories = <String>[];
+    void add(dynamic value) {
+      final map = _asMap(value);
+      final name =
+          map.isEmpty ? _text(value) : _text(map['name'], _text(map['label']));
+      if (name.isNotEmpty && !categories.contains(name)) categories.add(name);
+    }
+
+    for (final item in _asList(_displayPro['categories'])) {
+      add(item);
+    }
+    if (categories.isEmpty) {
+      for (final service in _services) {
+        if (service.category != 'Services') add(service.category);
+      }
+    }
+    if (categories.isEmpty) add(_category);
+    if (categories.length <= 3) return categories.join(' · ');
+    return '${categories.take(3).join(' · ')} · +${categories.length - 3} more';
+  }
+
+  static const _paymentLabels = {
+    'cash': 'cash',
+    'check': 'check',
+    'card': 'card',
+    'credit_card': 'card',
+    'debit_card': 'card',
+    'ach': 'bank transfer',
+    'zelle': 'Zelle',
+    'venmo': 'Venmo',
+    'paypal': 'PayPal',
+    'apple_pay': 'Apple Pay',
+    'google_pay': 'Google Pay',
+  };
+
+  /// What the pro accepts, from Business › Public profile ("How customers
+  /// can pay you"; TW-SHARED-DECISIONS §4). Same labels as Account ›
+  /// Payment methods.
+  List<String> get _paymentMethods {
+    final methods = <String>[];
+    for (final method in _asList(
+        _displayPro['payment_methods'] ?? _displayPro['paymentMethods'])) {
+      final key = _text(method).toLowerCase();
+      if (key.isEmpty) continue;
+      final label = _paymentLabels[key] ?? key.replaceAll('_', ' ');
+      if (!methods.contains(label)) methods.add(label);
+    }
+    return methods;
   }
 
   String get _aboutText {
     return _text(
-      _displayPro['overview'],
+      _displayPro['about'],
       _text(
-        _displayPro['summary'],
-        _text(_displayPro['about'], _text(_displayPro['description'])),
+        _displayPro['description'],
+        _text(_displayPro['overview'], _text(_displayPro['summary'])),
       ),
     );
   }
+
+  String get _requestZip => _text(widget.pro['requestZip']);
 
   String get _employeeLine {
     return _text(
@@ -1752,27 +1588,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   String get _yearsLine => _text(
         _displayPro['years_in_business'],
         _text(_displayPro['yearsInBusiness']),
-      );
-
-  bool get _isSelectCertified {
-    return _boolValue(
-          _displayPro['selectedCertified'] ??
-              _displayPro['isSelectCertified'] ??
-              _displayPro['selectCertified'] ??
-              _displayPro['select_certified'],
-        ) ==
-        true;
-  }
-
-  String get _responseSummary => _text(
-        _displayPro['responseTime'],
-        _text(
-          _displayPro['response_time'],
-          _text(
-            _displayPro['responseSummary'],
-            _text(_displayPro['response_summary']),
-          ),
-        ),
       );
 
   String get _timeZoneLabel => _text(
@@ -1814,9 +1629,9 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     );
     if (direct.isNotEmpty) return direct;
 
-    if (backgroundChecked == true) parts.add('Background checked');
-    if (insured == true) parts.add('Insured');
     if (license.isNotEmpty) parts.add(license);
+    if (insured == true) parts.add('Insured');
+    if (backgroundChecked == true) parts.add('Background checked');
     return parts.join(' · ');
   }
 
@@ -1943,13 +1758,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     return urls.length;
   }
 
-  int get _videoCount {
-    final explicit = _number(_displayPro['videoCount'])?.toInt() ??
-        _number(_displayPro['videosCount'])?.toInt();
-    if (explicit != null && explicit > 0) return explicit;
-    return _asList(_displayPro['videos']).length;
-  }
-
   List<MapEntry<String, String>> _businessHours() {
     final source =
         _displayPro['business_hours'] ?? _displayPro['businessHours'];
@@ -1963,8 +1771,9 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
               _text(map['label'], _text(map['name'])),
             );
             if (label.isEmpty) return const MapEntry('', '');
-            if (map['closed'] == true)
+            if (map['closed'] == true) {
               return MapEntry(_dayLabel(label), 'Closed');
+            }
             final value = _text(
               map['hours'],
               _text(map['time'], _text(map['value'])),
@@ -1985,7 +1794,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
           .toList();
       rows.sort((left, right) =>
           _businessDayIndex(left.key).compareTo(_businessDayIndex(right.key)));
-      return rows;
+      return _groupBusinessHours(rows);
     }
 
     final hours = _asMap(source);
@@ -1994,7 +1803,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     }
 
     const orderedDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-    return orderedDays.map((day) {
+    return _groupBusinessHours(orderedDays.map((day) {
       final value = _asMap(hours[day] ?? hours[_dayLabel(day)]);
       final label = _dayLabel(day);
       if (value.isEmpty || value['closed'] == true) {
@@ -2007,7 +1816,39 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         label,
         '${_formatBusinessHourTime(open)} – ${_formatBusinessHourTime(close)}',
       );
-    }).toList();
+    }).toList());
+  }
+
+  List<MapEntry<String, String>> _groupBusinessHours(
+      List<MapEntry<String, String>> rows) {
+    if (rows.length != 7) return rows;
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday'
+    ];
+    if (List.generate(7, (index) => rows[index].key == days[index])
+        .contains(false)) return rows;
+    final grouped = <MapEntry<String, String>>[];
+    for (var start = 0; start < rows.length;) {
+      var end = start;
+      while (
+          end + 1 < rows.length && rows[end + 1].value == rows[start].value) {
+        end++;
+      }
+      grouped.add(MapEntry(
+        end == start
+            ? rows[start].key
+            : '${start == 0 ? 'Mon' : rows[start].key}–${end == 4 ? 'Fri' : rows[end].key}',
+        rows[start].value,
+      ));
+      start = end + 1;
+    }
+    return grouped;
   }
 
   int _businessDayIndex(String label) {
@@ -2069,264 +1910,142 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     return labels[normalized] ?? raw;
   }
 
+  /// Response times by level (TW-SHARED-DECISIONS §5): Standard within 48
+  /// hours; Urgent within 24 hours and Emergency within 4 hours, each only
+  /// when the pro offers it with a fee above $0 — otherwise "Not offered".
+  /// Empty when the profile carries no urgency settings (section hides).
   List<MapEntry<String, String>> _responseTimes() {
-    final tiers = _itemsFromValue(
+    final fees = <String, double?>{};
+    final offered = <String, bool>{};
+    var found = false;
+
+    for (final tier in _itemsFromValue(
       _displayPro['response_times'] ??
           _displayPro['responseTimes'] ??
           _displayPro['urgency_tiers'] ??
           _displayPro['urgencyTiers'] ??
           _displayPro['service_levels'] ??
           _displayPro['serviceLevels'],
-    );
-    if (tiers.isNotEmpty) {
-      final seen = <String>{};
-      return tiers.map((tier) {
-        final map = _asMap(tier);
-        final response = _text(
-          map['description'],
-          _text(
-            map['window'],
-            _text(
-              map['detail'],
-              _text(
-                map['response_time'],
-                _text(
-                  map['responseTime'],
-                  _text(map['response_window'], _text(map['responseWindow'])),
-                ),
-              ),
-            ),
-          ),
-        );
-        final fee = _text(
-          map['feeLabel'],
-          _text(
-            map['fee_label'],
-            _text(
-              map['fee'],
-              _text(map['surcharge'], _text(map['additional_fee'])),
-            ),
-          ),
-        );
-        final detail =
-            fee.isEmpty || response.toLowerCase().contains(fee.toLowerCase())
-                ? response
-                : '$response - ${_formatPrice(fee)}';
-        return MapEntry(
-          _text(
-            map['label'],
-            _text(map['name'], _text(map['title'], _text(map['tier']))),
-          ),
-          detail,
-        );
-      }).where((entry) {
-        final key = entry.key.toLowerCase();
-        return entry.key.isNotEmpty && entry.value.isNotEmpty && seen.add(key);
-      }).toList();
+    )) {
+      final map = _asMap(tier);
+      final label = _text(
+        map['urgency'],
+        _text(
+          map['tier'],
+          _text(map['label'], _text(map['name'], _text(map['title']))),
+        ),
+      ).toLowerCase();
+      final level = label.contains('emerg')
+          ? 'emergency'
+          : label.contains('urgent')
+              ? 'urgent'
+              : label.contains('standard')
+                  ? 'standard'
+                  : '';
+      if (level.isEmpty) continue;
+      found = true;
+      fees[level] = readAmount(map['fee'] ??
+          map['fee_amount'] ??
+          map['feeAmount'] ??
+          map['surcharge'] ??
+          map['additional_fee'] ??
+          map['feeLabel'] ??
+          map['fee_label']);
+      offered[level] =
+          _boolValue(map['available'] ?? map['enabled'] ?? map['offered']) !=
+              false;
     }
 
-    final responseText = _text(
-      _displayPro['responseTime'],
-      _text(_displayPro['response_time']),
-    );
-    if (responseText.isNotEmpty) {
-      return [MapEntry('Standard', responseText)];
+    // Same source the Compare screen reads.
+    final em = _asMap(_displayPro['emergency']);
+    if (em.isNotEmpty) {
+      found = true;
+      fees.putIfAbsent('urgent', () => readAmount(em['urgent_fee']));
+      offered.putIfAbsent('urgent', () => em['urgent_available'] != false);
+      fees.putIfAbsent('emergency', () => readAmount(em['emergency_fee']));
+      offered.putIfAbsent('emergency', () => em['available'] != false);
     }
+    if (!found) return const [];
 
-    return const [];
-  }
-
-  List<MapEntry<String, String>> _pricingItems() {
-    final result = <MapEntry<String, String>>[];
-    final seen = <String>{};
-    final sources = [
-      _displayPro['pricing'],
-      _displayPro['rateCard'],
-      _displayPro['upfrontPricing'],
-      _displayPro['upfront_pricing'],
-      _displayPro['pricingItems'],
-      _displayPro['rate_card'],
-      _displayPro['rateCards'],
-      _displayPro['servicePrices'],
-      _displayPro['service_prices'],
-      _displayPro['services'],
-      _displayPro['service_options'],
-      _displayPro['serviceOptions'],
-    ];
-
-    for (final source in sources) {
-      for (final item in _itemsFromValue(source)) {
-        final map = _asMap(item);
-        final name = _text(
-          map['name'],
-          _text(
-            map['title'],
-            _text(
-              map['label'],
-              _text(map['serviceName'], _text(map['service_name'])),
-            ),
-          ),
-        );
-        final priceRaw = _text(
-          map['priceLabel'],
-          _text(
-            map['price_label'],
-            _text(
-              map['price'],
-              _text(
-                map['amount'],
-                _text(
-                  map['rate_amount'],
-                  _text(
-                    map['fromPrice'],
-                    _text(
-                      map['from_price'],
-                      _text(
-                        map['startingPrice'],
-                        _text(map['starting_price'], _text(map['base_price'])),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-        final price = _formatPrice(priceRaw);
-        final key = '${name.toLowerCase()}|${price.toLowerCase()}';
-        if (name.isNotEmpty && price.isNotEmpty && seen.add(key)) {
-          result.add(MapEntry(name, price));
-        }
+    String line(String level, String window) {
+      final fee = fees[level];
+      if (offered[level] == false || fee == null || fee <= 0) {
+        return 'Not offered';
       }
-    }
-    if (result.isNotEmpty) return result;
-
-    if (_price.isNotEmpty) {
-      return [
-        MapEntry(
-            _serviceLabel.isEmpty ? 'Starting price' : _serviceLabel, _price),
-      ];
+      return '$window · +${_feeText(fee)}';
     }
 
-    return const [];
+    return [
+      const MapEntry('Standard', 'Within 48 hours'),
+      MapEntry('Urgent', line('urgent', 'Within 24 hours')),
+      MapEntry('Emergency', line('emergency', 'Within 4 hours')),
+    ];
   }
+
+  /// "$35" in a fee line, as on B02b; cents only when there are some.
+  String _feeText(double fee) =>
+      fee == fee.roundToDouble() ? '\$${fee.toInt()}' : formatUsd(fee);
 
   String get _tagline => _text(_displayPro['tagline']);
 
+  /// The pro's one price list (Services & Rates), each service with its
+  /// work-order type. Prices show cents ("$89.00"), as in the shared seed.
   List<_ProfileService> get _services {
     final seen = <String>{};
     final services = <_ProfileService>[];
+    final searched = _serviceLabel.toLowerCase();
+    final searchType = _workOrderType(
+        widget.pro['workOrderType'] ?? widget.pro['work_order_type']);
     for (final item in _asList(_displayPro['services'])) {
       final service = _asMap(item);
+      final status = _text(service['status']).toLowerCase();
+      if ([
+            service['enabled'],
+            service['active'],
+            service['is_active'],
+            service['isActive']
+          ].any((value) => _boolValue(value) == false) ||
+          const {'off', 'inactive', 'pending', 'pending_approval'}
+              .contains(status)) {
+        continue;
+      }
       final category = _text(service['category'], _category);
       final name = _text(
         service['name'],
         _text(service['service_name'], _text(service['rate_description'])),
       );
-      final price = _formatWebsiteMoney(
-        service['rate_amount'] ?? service['price'] ?? service['amount'],
-      );
-      final key = '$category|$name|$price'.toLowerCase();
-      if (name.isEmpty || !seen.add(key)) continue;
-      final minCharge = _formatWebsiteMoney(service['min_charge']);
-      final durationMinutes =
-          _number(service['duration_minutes'] ?? service['durationMinutes']);
+      if (name.isEmpty) continue;
+      var type = _workOrderType(
+          service['work_order_type'] ?? service['workOrderType']);
+      if (type.isEmpty) {
+        // Until the profile carries the type, the search result's type holds
+        // for the searched service; everything else reads as Upfront price.
+        type = name.toLowerCase() == searched && searchType.isNotEmpty
+            ? searchType
+            : 'rate_card';
+      }
+      final price = type == 'quote_request'
+          ? ''
+          : _money2(
+              service['rate_amount'] ?? service['price'] ?? service['amount'],
+            );
+      if (type == 'rate_card' && price.isEmpty) continue;
+      final key = '$category|$name'.toLowerCase();
+      if (!seen.add(key)) continue;
       services.add(_ProfileService(
         category: category.isEmpty ? 'Services' : category,
         name: name,
         price: price,
-        rateLabel: _text(service['rate_label'], _text(service['rateLabel'])),
-        description: _text(
-          service['rate_description'],
-          _text(service['description']),
-        ),
-        minCharge: minCharge.isEmpty ? '' : 'Min charge $minCharge',
-        duration: durationMinutes == null
-            ? ''
-            : 'Approx. ${_formatDuration(durationMinutes.toInt())}',
+        workOrderType: type,
       ));
     }
     return services;
   }
 
-  String _formatDuration(int minutes) {
-    if (minutes <= 0) return '';
-    final hours = minutes ~/ 60;
-    final remainder = minutes % 60;
-    if (hours > 0 && remainder > 0) return '${hours}h ${remainder}m';
-    if (hours > 0) return '${hours}h';
-    return '$remainder min';
-  }
-
-  String _formatWebsiteMoney(dynamic value) {
-    final amount = _number(value);
-    if (amount != null) {
-      return '\$${amount == amount.roundToDouble() ? amount.toInt() : amount.toStringAsFixed(2)}';
-    }
-    return _formatPrice(_text(value));
-  }
-
-  List<_ProfileCredential> get _credentials {
-    final credential = _asMap(_displayPro['credentials']);
-    if (credential.isEmpty) return const [];
-    final result = <_ProfileCredential>[];
-    final license = _asMap(credential['license']);
-    final licenseParts = [
-      _text(license['type']),
-      if (_text(license['number']).isNotEmpty) '#${_text(license['number'])}',
-      _text(license['body']),
-    ].where((part) => part.isNotEmpty).join(' · ');
-    if (licenseParts.isNotEmpty) {
-      result.add(_ProfileCredential(
-        icon: Icons.workspace_premium_outlined,
-        title: 'Licensed',
-        detail: licenseParts,
-      ));
-    }
-    if (_boolValue(credential['insured']) == true) {
-      final carrier = _text(credential['gl_carrier']);
-      result.add(_ProfileCredential(
-        icon: Icons.shield_outlined,
-        title: 'Insured',
-        detail: carrier.isEmpty
-            ? 'Verified at onboarding'
-            : '$carrier · verified at onboarding',
-      ));
-    }
-    if (_boolValue(credential['background_checked']) == true) {
-      result.add(const _ProfileCredential(
-        icon: Icons.person_outline,
-        title: 'Background checked',
-        detail: '',
-      ));
-    }
-    return result;
-  }
-
-  List<String> get _serviceCities => _asList(
-        _displayPro['service_cities'] ?? _displayPro['serviceCities'],
-      ).map(_text).where((city) => city.isNotEmpty).toSet().toList();
-
-  String get _serviceAreaNote {
-    final radius = _number(
-      _displayPro['service_radius'] ?? _displayPro['serviceRadius'],
-    );
-    if (radius == null || radius <= 0 || _serviceCities.isEmpty) return '';
-    final origin = _text(_displayPro['city'], _serviceCities.first);
-    return 'Typically travels up to ${radius.toStringAsFixed(radius == radius.roundToDouble() ? 0 : 1)} miles from $origin.';
-  }
-
-  String _formatPrice(String raw) {
-    final price = raw.trim();
-    if (price.isEmpty) return '';
-    final lower = price.toLowerCase();
-    if (price.startsWith(r'$') ||
-        lower.startsWith('from ') ||
-        lower.contains('free') ||
-        lower.contains('estimate')) {
-      return price;
-    }
-    return '\$$price';
+  /// "$89.00", or '' when there is no amount above $0.
+  String _money2(dynamic value) {
+    final amount = readAmount(value);
+    return amount == null || amount <= 0 ? '' : formatUsd(amount);
   }
 
   Map<int, double> _ratingBreakdown() {
@@ -2594,17 +2313,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   }
 
   List<Map<String, dynamic>> _visibleReviews() {
-    final query = _reviewQuery.trim().toLowerCase();
-    final reviews = _reviewsList().where((review) {
-      if (query.isEmpty) return true;
-      final searchable = [
-        review['name'],
-        review['text'],
-        review['tags'],
-      ].map(_text).join(' ').toLowerCase();
-      return searchable.contains(query);
-    }).toList();
-
+    final reviews = List<Map<String, dynamic>>.of(_reviewsList());
     reviews.sort((a, b) => (DateTime.tryParse('${b['dateSort']}') ??
             DateTime(1900))
         .compareTo(DateTime.tryParse('${a['dateSort']}') ?? DateTime(1900)));
@@ -2664,28 +2373,38 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     }
   }
 
-  Future<void> _shareContractor() async {
-    final slug = _profileSlug(_displayPro);
-    final service = _serviceLabel.isEmpty ? _category : _serviceLabel;
-    final profileUrl = slug.isEmpty
-        ? 'https://tradeworksai.com/contractors'
-        : 'https://tradeworksai.com/contractors/${Uri.encodeComponent(slug)}';
-    final ratingLine = _rating.isEmpty || _reviewCount.isEmpty
-        ? ''
-        : ' Rated $_rating from $_reviewCount reviews.';
-
-    try {
-      await Share.share(
-        'Check out $_businessName on Tradeworks One for $service.$ratingLine\n$profileUrl',
-        subject: '$_businessName on Tradeworks One',
-      );
-    } catch (_) {
-      if (!mounted) return;
-      AppNotification.showInfo(
+  void _openAllPhotos() {
+    final urls = _mediaUrls;
+    if (urls.isEmpty) return;
+    Navigator.push<void>(
         context,
-        'Your device could not open the share options. Please try again.',
-      );
-    }
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(title: const Text('Recent work')),
+            body: Center(
+              child: ConstrainedBox(
+                constraints:
+                    const BoxConstraints(maxWidth: TwLayout.maxContent),
+                child: GridView.builder(
+                  padding: EdgeInsets.all(TwLayout.gutter(context)),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: TwSpace.s12,
+                    mainAxisSpacing: TwSpace.s12,
+                  ),
+                  itemCount: urls.length,
+                  itemBuilder: (context, index) => ClipRRect(
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                    child: Image.network(urls[index],
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            Container(color: AppTheme.subtle)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ));
   }
 
   Future<void> _openMessage(String? messageUserId) async {
@@ -2733,29 +2452,34 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         ),
       ),
     );
-    final similarJobs = _text(
+    final similarJobsRaw = _text(
       displayPro['similarJobsNearby'],
       _text(
         displayPro['similar_jobs_nearby'],
         _text(displayPro['nearbyJobs'], _text(displayPro['nearby_jobs'])),
       ),
     );
+    final similarJobsCount = int.tryParse(similarJobsRaw);
+    final similarJobs = similarJobsCount == null
+        ? similarJobsRaw
+        : '$similarJobsCount similar ${similarJobsCount == 1 ? 'job' : 'jobs'} ${_requestZip.isEmpty ? 'nearby' : 'done in $_requestZip'}';
     final overview = <_ProfileFact>[
       if ((int.tryParse(completed) ?? 0) > 0)
         _ProfileFact(Icons.check_circle_outline,
-            '$completed completed work orders', _success),
+            '$completed jobs completed on TradeWorks', _success),
       if (similarJobs.isNotEmpty)
-        _ProfileFact(Icons.map_outlined, similarJobs, AppTheme.teal700),
+        _ProfileFact(Icons.map_outlined, similarJobs, AppTheme.navy),
       if (_backgroundInsuranceLine.isNotEmpty)
         _ProfileFact(Icons.verified_user_outlined, _backgroundInsuranceLine,
-            AppTheme.teal700),
+            AppTheme.navy),
       if (_employeeLine.isNotEmpty || _yearsLine.isNotEmpty)
         _ProfileFact(
           Icons.groups_2_outlined,
-          [_employeeLine, _yearsLine]
-              .where((item) => item.isNotEmpty)
-              .join(' · '),
-          AppTheme.teal700,
+          [
+            if (_employeeLine.isNotEmpty) 'Team of $_employeeLine',
+            if (_yearsLine.isNotEmpty) '$_yearsLine years in business',
+          ].where((item) => item.isNotEmpty).join(' · '),
+          AppTheme.navy,
         ),
     ];
 
@@ -2763,47 +2487,42 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       businessName: _businessName,
       category: _category,
       service: _serviceLabel,
-      distance: _distanceLine,
+      requestZip: _requestZip,
+      categoryLine: _categoryLine,
       price: _price,
+      priceSuffix: _priceSuffix,
       priceDetail: _priceDetail,
+      priceNote: _priceNote,
+      priceTypeLabel: _priceTypeLabel,
       nextSlot: _nextSlot,
       rating: _rating,
       reviewCount: _reviewCount,
-      selectCertified: _isSelectCertified,
       profileImageUrl: _profileImageUrl,
       tagline: _tagline,
       about: _aboutText,
       mediaUrls: _mediaUrls,
       mediaCount: _mediaCount,
-      videoCount: _videoCount,
+      onSeeAllPhotos: _openAllPhotos,
       overview: overview,
       hours: _businessHours(),
       timeZone: _timeZoneLabel,
       responseTimes: _responseTimes(),
-      pricing: _pricingItems(),
       services: _services,
-      credentials: _credentials,
-      serviceCities: _serviceCities,
-      serviceAreaNote: _serviceAreaNote,
+      searchedCategory: _searchedService?.category ?? '',
+      showAllServices: _showAllServices,
+      onShowAllServices: () => setState(() => _showAllServices = true),
+      paymentMethods: _paymentMethods,
       ratingBreakdown: _ratingBreakdown(),
       reviews: _visibleReviews(),
-      reviewQuery: _reviewQuery,
-      responseSummary: _responseSummary,
       loading: _isLoading,
       bookActionLoading: _isStartingBooking,
-      bookActionLabel: AuthService.instance.isAuthenticated
-          ? 'Book this pro'
-          : 'Log in to book',
+      bookActionLabel: 'Book appointment',
       onBack: () => Navigator.pop(context),
-      onShare: _shareContractor,
       onBook: _openBooking,
       onMessage: () => _openMessage(
         StreamService.instance.resolveMessagingUserId(displayPro),
       ),
       onSeeAllReviews: _openAllReviews,
-      onReviewQueryChanged: (query) {
-        setState(() => _reviewQuery = query);
-      },
       scrollController: _profileScrollController,
     );
   }

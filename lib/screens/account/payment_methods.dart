@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
+import '../../ui/tw.dart';
 import '../../utils/pro_messaging.dart';
 import '../../widgets/loading_skeleton.dart';
 
@@ -127,15 +128,8 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          title: const Text('Payment methods'),
-          centerTitle: true,
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(1),
-            child: Divider(height: 1, color: AppTheme.cardBorder),
-          ),
-        ),
+        backgroundColor: AppTheme.white,
+        appBar: TwAppBar(title: 'Payment methods'),
         body: _loading
             ? const SkeletonPage(layout: SkeletonLayout.cards)
             : _error != null
@@ -148,61 +142,62 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                     onRefresh: _load,
                     child: ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+                        padding: EdgeInsets.zero,
                         children: [
-                          Text('Pay your pro directly',
-                              style: AppTheme.headingStyle
-                                  .copyWith(fontSize: 24, height: 30 / 24)),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'You pay your pro directly. TradeWorks adds no markup and takes no fee — we only fund the credits you apply.',
-                            style: TextStyle(
-                                color: AppTheme.body,
-                                fontSize: 15,
-                                height: 23 / 15),
-                          ),
-                          const SizedBox(height: 28),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Expanded(
-                                child: Text('Your booked pros',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .headlineMedium),
-                              ),
-                              const Text('Published by each pro',
+                          TwPage(
+                            top: 24,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text('Pay your pro directly',
+                                    style: AppTheme.headingStyle
+                                        .copyWith(fontSize: 24, height: 30 / 24)),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'You pay your pro directly. TradeWorks adds no markup and takes no fee — we only fund the credits you apply.',
                                   style: TextStyle(
-                                      color: AppTheme.textSecondary,
-                                      fontSize: 13)),
-                            ],
+                                      color: AppTheme.body,
+                                      fontSize: 15,
+                                      height: 23 / 15),
+                                ),
+                                const SizedBox(height: 28),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                                  textBaseline: TextBaseline.alphabetic,
+                                  children: [
+                                    Expanded(
+                                      child: Text('Your booked pros',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .headlineMedium),
+                                    ),
+                                    Text('Published by each pro',
+                                        style: TwType.caption()),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                if (_pros.isEmpty)
+                                  const Text(
+                                      'After you book a pro, their accepted payment methods will appear here. You can also check their profile before booking.',
+                                      style: TextStyle(
+                                          color: AppTheme.body,
+                                          fontSize: 15,
+                                          height: 23 / 15)),
+                                for (final pro in _pros) ...[
+                                  _proCard(pro),
+                                  const SizedBox(height: 12),
+                                ],
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 12),
-                          if (_pros.isEmpty)
-                            const Text(
-                                'After you book a pro, their accepted payment methods will appear here. You can also check their profile before booking.',
-                                style: TextStyle(
-                                    color: AppTheme.body,
-                                    fontSize: 15,
-                                    height: 23 / 15)),
-                          for (final pro in _pros) ...[
-                            _proCard(pro),
-                            const SizedBox(height: 12),
-                          ],
                         ])),
       );
 
   Widget _proCard(Map<String, dynamic> pro) {
     final name = _name(pro);
     final accepts = _accepts(pro);
-    return Container(
+    return TwCard(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.cardBorder),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -227,11 +222,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(name,
-                    style: const TextStyle(
-                        color: AppTheme.navy,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600)),
+                child: Text(name, style: TwType.title()),
               ),
             ],
           ),
@@ -241,8 +232,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                 (pro['loadFailed'] == true
                     ? 'Payment details could not be loaded. Pull down to retry.'
                     : 'This pro has not published payment methods.'),
-            style: const TextStyle(
-                color: AppTheme.body, fontSize: 15, height: 22 / 15),
+            style: TwType.bodySm(),
           ),
           TextButton.icon(
             onPressed: () => openProThread(context, pro, proName: name),
@@ -251,8 +241,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
             style: TextButton.styleFrom(
               padding: EdgeInsets.zero,
               minimumSize: const Size(44, 44),
-              textStyle:
-                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              textStyle: TwType.link(),
             ),
           ),
         ],

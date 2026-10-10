@@ -552,14 +552,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.3"
-  google_fonts:
-    dependency: "direct main"
-    description:
-      name: google_fonts
-      sha256: df9763500dadba0155373e9cb44e202ce21bd9ed5de6bdbd05c5854e86839cb8
-      url: "https://pub.dev"
-    source: hosted
-    version: "6.3.0"
   gotrue:
     dependency: transitive
     description:
@@ -1097,7 +1089,7 @@ packages:
     source: hosted
     version: "2.1.2"
   share_plus:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: share_plus
       sha256: fce43200aa03ea87b91ce4c3ac79f0cecd52e2a7a56c7a4185023c271fbfa6da

@@ -11,6 +11,7 @@ import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../utils/display_format.dart';
 import '../utils/transaction_id.dart';
 import '../widgets/app_notification.dart';
@@ -66,8 +67,6 @@ class BookFlowScreen extends StatefulWidget {
 }
 
 class _BookFlowScreenState extends State<BookFlowScreen> {
-  static const Color _surfaceLine = AppTheme.cardBorder;
-  static const Color _mutedText = AppTheme.textSecondary;
 
   late final PageController _pageController;
   final _issueController = TextEditingController();
@@ -262,13 +261,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           _readInt(_mergedPro['duration']),
       pricingChoices: [
         _PricingChoice(
-          label: _string(_mergedPro['pricingLabel']) ??
-              _string(_mergedPro['pricing_label']) ??
-              'Upfront price',
+          label: _pricingTypeLabel(workOrderType),
           detail: pricingDetail,
           amount: price,
           priceText: priceText,
-          priceHeadline: price == null ? priceText : '\$$price',
+          priceHeadline: price == null ? priceText : formatUsd(price),
           workOrderType: workOrderType,
           secondaryText: pricingDetail,
         ),
@@ -324,9 +321,10 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return type == 'nte' ? '$price diagnostic' : price;
   }
 
+  /// "$189.00" — never "From" (Batch 19 F2).
   String _formatPriceLabel(int? price) {
     if (price == null) return '';
-    return 'From \$$price';
+    return formatUsd(price);
   }
 
   String _moneyText(String? value) {
@@ -335,7 +333,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     if (value.contains(r'$') ||
         lower.contains('free') ||
         lower.startsWith('from ')) {
-      return value;
+      return _withoutFrom(value);
     }
     return '';
   }
@@ -571,10 +569,17 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return true;
   }
 
+  /// "By Wed, Oct 14, 9:20 AM", or "Today, by 5:40 PM" (decisions and seed
+  /// date format).
   String _deadlineText() {
     final hours = BookingTiming.hours(_selectedUrgency.urgencySlug);
     if (hours == null) return '';
-    return 'By ${DateFormat('EEE d MMM, h:mm a').format(DateTime.now().add(Duration(hours: hours)))}';
+    final now = DateTime.now();
+    final at = now.add(Duration(hours: hours));
+    if (DateUtils.isSameDay(at, now)) {
+      return 'Today, by ${DateFormat('h:mm a').format(at)}';
+    }
+    return 'By ${DateFormat('EEE, MMM d, h:mm a').format(at)}';
   }
 
   List<_BookingPage> get _pages {
@@ -1258,7 +1263,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         'service_details': service.title,
         if (_bookingIntakeToken != null)
           'intake_session_token': _bookingIntakeToken,
-        'selected_pricing_label': selectedPricing.label,
+        'selected_pricing_label':
+            _pricingTypeLabel(selectedPricing.workOrderType),
         'credit_request_id': _creditRequestId,
         if (_accessCodeController.text.trim().isNotEmpty)
           'access_code': _accessCodeController.text.trim(),
@@ -1306,8 +1312,13 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             contractorName: _proName,
             trade: _proTrade,
             service: service.title,
-            address:
-                '${address['street'] ?? ''}, ${address['city'] ?? ''}, ${address['state'] ?? ''}',
+            address: [
+              _string(address['street']),
+              _string(address['city']),
+              [_string(address['state']), _string(address['zip'])]
+                  .whereType<String>()
+                  .join(' '),
+            ].whereType<String>().where((p) => p.isNotEmpty).join(', '),
             price: _workOrderPriceText(workOrder, selectedPricing),
             contractorId: messagingUserId,
             workOrder: workOrder,
@@ -1359,19 +1370,16 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           builder: (context, setDlgState) {
             return AlertDialog(
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              title: const Row(
+                  borderRadius: BorderRadius.circular(20)),
+              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+              contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+              actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              title: Row(
                 children: [
-                  Icon(Icons.shield_outlined, color: AppTheme.navy, size: 28),
-                  SizedBox(width: 8),
-                  Text(
-                    'Verify Email',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                      color: AppTheme.navy700,
-                    ),
-                  ),
+                  const Icon(Icons.shield_outlined,
+                      color: AppTheme.navy, size: 24),
+                  const SizedBox(width: TwSpace.s8),
+                  Expanded(child: Text('Verify your email', style: TwType.h3())),
                 ],
               ),
               content: Column(
@@ -1380,50 +1388,31 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 children: [
                   Text(
                     'We sent a 6-digit code to ${AuthService.instance.userEmail ?? 'your email'}. Enter it below to secure your account and confirm booking.',
-                    style: const TextStyle(
-                        fontSize: 13, color: AppTheme.ink, height: 1.4),
+                    style: TwType.bodySm(),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: TwSpace.s16),
                   TextField(
                     controller: codeController,
                     keyboardType: TextInputType.number,
                     maxLength: 6,
-                    style: const TextStyle(
+                    style: TwType.title().copyWith(
                       fontSize: 18,
-                      fontWeight: FontWeight.bold,
                       letterSpacing: 8,
                     ),
                     textAlign: TextAlign.center,
-                    decoration: InputDecoration(
-                      hintText: '000000',
-                      hintStyle: TextStyle(
-                        color: Colors.grey.shade400,
-                        letterSpacing: 8,
-                      ),
+                    decoration: TwInputs.decoration(
+                      hint: '000000',
                       counterText: '',
                       errorText: localError,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppTheme.line),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppTheme.line),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppTheme.navy),
-                      ),
                     ),
                   ),
                 ],
               ),
               actions: [
-                TextButton(
+                OutlinedButton(
                   onPressed:
                       verifying ? null : () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel',
-                      style: TextStyle(color: AppTheme.gray)),
+                  child: const Text('Cancel'),
                 ),
                 ElevatedButton(
                   onPressed: verifying
@@ -1455,22 +1444,22 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                         },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.orange,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppTheme.onOrange,
+                    minimumSize: const Size(120, 52),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
                     ),
                   ),
                   child: verifying
                       ? const SizedBox(
-                          width: 18,
-                          height: 18,
+                          width: 20,
+                          height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
+                            color: AppTheme.onOrange,
                           ),
                         )
-                      : const Text('Verify & Book',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      : const Text('Verify & Book'),
                 ),
               ],
             );
@@ -1494,6 +1483,10 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         body: SizedBox.shrink(),
       );
     }
+    final media = MediaQuery.of(context);
+    final strip = media.padding.top + 36;
+    final minStrip = media.size.height * 0.08;
+    final gutter = TwLayout.gutter(context);
     return PopScope(
       canPop: _exitRequested || (!_isSubmitting && _pageIndex == 0),
       onPopInvoked: (didPop) {
@@ -1510,40 +1503,51 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               onTap: _closeFlow,
               child: SizedBox(
                 width: double.infinity,
-                height: MediaQuery.of(context).padding.top + 36,
+                height: strip > minStrip ? strip : minStrip,
               ),
             ),
             Expanded(
-              child: Container(
-                clipBehavior: Clip.antiAlias,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                  boxShadow: AppTheme.floatShadow,
-                ),
-                child: Column(
-                  children: [
-                    _buildSheetHeader(),
-                    Expanded(
-                      child: PageView.builder(
-                        controller: _pageController,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _pages.length,
-                        onPageChanged: (index) {
-                          if (index != _pageIndex) {
-                            setState(() => _pageIndex = index);
-                          }
-                        },
-                        itemBuilder: (context, index) {
-                          return SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                            child: _buildStepFor(_pages[index]),
-                          );
-                        },
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints:
+                      const BoxConstraints(maxWidth: TwLayout.maxContent),
+                  child: SizedBox.expand(
+                    child: Container(
+                      clipBehavior: Clip.antiAlias,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(20)),
+                        boxShadow: AppTheme.floatShadow,
+                      ),
+                      child: Column(
+                        children: [
+                          _buildSheetHeader(),
+                          Expanded(
+                            child: PageView.builder(
+                              controller: _pageController,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _pages.length,
+                              onPageChanged: (index) {
+                                if (index != _pageIndex) {
+                                  setState(() => _pageIndex = index);
+                                }
+                              },
+                              itemBuilder: (context, index) {
+                                return SingleChildScrollView(
+                                  padding:
+                                      EdgeInsets.fromLTRB(gutter, 0, gutter, 24),
+                                  child: _buildStepFor(_pages[index]),
+                                );
+                              },
+                            ),
+                          ),
+                          _buildSheetFooter(),
+                        ],
                       ),
                     ),
-                    _buildSheetFooter(),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -1558,6 +1562,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   Widget _buildSheetHeader() {
     final total = _pages.length;
     final pro = _proName.isEmpty ? 'this pro' : _proName;
+    final gutter = TwLayout.gutter(context);
     return Column(
       children: [
         const SizedBox(height: 10),
@@ -1570,28 +1575,21 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+          padding: EdgeInsets.fromLTRB(gutter, 14, gutter, 12),
           child: Row(
             children: [
               Expanded(
                 child: Text(
                   'Book Pro: $pro',
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTheme.headingStyle.copyWith(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TwType.h3(),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: TwSpace.s12),
               Text(
                 'Step $_currentStepNumber of $total',
-                style: const TextStyle(
-                  color: AppTheme.blue,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TwType.label(color: AppTheme.blue),
               ),
             ],
           ),
@@ -1630,27 +1628,29 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         ? 'Confirm booking'
         : (_returnToReviewAfterEdit ? 'Save changes' : 'Continue');
     final canContinue = !_isSubmitting && _stepIsAnswered(_pages[_pageIndex]);
+    final gutter = TwLayout.gutter(context);
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: AppTheme.cardBorder)),
+        boxShadow: AppTheme.floatShadow,
       ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+          padding: EdgeInsets.fromLTRB(gutter, 14, gutter, 14),
           child: Row(
             children: [
               if (_pageIndex > 0) ...[
                 SizedBox(
                   width: 104,
-                  height: 50,
+                  height: 52,
                   child: OutlinedButton(
                     onPressed: _isSubmitting ? null : _goBack,
                     child: const Text('Back'),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: TwSpace.s12),
               ],
               Expanded(
                 child: SizedBox(
@@ -1674,7 +1674,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                               color: AppTheme.onOrange,
                             ),
                           )
-                        : Text(label),
+                        : Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),
                 ),
               ),
@@ -1731,20 +1731,13 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 12),
+        const SizedBox(height: TwSpace.s12),
         Text(
           title,
-          style: AppTheme.headingStyle.copyWith(fontSize: 24, height: 1.25),
+          style: TwType.h1Sm(),
         ),
-        const SizedBox(height: 8),
-        Text(
-          subtitle,
-          style: const TextStyle(
-            color: AppTheme.textSecondary,
-            fontSize: 15,
-            height: 1.47,
-          ),
-        ),
+        const SizedBox(height: TwSpace.s8),
+        Text(subtitle, style: TwType.bodySm(color: AppTheme.textSecondary)),
       ],
     );
   }
@@ -1775,22 +1768,19 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             title: 'Confirm your service',
             subtitle: 'Based on your search. You can change it below.',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TwSpace.s20),
           if (_profileLoadError != null)
             Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: TwSpace.s12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: AppTheme.amberTint,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radius),
               ),
               child: Text(
                 "Couldn't load this pro's full service list: $_profileLoadError",
-                style: const TextStyle(
-                  color: AppTheme.navy700,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TwType.meta(color: AppTheme.ink),
               ),
             ),
           if (!_hasBookableService)
@@ -1806,15 +1796,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             }),
           if (_hasBookableService &&
               options.any((option) => _serviceType(option) == 'nte'))
-            const Padding(
-              padding: EdgeInsets.only(top: 6),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
               child: Text(
                 'With a cap, the final price may be lower — never higher.',
-                style: TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 13,
-                  height: 1.45,
-                ),
+                style: TwType.caption(),
               ),
             ),
         ],
@@ -1823,21 +1809,12 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   }
 
   Widget _bookingStepEmptyService(double scale) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      padding: EdgeInsets.all(16 * scale),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12 * scale),
-        border: Border.all(color: AppTheme.cardBorder),
-      ),
-      child: Text(
-        'No bookable service was returned by the backend for this contractor.',
-        style: TextStyle(
-          color: AppTheme.navy700,
-          fontSize: 14 * scale,
-          height: 1.35,
-          fontWeight: FontWeight.w700,
+      child: TwCard(
+        child: Text(
+          'No bookable service was returned by the backend for this contractor.',
+          style: TwType.bodySm(color: AppTheme.ink),
         ),
       ),
     );
@@ -1855,93 +1832,44 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     _hydrateUrgencySummaries();
   }
 
+  /// "$129.00", "$89.00 diagnostic" (the word smaller, C01) or "Free visit".
+  Widget? _servicePriceWidget(_ServiceOption service) {
+    final text = _servicePriceText(service);
+    if (text.isEmpty) return null;
+    final amountStyle =
+        TwType.title(color: AppTheme.navy).copyWith(fontWeight: FontWeight.w700);
+    if (_serviceType(service) == 'nte' && text.endsWith(' diagnostic')) {
+      return Text.rich(
+        TextSpan(
+          text: text.substring(0, text.length - ' diagnostic'.length),
+          style: amountStyle,
+          children: [
+            TextSpan(
+              text: ' diagnostic',
+              style: TwType.caption(color: AppTheme.body)
+                  .copyWith(fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        textAlign: TextAlign.right,
+      );
+    }
+    return Text(text, textAlign: TextAlign.right, style: amountStyle);
+  }
+
   Widget _bookingStepServiceTile({
     required _ServiceOption service,
     required bool selected,
     required VoidCallback onTap,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
-      child: InkWell(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TwSelectTile(
+        selected: selected,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? AppTheme.navy700 : AppTheme.cardBorder,
-              width: selected ? 2.2 : 1,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 17,
-                height: 17,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? AppTheme.navy700 : Colors.transparent,
-                  border: Border.all(
-                    color: selected ? AppTheme.navy700 : AppTheme.textSecondary,
-                    width: 1.5,
-                  ),
-                ),
-                child: selected
-                    ? const Icon(
-                        Icons.check_rounded,
-                        color: Colors.white,
-                        size: 12,
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      service.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.ink,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _serviceTypeLine(service),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 14,
-                        height: 1.43,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_servicePriceText(service).isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Text(
-                  _servicePriceText(service),
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+        title: service.title,
+        subtitle: _serviceTypeLine(service),
+        trailing: _servicePriceWidget(service),
       ),
     );
   }
@@ -1961,137 +1889,83 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             subtitle:
                 'Optional — add details or photos to help ${_proName.isNotEmpty ? _proName : 'the pro'} prepare. You can also skip this step.',
           ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            height: 100,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _surfaceLine),
-            ),
+          const SizedBox(height: TwSpace.s20),
+          const TwFieldLabel('Details'),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 120),
             child: TextField(
               controller: _issueController,
-              maxLines: null,
-              expands: true,
-              style: const TextStyle(
-                color: AppTheme.navy,
-                fontSize: 13,
-                height: 1.4,
-              ),
-              decoration: const InputDecoration(
-                isCollapsed: true,
-                filled: false,
-                border: InputBorder.none,
-                hintText: 'AC isn\'t cooling properly',
-                hintStyle: TextStyle(
-                  color: _mutedText,
-                  fontSize: 13,
-                  height: 1.4,
-                ),
+              minLines: 4,
+              maxLines: 8,
+              style: TwType.body(color: AppTheme.ink),
+              decoration: TwInputs.decoration(
+                hint: 'AC isn\'t cooling properly',
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: TwSpace.s20),
           if (searchPhotos.isNotEmpty) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppTheme.cardBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Photos from your search',
-                          style: TextStyle(
-                            color: AppTheme.navy,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
+            const TwFieldLabel('Photos from your search'),
+            const SizedBox(height: 2),
+            SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: searchPhotos.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                    child: Image.network(
+                      searchPhotos[index],
+                      width: 72,
+                      height: 72,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 72,
+                        height: 72,
+                        color: AppTheme.subtle,
+                        child: const Icon(
+                          Icons.image_outlined,
+                          color: AppTheme.textSecondary,
+                          size: 20,
                         ),
                       ),
-                      Text(
-                        'View',
-                        style: TextStyle(
-                          color: AppTheme.teal500,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 72,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: searchPhotos.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            searchPhotos[index],
-                            width: 72,
-                            height: 72,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                              width: 72,
-                              height: 72,
-                              color: AppTheme.pageBackground,
-                              child: const Icon(
-                                Icons.image_outlined,
-                                color: AppTheme.gray,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
                     ),
-                  ),
-                ],
+                  );
+                },
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: TwSpace.s16),
           ],
           InkWell(
             onTap: _pickPhotos,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppTheme.radius),
             child: _DashedOutline(
-              color: AppTheme.teal500,
-              borderRadius: 8,
+              color: AppTheme.blue,
+              borderRadius: AppTheme.radius,
               child: Container(
                 width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 52),
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.add_a_photo_outlined,
-                      color: AppTheme.teal500,
-                      size: 18,
+                      color: AppTheme.blue,
+                      size: 20,
                     ),
-                    SizedBox(width: 10),
-                    Text(
-                      'Add photos of the issue',
-                      style: TextStyle(
-                        color: AppTheme.teal500,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        'Add photos of the issue',
+                        style: TwType.link(),
                       ),
                     ),
                   ],
@@ -2100,7 +1974,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             ),
           ),
           if (_selectedPhotos.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: TwSpace.s12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -2109,7 +1983,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                   clipBehavior: Clip.none,
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
                       child: Image.file(
                         File(photo.path),
                         width: 72,
@@ -2118,22 +1992,29 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       ),
                     ),
                     Positioned(
-                      right: -5,
-                      top: -5,
+                      right: -14,
+                      top: -14,
                       child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
                         onTap: () =>
                             setState(() => _selectedPhotos.remove(photo)),
-                        child: Container(
-                          width: 18,
-                          height: 18,
-                          decoration: const BoxDecoration(
-                            color: AppTheme.navy700,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.close_rounded,
-                            size: 12,
-                            color: Colors.white,
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Center(
+                            child: Container(
+                              width: 20,
+                              height: 20,
+                              decoration: const BoxDecoration(
+                                color: AppTheme.navy,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.close_rounded,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -2144,22 +2025,17 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             ),
           ],
           if (chips.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'Common issues',
-              style: TextStyle(
-                color: AppTheme.navy,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 10),
+            const SizedBox(height: TwSpace.s20),
+            const TwFieldLabel('Common issues'),
+            const SizedBox(height: 2),
             Wrap(
               spacing: 8,
-              runSpacing: 10,
+              runSpacing: 8,
               children: chips.map((label) {
                 final selected = _selectedDetailChips.contains(label);
-                return InkWell(
+                return TwPill(
+                  label: label,
+                  selected: selected,
                   onTap: () {
                     setState(() {
                       if (selected) {
@@ -2169,29 +2045,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       }
                     });
                   },
-                  borderRadius: BorderRadius.circular(100),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(100),
-                      border: Border.all(
-                        color:
-                            selected ? AppTheme.teal500 : AppTheme.cardBorder,
-                        width: selected ? 2 : 1,
-                      ),
-                    ),
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        color: selected ? AppTheme.teal500 : AppTheme.navy,
-                        fontSize: 12,
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w400,
-                      ),
-                    ),
-                  ),
                 );
               }).toList(),
             ),
@@ -2216,8 +2069,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
-                    '${_deadlineText()} · $_proName’s commitment for this job')),
-          const SizedBox(height: 12),
+                    '${_deadlineText()} · $_proName’s commitment for this job',
+                    style: TwType.meta())),
+          const SizedBox(height: TwSpace.s20),
           ..._urgencyOptions.asMap().entries.map((entry) {
             final index = entry.key;
             final tier = entry.value;
@@ -2228,125 +2082,51 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               opacity: tier.available ? 1 : 0.42,
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: InkWell(
-                  onTap: tier.available
-                      ? () {
-                          setState(() {
-                            _selectedUrgencyIndex = index;
-                            _selectedTime = null;
-                            if (_pageIndex >= _pages.length)
-                              _pageIndex = _pages.length - 1;
-                          });
-                          _refreshAvailability();
-                        }
-                      : null,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    constraints: const BoxConstraints(minHeight: 64),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: selected ? AppTheme.navy700 : _surfaceLine,
-                          width: selected ? 2 : 1),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 16,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white,
-                            border: Border.all(
-                              color: selected
-                                  ? AppTheme.navy700
-                                  : AppTheme.textSecondary,
-                              width: selected ? 5 : 1.5,
-                            ),
-                          ),
+                child: TwSelectTile(
+                  selected: selected,
+                  onTap: () {
+                    if (!tier.available) return;
+                    setState(() {
+                      _selectedUrgencyIndex = index;
+                      _selectedTime = null;
+                      if (_pageIndex >= _pages.length)
+                        _pageIndex = _pages.length - 1;
+                    });
+                    _refreshAvailability();
+                  },
+                  title: tier.label,
+                  subtitle: _responseWindow(tier.urgencySlug),
+                  trailing: priceText.isEmpty
+                      ? null
+                      : Text(
+                          priceText,
+                          textAlign: TextAlign.right,
+                          style: isIncluded
+                              ? TwType.bodySm(color: AppTheme.green)
+                                  .copyWith(fontWeight: FontWeight.w600)
+                              : TwType.title(color: AppTheme.ink)
+                                  .copyWith(fontWeight: FontWeight.w700),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tier.label,
-                                style: const TextStyle(
-                                  color: AppTheme.ink,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                _responseWindow(tier.urgencySlug),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: _mutedText,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (priceText.isNotEmpty) ...[
-                          const SizedBox(width: 10),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 118),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  priceText,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.right,
-                                  style: TextStyle(
-                                    color: isIncluded
-                                        ? AppTheme.success
-                                        : AppTheme.ink,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
                 ),
               ),
             );
           }),
-          const SizedBox(height: 3),
-          Container(
+          const SizedBox(height: TwSpace.s4),
+          SizedBox(
             width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(13, 13, 13, 14),
-            decoration: BoxDecoration(
-                color: AppTheme.pageBackground,
-                borderRadius: BorderRadius.circular(10)),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Icon(Icons.info_outline_rounded,
-                  color: AppTheme.teal500, size: 19),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: Text(
-                      'The Urgent or Emergency fee goes to $_proName. TradeWorks adds no markup and no platform fee.',
-                      style: const TextStyle(
-                          color: AppTheme.navy700,
-                          fontSize: 13,
-                          height: 1.38,
-                          fontWeight: FontWeight.w500))),
-            ]),
+            child: TwFactPanel(
+              child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline_rounded,
+                        color: AppTheme.navy, size: 20),
+                    const SizedBox(width: TwSpace.s12),
+                    Expanded(
+                        child: Text(
+                            'The Urgent or Emergency fee goes to $_proName. TradeWorks adds no markup and no platform fee.',
+                            style: TwType.meta(color: AppTheme.body))),
+                  ]),
+            ),
           ),
         ],
       ),
@@ -2357,6 +2137,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     final slots = _selectedDate == null
         ? const <Map<String, dynamic>>[]
         : _slotsByDate[_selectedDate] ?? const <Map<String, dynamic>>[];
+    final windowColumns = TwLayout.stackRows(context) ? 1 : 2;
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2364,41 +2145,33 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           title: 'Pick your arrival window',
           subtitle: 'Choose one of $_proName’s available arrival windows.',
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: TwSpace.s20),
         if (_isLoadingSlots)
           const LoadingSkeleton(
               layout: SkeletonLayout.form, label: 'Loading arrival windows')
         else if (_slotsError != null)
-          Text(_slotsError!,
-              style: const TextStyle(color: AppTheme.error, fontSize: 13))
+          Text(_slotsError!, style: TwType.bodySm(color: AppTheme.error))
         else if (_selectedAvailability?['paused'] == true)
-          const Text(
+          Text(
             'This pro has paused new bookings. Try another contractor.',
-            style: TextStyle(color: AppTheme.gray),
+            style: TwType.bodySm(color: AppTheme.textSecondary),
           )
         else if (_selectedUrgency.urgencySlug.toLowerCase() == 'emergency' &&
             _selectedAvailability?['emergencyEligible'] == false)
-          const Text(
+          Text(
             'This pro can’t take an emergency booking. Pick another response time or another pro.',
-            style: TextStyle(color: AppTheme.gray),
+            style: TwType.bodySm(color: AppTheme.textSecondary),
           )
         else if (_dates.isEmpty)
-          const Text(
+          Text(
             'No availability in this window — try another pro or a different response time.',
-            style: TextStyle(color: AppTheme.gray),
+            style: TwType.bodySm(color: AppTheme.textSecondary),
           )
         else ...[
-          const Text(
-            'Day',
-            style: TextStyle(
-              color: AppTheme.navy,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
+          const TwFieldLabel('Day'),
+          const SizedBox(height: TwSpace.s4),
           SizedBox(
-            height: 46,
+            height: TwDayTile.heightOf(context),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _dates.length,
@@ -2407,91 +2180,47 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 final date = _dates[index];
                 final selected = date == _selectedDate;
                 final info = _dateTileInfo(date);
-                return InkWell(
+                return TwDayTile(
+                  top: info.$1,
+                  bottom: info.$2,
+                  selected: selected,
                   onTap: () => setState(() {
                     _selectedDate = date;
                     _selectedTime = null;
                   }),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: 80,
-                    decoration: BoxDecoration(
-                        color: selected ? AppTheme.navy700 : Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: selected ? AppTheme.navy700 : _surfaceLine)),
-                    child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(info.$1,
-                              style: TextStyle(
-                                  color: selected ? Colors.white : AppTheme.ink,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 2),
-                          Text(info.$2,
-                              style: TextStyle(
-                                  color:
-                                      selected ? Colors.white : AppTheme.gray,
-                                  fontSize: 10)),
-                        ]),
-                  ),
                 );
               },
             ),
           ),
-          const SizedBox(height: 20),
-          Text(
-            'Arrival window · ${_fullDateLabel(_selectedDate)}',
-            style: const TextStyle(
-              color: AppTheme.navy,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 24),
+          TwFieldLabel('Arrival window · ${_fullDateLabel(_selectedDate)}'),
+          const SizedBox(height: TwSpace.s4),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: windowColumns,
                 crossAxisSpacing: 8,
                 mainAxisSpacing: 8,
-                mainAxisExtent: 40),
+                mainAxisExtent: 48),
             itemCount: slots.length,
             itemBuilder: (context, index) {
               final slot = slots[index];
               final label = slot['label']?.toString() ?? '';
               final selected = label == _selectedTime;
-              return InkWell(
+              return TwPill(
+                label: label,
+                selected: selected,
+                square: true,
+                height: 48,
                 onTap: () => setState(() => _selectedTime = label),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: selected ? AppTheme.navy700 : _surfaceLine,
-                          width: selected ? 1.8 : 1)),
-                  child: Text(label,
-                      style: TextStyle(
-                          color: selected ? AppTheme.navy700 : AppTheme.ink,
-                          fontSize: 12,
-                          fontWeight:
-                              selected ? FontWeight.w800 : FontWeight.w500)),
-                ),
               );
             },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TwSpace.s12),
           Text(
             'The window you pick is booked on $_proName’s calendar.',
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 13,
-              height: 1.45,
-            ),
+            style: TwType.caption(),
           ),
         ],
       ]),
@@ -2557,15 +2286,15 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     }
   }
 
-  TextStyle get _cardTitleStyle => AppTheme.headingStyle.copyWith(
-        fontSize: 17,
-        fontWeight: FontWeight.w600,
-      );
+  TextStyle get _cardTitleStyle => TwType.h3();
 
   Widget _changeLink(VoidCallback onTap) => TextButton(
         onPressed: onTap,
-        style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
-        child: const Text('Change'),
+        style: TextButton.styleFrom(
+          minimumSize: const Size(44, 44),
+          padding: const EdgeInsets.only(left: 12),
+        ),
+        child: Text('Change', style: TwType.link()),
       );
 
   Widget _reviewRow(
@@ -2575,7 +2304,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     bool last = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
         border: last
             ? null
@@ -2587,23 +2316,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
+                Text(label, style: TwType.caption()),
                 const SizedBox(height: 2),
-                Text(
-                  value.isEmpty ? '—' : value,
-                  style: const TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 16,
-                    height: 1.375,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(value.isEmpty ? '—' : value, style: TwType.title()),
               ],
             ),
           ),
@@ -2674,23 +2389,26 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             title: 'Review & confirm',
             subtitle: 'Confirm the details below to book.',
           ),
-          const SizedBox(height: 20),
-          _reviewPanel(Column(children: [
-            _reviewRow('Pro', _proName, onChange: _changeContractor),
-            _reviewRow('Service', _selectedService.title,
-                onChange: () => _editFromReview(0)),
-            _reviewRow('When', when,
-                onChange: () => _editFromReview(_picksOwnTime ? 3 : 2)),
-            _reviewRow(
-              'Response time',
-              levelFee.isEmpty
-                  ? _selectedUrgency.label
-                  : '${_selectedUrgency.label} · $levelFee',
-              onChange: () => _editFromReview(2),
-              last: true,
-            ),
-          ])),
-          const SizedBox(height: 12),
+          const SizedBox(height: TwSpace.s20),
+          _reviewPanel(
+            Column(children: [
+              _reviewRow('Pro', _proName, onChange: _changeContractor),
+              _reviewRow('Service', _selectedService.title,
+                  onChange: () => _editFromReview(0)),
+              _reviewRow('When', when,
+                  onChange: () => _editFromReview(_picksOwnTime ? 3 : 2)),
+              _reviewRow(
+                'Response time',
+                levelFee.isEmpty
+                    ? _selectedUrgency.label
+                    : '${_selectedUrgency.label} · $levelFee',
+                onChange: () => _editFromReview(2),
+                last: true,
+              ),
+            ]),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          ),
+          const SizedBox(height: TwSpace.s12),
           _reviewPanel(Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2699,25 +2417,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 _changeLink(() => _editFromReview(1)),
               ]),
               if (detail.isEmpty && _selectedPhotos.isEmpty)
-                const Text(
-                  'No details or photos added',
-                  style: TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 14,
-                    height: 1.43,
-                  ),
-                ),
+                Text('No details or photos added', style: TwType.meta()),
               if (detail.isNotEmpty)
-                Text(
-                  detail,
-                  style: const TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 15,
-                    height: 1.47,
-                  ),
-                ),
+                Text(detail, style: TwType.bodySm(color: AppTheme.ink)),
               if (_selectedPhotos.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: TwSpace.s8),
                 Wrap(
                   spacing: 8,
                   children: _selectedPhotos
@@ -2725,13 +2429,13 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       .map((photo) => ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: Image.file(File(photo.path),
-                              width: 42, height: 42, fit: BoxFit.cover)))
+                              width: 44, height: 44, fit: BoxFit.cover)))
                       .toList(),
                 ),
               ],
             ],
           )),
-          const SizedBox(height: 12),
+          const SizedBox(height: TwSpace.s12),
           _reviewPanel(Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2743,16 +2447,12 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Service address', style: _cardTitleStyle),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: TwSpace.s4),
                         Text(
                           addressText.isEmpty
                               ? 'No saved address'
                               : addressText,
-                          style: const TextStyle(
-                            color: AppTheme.navy,
-                            fontSize: 16,
-                            height: 1.44,
-                          ),
+                          style: TwType.body(color: AppTheme.ink),
                         ),
                       ],
                     ),
@@ -2760,87 +2460,69 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                   IconButton(
                     tooltip: 'Edit address',
                     onPressed: _openManageAddresses,
+                    constraints:
+                        const BoxConstraints.tightFor(width: 44, height: 44),
+                    padding: EdgeInsets.zero,
                     icon: const Icon(Icons.edit_outlined,
                         color: AppTheme.navy, size: 20),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
-              const Text(
-                'Gate / access code (optional)',
-                style: TextStyle(
-                  color: AppTheme.navy,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
+              const TwFieldLabel('Gate / access code (optional)'),
               TextField(
                 controller: _accessCodeController,
                 minLines: 1,
                 maxLines: 3,
                 maxLength: 500,
                 textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(counterText: ''),
+                style: TwType.body(color: AppTheme.ink),
+                decoration: TwInputs.decoration(counterText: ''),
               ),
-              const SizedBox(height: 8),
-              const Text(
+              const SizedBox(height: TwSpace.s8),
+              Text(
                 'Only your pro sees this, on the job.',
-                style: TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 13,
-                  height: 1.38,
-                ),
+                style: TwType.caption(),
               ),
             ],
           )),
-          const SizedBox(height: 12),
-          Container(
+          const SizedBox(height: TwSpace.s12),
+          SizedBox(
             width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.subtle,
-              borderRadius: BorderRadius.circular(AppTheme.radius),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Expanded(
-                      child: Text(
+            child: TwFactPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: TwSpace.s12,
+                    runSpacing: TwSpace.s4,
+                    children: [
+                      Text(
                         price.$1,
-                        style: const TextStyle(
-                          color: AppTheme.navy,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: TwType.bodySm(color: AppTheme.navy)
+                            .copyWith(fontWeight: FontWeight.w600),
                       ),
-                    ),
-                    Text(
-                      price.$2,
-                      style: AppTheme.headingStyle.copyWith(fontSize: 26),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'TradeWorks adds no markup and takes no fee — we only fund the credits you apply.',
-                  style: TextStyle(
-                    color: AppTheme.body,
-                    fontSize: 14,
-                    height: 1.43,
+                      Text(
+                        price.$2,
+                        style: TwType.h1Mid(context),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  Text(
+                    'TradeWorks adds no markup and takes no fee — we only fund the credits you apply.',
+                    style: TwType.meta(color: AppTheme.body),
+                  ),
+                ],
+              ),
             ),
           ),
           if (pricing.workOrderType != 'quote_request' &&
               _availableServiceCredits != null &&
               pricing.amount != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: TwSpace.s12),
             _creditsCard(pricing.amount!),
           ],
         ],
@@ -2866,11 +2548,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                 const SizedBox(height: 2),
                 Text(
                   'Available: ${formatUsd(balance)}',
-                  style: const TextStyle(
-                    color: AppTheme.purple,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TwType.label(color: AppTheme.purple),
                 ),
               ],
             ),
@@ -2891,46 +2569,34 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                     }),
           ),
         ]),
-        const SizedBox(height: 8),
-        const Text(
+        const SizedBox(height: TwSpace.s8),
+        Text(
           'Tell us how much to apply when you book.',
-          style: TextStyle(color: AppTheme.body, fontSize: 14, height: 1.43),
+          style: TwType.meta(color: AppTheme.body),
         ),
         if (_useServiceCredits) ...[
-          const SizedBox(height: 12),
-          const Text(
-            'Amount to apply',
-            style: TextStyle(
-              color: AppTheme.navy,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: TwSpace.s12),
+          const TwFieldLabel('Amount to apply'),
           TextField(
             controller: _creditAmountController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              prefixText: '\$ ',
-              hintText: '0.00',
-            ),
+            style: TwType.body(color: AppTheme.ink),
+            decoration:
+                TwInputs.decoration(hint: '0.00').copyWith(prefixText: '\$ '),
           ),
           const SizedBox(height: 14),
           Row(children: [
-            const Expanded(
+            Expanded(
               child: Text(
                 'Credits applied',
-                style: TextStyle(color: AppTheme.body, fontSize: 15),
+                style: TwType.bodySm(color: AppTheme.body),
               ),
             ),
             Text(
               '−${formatUsd(applied)}',
-              style: const TextStyle(
-                color: AppTheme.purple,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TwType.bodySm(color: AppTheme.purple)
+                  .copyWith(fontWeight: FontWeight.w700),
             ),
           ]),
           const Divider(height: 24, color: AppTheme.cardBorder),
@@ -2938,46 +2604,32 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              const Expanded(
-                child: Text(
-                  'You pay',
-                  style: TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              Expanded(
+                child: Text('You pay', style: TwType.title()),
               ),
               Text(
                 formatUsd(amountDue),
-                style: AppTheme.headingStyle.copyWith(fontSize: 24),
+                style: TwType.h1Mid(context),
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: TwSpace.s4),
           Text(
             amountDue <= 0
                 ? 'Fully covered by your credits.'
                 : 'The remaining balance is paid directly to $_proName.',
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 13,
-              height: 1.38,
-            ),
+            style: TwType.meta(),
           ),
         ],
       ],
     ));
   }
 
-  Widget _reviewPanel(Widget child) => Container(
+  Widget _reviewPanel(Widget child,
+          {EdgeInsets padding = const EdgeInsets.all(16)}) =>
+      SizedBox(
         width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _surfaceLine)),
-        child: child,
+        child: TwCard(padding: padding, child: child),
       );
 
   double _appliedServiceCredits(int? price) {
@@ -2994,110 +2646,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         [price.toDouble(), _availableServiceCredits!, 10000.0]
             .reduce((a, b) => a < b ? a : b));
   }
-
-  Widget _serviceCreditsPanel(int price) {
-    final balance = _availableServiceCredits ?? 0;
-    final applied = _appliedServiceCredits(price);
-    final amountDue = price - applied;
-    return _reviewPanel(Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(children: [
-          const Expanded(
-              child: Text('Use service credits',
-                  style: TextStyle(
-                      color: AppTheme.ink,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800))),
-          Switch(
-            value: _useServiceCredits,
-            activeColor: Colors.white,
-            activeTrackColor: AppTheme.teal500,
-            onChanged: balance <= 0
-                ? null
-                : (value) => setState(() {
-                      _useServiceCredits = value;
-                      if (value &&
-                          _creditAmountController.text.trim().isEmpty) {
-                        _creditAmountController.text = [
-                          balance,
-                          price.toDouble()
-                        ].reduce((a, b) => a < b ? a : b).toStringAsFixed(2);
-                      }
-                    }),
-          ),
-        ]),
-        const SizedBox(height: 6),
-        Text('Available balance: \$${balance.toStringAsFixed(2)}',
-            style: const TextStyle(color: AppTheme.gray, fontSize: 13)),
-        if (_useServiceCredits) ...[
-          const SizedBox(height: 10),
-          TextField(
-            controller: _creditAmountController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              prefixText: '\$  ',
-              hintText: '0.00',
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: AppTheme.line)),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: AppTheme.line)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text('Credits applied: -\$${applied.toStringAsFixed(2)}',
-              style: const TextStyle(
-                  color: AppTheme.teal500,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800)),
-          const Divider(height: 24),
-          Row(children: [
-            const Expanded(
-                child: Text('You pay',
-                    style: TextStyle(
-                        color: AppTheme.ink,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800))),
-            Text('\$${amountDue.toStringAsFixed(2)}',
-                style: const TextStyle(
-                    color: AppTheme.navy700,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900))
-          ]),
-          const SizedBox(height: 5),
-          Text(
-              amountDue <= 0
-                  ? 'Fully covered by service credits'
-                  : 'The remaining balance is paid directly to $_proName.',
-              style: const TextStyle(color: AppTheme.gray, fontSize: 13)),
-        ],
-      ],
-    ));
-  }
-
-  Widget _reviewLine(String label, String value, {VoidCallback? onChange}) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(
-              child: Text('$label: $value',
-                  style: const TextStyle(
-                      color: AppTheme.gray, fontSize: 14, height: 1.3))),
-          if (onChange != null)
-            InkWell(
-                onTap: onChange,
-                child: const Text('Change',
-                    style: TextStyle(
-                        color: AppTheme.teal500,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800)))
-        ]),
-      );
 
   Future<void> _openManageAddresses() async {
     final navigator = Navigator.of(context);
@@ -3323,7 +2871,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   String _priceText(_PricingChoice pricing) {
     if (pricing.priceHeadline.trim().isNotEmpty) return pricing.priceHeadline;
     if (pricing.priceText.trim().isNotEmpty) return pricing.priceText;
-    if (pricing.amount != null) return '\$${pricing.amount}';
+    if (pricing.amount != null) return formatUsd(pricing.amount!);
     return 'Price set by ${_proName.isEmpty ? 'the pro' : _proName}';
   }
 
@@ -3513,6 +3061,24 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   }
 }
 
+/// The homeowner-facing label of a work-order type (decisions §2). Sent as
+/// `selected_pricing_label`; never "Request a quote" (Batch 19 F2).
+String _pricingTypeLabel(String workOrderType) {
+  switch (workOrderType) {
+    case 'nte':
+      return 'You approve the cap';
+    case 'quote_request':
+      return 'Free visit';
+    default:
+      return 'Upfront price';
+  }
+}
+
+/// Prices are never worded "From $…" (decisions §2, Oct 1), even when a
+/// backend label still carries it.
+String _withoutFrom(String text) =>
+    text.replaceFirst(RegExp(r'^\s*from\s+', caseSensitive: false), '');
+
 class _ServiceOption {
   final String title;
   final String subtitle;
@@ -3679,37 +3245,23 @@ class _ServiceOption {
           _string(source['price_label']) ??
           _string(source['priceLabel']) ??
           _string(source['display_price']);
-      final priceText =
-          explicitPriceText ?? (price == null ? '' : 'From \$$price');
+      final priceText = explicitPriceText != null
+          ? _withoutFrom(explicitPriceText)
+          : (price == null ? '' : formatUsd(price));
+      final isFreeVisit = workOrderType == 'quote_request';
       choices.add(
         _PricingChoice(
-          label: workOrderType == 'quote_request'
-              ? 'Request a quote'
-              : workOrderType == 'nte'
-                  ? 'You approve the cap'
-                  : 'Upfront price',
-          detail: workOrderType == 'quote_request'
-              ? ''
-              : workOrderType == 'nte'
-                  ? ''
-                  : '',
+          label: _pricingTypeLabel(workOrderType),
+          detail: '',
           amount: price,
-          priceText: workOrderType == 'quote_request'
-              ? 'Request a quote'
-              : workOrderType == 'nte'
-                  ? priceText
-                  : priceText,
-          priceHeadline: workOrderType == 'quote_request'
-              ? 'Request a quote'
+          priceText: isFreeVisit ? 'Free visit' : priceText,
+          priceHeadline: isFreeVisit
+              ? 'Free visit'
               : workOrderType == 'nte'
                   ? 'You approve the cap'
-                  : (price == null ? priceText : '\$$price'),
+                  : (price == null ? priceText : formatUsd(price)),
           workOrderType: workOrderType,
-          secondaryText: workOrderType == 'quote_request'
-              ? ''
-              : workOrderType == 'nte'
-                  ? ''
-                  : '',
+          secondaryText: '',
         ),
       );
     }
@@ -3891,15 +3443,15 @@ class _PricingChoice {
         _string(source['work_order_type']) ??
         _string(source['type']) ??
         'rate_card';
-    final headline = _string(source['headline']) ??
+    final headline = _withoutFrom(_string(source['headline']) ??
         _string(source['priceHeadline']) ??
         _string(source['price_headline']) ??
-        (amount != null ? '\$$amount' : label);
-    final priceText = _string(source['priceText']) ??
+        (amount != null ? formatUsd(amount) : label));
+    final priceText = _withoutFrom(_string(source['priceText']) ??
         _string(source['price_text']) ??
         _string(source['priceLabel']) ??
         _string(source['price_label']) ??
-        (amount != null ? 'From \$$amount' : label);
+        (amount != null ? formatUsd(amount) : label));
     final secondaryText =
         _string(source['secondaryText']) ?? _string(source['subtitle']) ?? '';
     return _PricingChoice(

@@ -1,10 +1,12 @@
 import '../widgets/loading_skeleton.dart';
 import '../utils/arrival_check_state.dart';
+import '../utils/work_order_status.dart';
 import 'work_orders/arrival_check.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../services/stream_service.dart';
+import '../ui/tw.dart';
 
 import '../services/browse_search_history.dart';
 import '../services/homeowner_service.dart';
@@ -81,12 +83,13 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   static const Color _pageBackground = AppTheme.pageBackground;
   static const Color _inkStrong = AppTheme.navy;
-  static const Color _mutedText = AppTheme.textSecondary;
   static const Color _lineSoft = AppTheme.cardBorder;
-  static const double _searchPlaceholderFontSize = 14;
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  late final PageController _tickerPageController;
+  Timer? _serviceTicker;
+  int _serviceTickerIndex = 0;
 
   bool _isLoading = true;
   bool _isRefreshing = false;
@@ -107,6 +110,21 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     _searchController.addListener(_refreshInputs);
     _searchFocusNode.addListener(_refreshInputs);
     ServiceLocation.selected.addListener(_handleSharedLocationChanged);
+
+    _tickerPageController =
+        PageController(initialPage: 1000 * _serviceNames.length);
+    _serviceTicker = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted ||
+          !_tickerPageController.hasClients ||
+          _searchController.text.trim().isNotEmpty ||
+          _searchFocusNode.hasFocus) {
+        return;
+      }
+      _tickerPageController.nextPage(
+        duration: const Duration(milliseconds: 750),
+        curve: Curves.fastOutSlowIn,
+      );
+    });
 
     _loadSharedLocationOverride();
     if (widget.isGuest) {
@@ -131,6 +149,8 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       HomeownerService.instance.syncVersion
           .removeListener(_refreshFromSharedSync);
     }
+    _serviceTicker?.cancel();
+    _tickerPageController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _searchController
       ..removeListener(_refreshInputs)
@@ -543,7 +563,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   String get _displayedService {
     final typed = _searchController.text.trim();
-    return typed.isNotEmpty ? typed : _serviceNames.first;
+    return typed.isNotEmpty ? typed : _serviceNames[_serviceTickerIndex];
   }
 
   String get _allServicesLabel => 'All 22';
@@ -610,9 +630,9 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     final result = await showModalBottomSheet<AiIntakeResult>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      constraints: BoxConstraints(
+        maxWidth: TwLayout.maxContent,
+        maxHeight: MediaQuery.sizeOf(context).height * 0.92,
       ),
       builder: (context) => AiIntakeSheet(
         initialMode: mode,
@@ -626,10 +646,8 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   }
 
   Widget _buildHomeHero() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-      color: AppTheme.pageBackground,
+    return Padding(
+      padding: const EdgeInsets.only(top: TwSpace.s8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -642,27 +660,24 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: _openZipEntry,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 44),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(
-                            Icons.location_on,
+                            Icons.location_on_outlined,
                             color: AppTheme.navy,
-                            size: 16,
+                            size: 18,
                           ),
                           const SizedBox(width: 6),
                           Flexible(
                             fit: FlexFit.loose,
                             child: Text(
                               _locationLabel,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.navy,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: TwType.title().copyWith(fontSize: 15),
                             ),
                           ),
                           const SizedBox(width: 2),
@@ -677,49 +692,76 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
-              IconButton(
+              const SizedBox(width: TwSpace.s4),
+              _headerIcon(
+                icon: Icons.help_outline_rounded,
                 tooltip: 'Help and FAQs',
                 onPressed: widget.onHelpTap,
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(
-                  Icons.help,
-                  color: AppTheme.navy,
-                  size: 21,
-                ),
               ),
-              if (!widget.isGuest)
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    IconButton(
-                      tooltip: 'Inbox',
-                      onPressed: widget.onInboxTap,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(
-                        Icons.mail,
-                        color: AppTheme.navy,
-                        size: 21,
-                      ),
-                    ),
-                  ],
-                ),
+              if (!widget.isGuest) _buildInboxButton(),
             ],
           ),
-          const SizedBox(height: 20),
-          const Text(
-            'What do you need done?',
-            style: TextStyle(
-              color: AppTheme.navy,
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: TwSpace.s12),
+          Text('What do you need done?', style: TwType.h1(context)),
+          const SizedBox(height: TwSpace.s16),
           _buildHomeSearchBar(),
         ],
       ),
+    );
+  }
+
+  /// Outline icon 22 ink in a 44×44 target (A01 header).
+  Widget _headerIcon({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+      icon: Icon(icon, color: AppTheme.navy, size: 22),
+    );
+  }
+
+  /// Inbox icon with the A01 unread dot: 8px blue with a 2px white ring.
+  /// Reads the chat client's own unread total (no new request); shows no dot
+  /// until chat has connected.
+  Widget _buildInboxButton() {
+    final chatState = StreamService.instance.client?.state;
+    return StreamBuilder<int>(
+      stream: chatState?.totalUnreadCountStream,
+      initialData: chatState?.totalUnreadCount ?? 0,
+      builder: (context, snapshot) {
+        final unread = (snapshot.data ?? 0) > 0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _headerIcon(
+              icon: Icons.mail_outline_rounded,
+              tooltip: unread ? 'Inbox, unread messages' : 'Inbox',
+              onPressed: widget.onInboxTap,
+            ),
+            if (unread)
+              Positioned(
+                top: 8,
+                right: 7,
+                child: IgnorePointer(
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: AppTheme.blue,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppTheme.white, width: 2),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -738,106 +780,133 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       onSubmit: _openSearch,
       onPhotoTap: () => _openAiLayer('camera'),
       onVoiceTap: () => _openAiLayer('voice'),
-      borderColor: AppTheme.cardBorder,
-      showShadow: true,
-      emptyOverlay: Text.rich(
-        TextSpan(
-          text: 'Search a service ',
-          style: GoogleFonts.inter(
-            color: AppTheme.textTertiary,
-            fontSize: _searchPlaceholderFontSize,
-            fontWeight: FontWeight.w400,
-            height: 1,
-          ),
-          children: const [
-            TextSpan(
-              text: 'AC repair',
-              style: TextStyle(
-                color: AppTheme.navy,
-                fontWeight: FontWeight.w500,
+      borderColor: AppTheme.border,
+      showShadow: false,
+      emptyOverlay: LayoutBuilder(
+        builder: (context, constraints) {
+          final prefixStyle =
+              TwType.bodySm(color: AppTheme.body).copyWith(height: 1);
+          bool fits(String label) {
+            final painter = TextPainter(
+              text: TextSpan(text: label, style: prefixStyle),
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+              maxLines: 1,
+            )..layout();
+            final fits = painter.width + 16 <= constraints.maxWidth;
+            painter.dispose();
+            return fits;
+          }
+
+          final prefix = fits('Search a service ')
+              ? 'Search a service '
+              : fits('Search ')
+                  ? 'Search '
+                  : '';
+          return Row(
+            children: [
+              if (prefix.isNotEmpty)
+                Text(prefix, maxLines: 1, style: prefixStyle),
+              Expanded(
+                child: SizedBox(
+                  height: 20,
+                  child: PageView.builder(
+                    controller: _tickerPageController,
+                    scrollDirection: Axis.vertical,
+                    physics: const NeverScrollableScrollPhysics(),
+                    onPageChanged: (index) =>
+                        _serviceTickerIndex = index % _serviceNames.length,
+                    itemBuilder: (context, index) => Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _serviceNames[index % _serviceNames.length],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TwType.bodySm(color: AppTheme.navy)
+                            .copyWith(fontWeight: FontWeight.w500, height: 1),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _buildBrowseByCategorySection() {
+    final columns = TwLayout.columns(context);
+    final tileHeight =
+        MediaQuery.textScalerOf(context).scale(13) > 15 ? 88.0 : 76.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Expanded(
-              child: Text(
-                'Browse by category',
-                style: TextStyle(
-                  color: _inkStrong,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+            Expanded(
+              child: Text('Browse by category', style: TwType.h2()),
             ),
-            GestureDetector(
-              onTap: () => widget.onCategorySelected('All'),
-              child: Text(
-                'See all 22',
-                style: const TextStyle(
-                  color: AppTheme.blue,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+            const SizedBox(width: TwSpace.s8),
+            TextButton(
+              onPressed: () => widget.onCategorySelected('All'),
+              style: _linkStyle,
+              child: Text('See all 22', style: TwType.link(size: 14)),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: TwSpace.s8),
         GridView.builder(
           itemCount: _homeCategories.length + 1,
           shrinkWrap: true,
+          padding: EdgeInsets.zero,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 8,
-            childAspectRatio: 1.05,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            mainAxisSpacing: TwSpace.s12,
+            crossAxisSpacing: TwSpace.s8,
+            mainAxisExtent: tileHeight,
           ),
           itemBuilder: (context, index) {
             final isAll = index == _homeCategories.length;
             final label = isAll ? _allServicesLabel : _homeCategories[index];
-            return InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => widget.onCategorySelected(isAll ? 'All' : label),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: isAll ? AppTheme.subtle : AppTheme.pageBackground,
-                  borderRadius: BorderRadius.circular(12),
-                  border: isAll ? null : Border.all(color: _lineSoft),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      isAll
-                          ? Icons.grid_view_rounded
-                          : _homeCategoryIcons[label],
-                      size: 30,
-                      color: _inkStrong,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
+            return Material(
+              color: isAll ? AppTheme.subtle : AppTheme.white,
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: isAll
+                    ? BorderSide.none
+                    : const BorderSide(color: _lineSoft),
+              ),
+              child: InkWell(
+                onTap: () => widget.onCategorySelected(isAll ? 'All' : label),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: TwSpace.s4),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        isAll
+                            ? Icons.grid_view_outlined
+                            : _homeCategoryIcons[label],
+                        size: 24,
                         color: _inkStrong,
-                        fontSize: 11,
-                        fontWeight: isAll ? FontWeight.w700 : FontWeight.w600,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+                      Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TwType.caption(color: _inkStrong).copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -849,71 +918,49 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   Widget _buildForYourHomeCard() {
     if (!_hasBackendHomeDetails) return _buildTailoredSuggestionsCard();
-    return Card(
-        child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Your home profile',
-                    style:
-                        TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 12),
-                const Text(
-                    'Keep your property details, systems and documents together.'),
-                const SizedBox(height: 16),
-                OutlinedButton(
-                    onPressed: widget.onManageHomeTap,
-                    child: const Text('View home profile')),
-              ],
-            )));
+    return TwCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Your home profile', style: TwType.h3()),
+          const SizedBox(height: TwSpace.s8),
+          Text(
+            'Keep your property details, systems and documents together.',
+            style: TwType.bodySm(),
+          ),
+          const SizedBox(height: TwSpace.s16),
+          OutlinedButton(
+            onPressed: widget.onManageHomeTap,
+            child: const Text('View home profile'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildGuestSignupSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Sign up',
-          style: TextStyle(
-            color: _inkStrong,
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.cardBorder),
-          ),
+        Text('Sign up', style: TwType.h2()),
+        const SizedBox(height: TwSpace.s12),
+        TwCard(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              Text(
                 'Create an account to book services, save your home details, earn rewards, and get personalized recommendations.',
-                style: TextStyle(
-                  color: _inkStrong,
-                  fontSize: 16,
-                  height: 1.5,
-                  fontWeight: FontWeight.w400,
-                ),
+                style: TwType.body(color: _inkStrong),
               ),
-              const SizedBox(height: 8),
-              const Text(
+              const SizedBox(height: TwSpace.s8),
+              Text(
                 'It only takes a minute to get started',
-                style: TextStyle(color: _mutedText, fontSize: 14),
+                style: TwType.meta(),
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: widget.onCreateAccount,
-                  child: const Text('Create account'),
-                ),
+              const SizedBox(height: TwSpace.s16),
+              OutlinedButton(
+                onPressed: widget.onCreateAccount,
+                child: const Text('Create account'),
               ),
               Center(
                 child: TextButton(
@@ -929,63 +976,20 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   }
 
   Widget _buildTailoredSuggestionsCard() {
-    const cardFill = AppTheme.pageBackground;
-    const cardBorder = AppTheme.navy;
-    const eyebrowColor = AppTheme.navy;
-    const bodyColor = AppTheme.navy;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-      decoration: BoxDecoration(
-        color: cardFill,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cardBorder, width: 1),
-      ),
+    return TwCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Tell us about your home',
-            style: TextStyle(
-              color: _inkStrong,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              height: 1.15,
-            ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
+          Text('Tell us about your home', style: TwType.h3()),
+          const SizedBox(height: TwSpace.s8),
+          Text(
             "Keep a record of your systems, installation dates and documents for booked service visits.",
-            style: TextStyle(
-              color: bodyColor,
-              fontSize: 13.5,
-              height: 1.45,
-            ),
+            style: TwType.bodySm(),
           ),
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: widget.onManageHomeTap,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: eyebrowColor,
-                backgroundColor: cardFill,
-                side: const BorderSide(color: eyebrowColor, width: 1.25),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              ),
-              child: const Text(
-                'Add your home details',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
-              ),
-            ),
+          const SizedBox(height: TwSpace.s16),
+          OutlinedButton(
+            onPressed: widget.onManageHomeTap,
+            child: const Text('Add your home details'),
           ),
         ],
       ),
@@ -998,11 +1002,11 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         padding: EdgeInsets.zero,
         minimumSize: const Size(0, 44),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        textStyle: TwType.link(),
       );
 
   IconData _waitingIcon(WaitingKind kind) => switch (kind) {
-        WaitingKind.reschedule => Icons.event_repeat_outlined,
+        WaitingKind.reschedule => Icons.calendar_today_outlined,
         WaitingKind.cap => Icons.description_outlined,
         WaitingKind.estimate => Icons.description_outlined,
         WaitingKind.receipt => Icons.receipt_long_outlined,
@@ -1105,6 +1109,29 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildProArrivalRow(Map<String, dynamic> job) => AlertRow(
+        icon: Icons.check_circle_outline_rounded,
+        iconColor: AppTheme.blue,
+        tint: AppTheme.blueTint,
+        title: '${jobProName(job, 'Your pro')} has arrived',
+        body: '${jobServiceName(job)} · ${workOrderLabel(job)}',
+        footer: TextButton(
+          style: _linkStyle,
+          onPressed: () async {
+            await Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => WorkOrderDetailScreen(job: job),
+              ),
+            );
+            if (mounted) {
+              await _fetchHomeData(showLoading: false, forceRefresh: true);
+            }
+          },
+          child: const Text('View work order'),
+        ),
+      );
+
   /// Each item opens its own work order; a cap opens the cap screen, a
   /// receipt opens the work order at Job money.
   Future<void> _openWaitingItem(WaitingItem item) async {
@@ -1156,73 +1183,56 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   /// "+N more": every waiting item as a hairline list; a row opens its job.
   Future<void> _showAllWaiting(List<WaitingItem> items) async {
-    final picked = await showModalBottomSheet<WaitingItem>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text(
-              'Waiting on you',
-              style: GoogleFonts.outfit(
-                color: _inkStrong,
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            for (final item in items)
-              InkWell(
-                onTap: () => Navigator.pop(sheetContext, item),
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: 44),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: const BoxDecoration(
-                    border: Border(bottom: BorderSide(color: _lineSoft)),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.title,
-                              style: const TextStyle(
-                                color: _inkStrong,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                height: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              item.detail,
-                              style: const TextStyle(
-                                color: _mutedText,
-                                fontSize: 13,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
+    final picked = await TwSheet.show<WaitingItem>(
+      context,
+      builder: (sheetContext) {
+        final gutter = TwLayout.gutter(sheetContext);
+        return SafeArea(
+          top: false,
+          child: ListView(
+            shrinkWrap: true,
+            padding:
+                EdgeInsets.fromLTRB(gutter, TwSpace.s8, gutter, TwSpace.s20),
+            children: [
+              Text('Waiting on you', style: TwType.h3()),
+              const SizedBox(height: TwSpace.s8),
+              for (var i = 0; i < items.length; i++)
+                InkWell(
+                  onTap: () => Navigator.pop(sheetContext, items[i]),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 44),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      border: i == items.length - 1
+                          ? null
+                          : const Border(bottom: BorderSide(color: _lineSoft)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(items[i].title, style: TwType.title()),
+                              const SizedBox(height: TwSpace.s4),
+                              Text(items[i].detail, style: TwType.meta()),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.chevron_right_rounded,
-                          color: AppTheme.textTertiary),
-                    ],
+                        const SizedBox(width: TwSpace.s8),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          size: 20,
+                          color: AppTheme.textTertiary,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
     if (picked != null && mounted) await _openWaitingItem(picked);
   }
@@ -1270,6 +1280,19 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             .map((raw) => Map<String, dynamic>.from(raw))
             .where((job) => ArrivalCheckState.pending(job))
             .toList();
+    final arrivedJobs = widget.isGuest
+        ? const <Map<String, dynamic>>[]
+        : _activeJobs
+            .whereType<Map>()
+            .map((raw) => Map<String, dynamic>.from(raw))
+            .where(WorkOrderStatus.proOnSite)
+            .toList();
+
+    final alerts = <Widget>[
+      for (final job in arrivedJobs) _buildProArrivalRow(job),
+      for (final job in noShowJobs) _buildNoShowRow(job),
+      if (waiting.isNotEmpty) _buildWaitingStrip(waiting),
+    ];
 
     return ColoredBox(
       color: _pageBackground,
@@ -1280,38 +1303,25 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.only(bottom: 120),
+          padding: EdgeInsets.zero,
           children: [
-            _buildHomeHero(),
-            for (final job in noShowJobs)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: _buildNoShowRow(job),
-              ),
-            if (waiting.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: _buildWaitingStrip(waiting),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            TwPage(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildHomeHero(),
+                  for (var i = 0; i < alerts.length; i++) ...[
+                    SizedBox(height: i == 0 ? TwSpace.s20 : TwSpace.s12),
+                    alerts[i],
+                  ],
+                  const SizedBox(height: TwSpace.s28),
                   _buildBrowseByCategorySection(),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: TwSpace.s28),
                   if (widget.isGuest)
                     _buildGuestSignupSection()
                   else ...[
-                    const Text(
-                      'For your home',
-                      style: TextStyle(
-                        color: _inkStrong,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                    Text('For your home', style: TwType.h2()),
+                    const SizedBox(height: TwSpace.s12),
                     _buildForYourHomeCard(),
                   ],
                 ],

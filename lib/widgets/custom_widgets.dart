@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 
 class SunriseBackground extends StatelessWidget {
   final Widget child;
@@ -23,8 +24,8 @@ class GlassCard extends StatelessWidget {
   const GlassCard({
     super.key,
     required this.child,
-    this.borderRadius = 20.0,
-    this.padding = const EdgeInsets.all(20.0),
+    this.borderRadius = 14.0,
+    this.padding = const EdgeInsets.all(16.0),
     this.margin = EdgeInsets.zero,
   });
 
@@ -35,14 +36,8 @@ class GlassCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(borderRadius),
+        // v3.3 cards: hairline only, no shadow.
         border: Border.all(color: AppTheme.cardBorder, width: 1.0),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.navy.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
@@ -75,104 +70,22 @@ class HoverButton extends StatefulWidget {
   State<HoverButton> createState() => _HoverButtonState();
 }
 
+/// v3.3: delegates to the kit buttons — orange with a navy label (primary)
+/// or white with a #D0D5DD border (secondary), radius 12, no shadow.
 class _HoverButtonState extends State<HoverButton> {
-  bool _isHovered = false;
-
   @override
   Widget build(BuildContext context) {
-    if (widget.isSecondary) {
-      return GestureDetector(
-        onTapDown: (_) => setState(() => _isHovered = true),
-        onTapUp: (_) => setState(() => _isHovered = false),
-        onTapCancel: () => setState(() => _isHovered = false),
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: widget.width,
-          height: widget.height,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(9999),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: _isHovered
-                  ? const [AppTheme.pageBackground, AppTheme.cardBorder]
-                  : const [AppTheme.pageBackground, AppTheme.pageBackground],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.navy.withOpacity(0.16),
-                blurRadius: 0,
-                spreadRadius: 0.75,
-              )
-            ],
-          ),
-          child: Text(
-            widget.text,
-            style: const TextStyle(
-              color: AppTheme.navy,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _isHovered = true),
-      onTapUp: (_) => setState(() => _isHovered = false),
-      onTapCancel: () => setState(() => _isHovered = false),
-      onTap: widget.onPressed,
-      child: Container(
-        width: widget.width,
-        height: widget.height,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(9999),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.orange500.withOpacity(0.25),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            )
-          ],
-        ),
-        child: Stack(
-          children: [
-            // Static Base Solid Orange Color
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(9999),
-                color: AppTheme.orange500,
-              ),
-            ),
-            // Hover Overlay (Darkens on hover)
-            AnimatedOpacity(
-              duration: const Duration(milliseconds: 200),
-              opacity: _isHovered ? 0.15 : 0.0,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(9999),
-                  color: Colors.black,
-                ),
-              ),
-            ),
-            // Text Content
-            Center(
-              child: Text(
-                widget.text,
-                style: const TextStyle(
-                  color: AppTheme.navy700,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    final Widget button = widget.isSecondary
+        ? TwSecondaryButton(
+            label: widget.text,
+            onPressed: widget.onPressed,
+            height: widget.height,
+          )
+        : TwPrimaryButton(
+            label: widget.text,
+            onPressed: widget.onPressed,
+          );
+    return SizedBox(width: widget.width, child: button);
   }
 }
 
@@ -188,113 +101,115 @@ class CategoryToken {
   });
 }
 
+/// v3.3: category icons are ink outline glyphs on a neutral fill. They are
+/// never tinted by category (no teal/blue per-category colour).
 class TradeWorksCategoryTokens {
   static const CategoryToken fallback = CategoryToken(
-    color: AppTheme.navy700,
-    tint: AppTheme.navyTint,
-    icon: Icons.home_repair_service,
+    color: AppTheme.navy,
+    tint: AppTheme.subtle,
+    icon: Icons.home_repair_service_outlined,
   );
 
   static const Map<String, CategoryToken> all = {
     'All': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.apps,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.apps_outlined,
     ),
     'HVAC': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.ac_unit,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.ac_unit_outlined,
     ),
     'Plumbing': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.plumbing,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.plumbing_outlined,
     ),
     'Electrical': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.flash_on,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.flash_on_outlined,
     ),
     'Cleaning': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.cleaning_services,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.cleaning_services_outlined,
     ),
     'Roofing': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.roofing,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.roofing_outlined,
     ),
     'Landscaping': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.nature_people,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.nature_people_outlined,
     ),
     'Lawn': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.nature_people,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.nature_people_outlined,
     ),
     'Handyman': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.build,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.build_outlined,
     ),
     'Painting': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.format_paint,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.format_paint_outlined,
     ),
     'Appliance Repair': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.kitchen,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.kitchen_outlined,
     ),
     'Pool & Spa': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.pool,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.pool_outlined,
     ),
     'Tree Service': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.park,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.park_outlined,
     ),
     'Pest Control': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.bug_report,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.bug_report_outlined,
     ),
     'Flooring': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.layers,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.layers_outlined,
     ),
     'Drywall & Plaster': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.texture,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.texture_outlined,
     ),
     'Windows & Doors': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.window,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.window_outlined,
     ),
     'Garage Doors': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.garage,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.garage_outlined,
     ),
     'Water Treatment': CategoryToken(
-      color: AppTheme.navy700,
-      tint: AppTheme.navyTint,
-      icon: Icons.water_drop,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.water_drop_outlined,
     ),
     'Guides': CategoryToken(
-      color: AppTheme.teal500,
-      tint: AppTheme.tealTint,
-      icon: Icons.menu_book,
+      color: AppTheme.navy,
+      tint: AppTheme.subtle,
+      icon: Icons.menu_book_outlined,
     ),
   };
 
@@ -327,13 +242,10 @@ class ServiceCategoryIcon extends StatelessWidget {
             // The supplied legacy PNG artwork is too fine at mobile sizes.
             // Render the app's Material glyphs instead: they stay crisp across
             // densities and carry a consistent, stronger visual weight.
-            child: Transform.scale(
-              scale: 1.14,
-              child: Icon(
-                fallbackIcon,
-                color: fallbackColor,
-                size: size,
-              ),
+            child: Icon(
+              fallbackIcon,
+              color: fallbackColor,
+              size: size,
             ),
           ),
         ),
@@ -386,7 +298,7 @@ class SlidingSegmentControl extends StatelessWidget {
     required this.currentIndex,
     required this.items,
     required this.onSegmentChanged,
-    this.activeColor = AppTheme.navy,
+    this.activeColor = AppTheme.white,
   });
 
   @override
@@ -395,9 +307,8 @@ class SlidingSegmentControl extends StatelessWidget {
       height: 44,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppTheme.pageBackground,
+        color: AppTheme.subtle,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.line.withOpacity(0.5)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -414,14 +325,8 @@ class SlidingSegmentControl extends StatelessWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     color: activeColor,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: activeColor.withOpacity(0.25),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      )
-                    ],
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: AppTheme.cardBorder),
                   ),
                 ),
               ),
@@ -443,10 +348,14 @@ class SlidingSegmentControl extends StatelessWidget {
                               AnimatedDefaultTextStyle(
                                 duration: const Duration(milliseconds: 200),
                                 style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color:
-                                      isSelected ? Colors.white : AppTheme.gray,
-                                  fontSize: 12.5,
+                                  fontFamily: AppTheme.fontInter,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? AppTheme.navy
+                                      : AppTheme.body,
+                                  fontSize: 14,
                                 ),
                                 child: Text(item.label),
                               ),
@@ -457,19 +366,16 @@ class SlidingSegmentControl extends StatelessWidget {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 5, vertical: 1),
                                   decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? Colors.white.withOpacity(0.24)
-                                        : AppTheme.line,
+                                    color: AppTheme.blueTint,
                                     borderRadius: BorderRadius.circular(9),
                                   ),
                                   child: Text(
                                     item.count.toString(),
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: isSelected
-                                          ? Colors.white
-                                          : AppTheme.gray,
+                                    style: const TextStyle(
+                                      fontFamily: AppTheme.fontInter,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.blue,
                                     ),
                                   ),
                                 ),

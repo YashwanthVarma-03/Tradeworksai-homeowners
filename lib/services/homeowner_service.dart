@@ -1053,8 +1053,9 @@ class HomeownerService {
     }
   }
 
-  Future<Map<String, dynamic>> findWorkOrder(int workOrderId) async {
-    final data = await fetchWorkOrders(forceRefresh: true);
+  Future<Map<String, dynamic>> findWorkOrder(int workOrderId,
+      {bool forceRefresh = true}) async {
+    final data = await fetchWorkOrders(forceRefresh: forceRefresh);
     final tabs = data['tabs'];
     if (tabs is Map) {
       for (final list in tabs.values.whereType<List>()) {

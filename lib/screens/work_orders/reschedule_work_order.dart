@@ -11,6 +11,7 @@ import '../../utils/work_order_status.dart';
 import '../../widgets/app_notification.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../widgets/transaction_guard.dart';
+import '../../ui/tw.dart';
 import 'reschedule_proposal.dart';
 
 /// The job's response level as the homeowner booked it: "Standard",
@@ -290,21 +291,9 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
       blockedMessage: 'Please wait while your proposal is being sent.',
       child: Scaffold(
         backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          centerTitle: true,
-          foregroundColor: AppTheme.navy,
-          title: Text(
-            widget.selectSlotOnly ? 'Choose a time' : 'Reschedule booking',
-            style: AppTheme.headingStyle
-                .copyWith(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(1),
-            child: Divider(height: 1, color: AppTheme.cardBorder),
-          ),
+        appBar: TwAppBar(
+          title:
+              widget.selectSlotOnly ? 'Choose a time' : 'Reschedule booking',
         ),
         body: SafeArea(
           top: false,
@@ -318,11 +307,16 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
                               'No open times in the next 7 days. Message $_pro to find another time.',
                           onRetry: _loadAvailability,
                         )
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-                          children: widget.selectSlotOnly
-                              ? _repairWindowContent(dates, slots)
-                              : _proposalContent(dates, slots),
+                      : SingleChildScrollView(
+                          child: TwPage(
+                            top: TwSpace.s20,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: widget.selectSlotOnly
+                                  ? _repairWindowContent(dates, slots)
+                                  : _proposalContent(dates, slots),
+                            ),
+                          ),
                         ),
         ),
         bottomNavigationBar: ready ? _actionBar() : null,
@@ -340,104 +334,80 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
         .join(' · ');
     return [
       Text(title, style: _titleStyle),
-      const SizedBox(height: 4),
+      const SizedBox(height: TwSpace.s4),
       Text(
         'Choose a new 2-hour window from $_pro’s open time, then send your proposal.',
         style: _metaStyle,
       ),
       if (bookedStart != null) ...[
-        const SizedBox(height: 16),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppTheme.subtle,
-            borderRadius: BorderRadius.circular(AppTheme.radius),
-          ),
+        const SizedBox(height: TwSpace.s16),
+        TwFactPanel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Your booked time',
-                style: TextStyle(
-                  color: AppTheme.body,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TwType.caption(color: AppTheme.body)
+                    .copyWith(fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: TwSpace.s4),
               Text(formatVisit(bookedStart, bookedEnd), style: _titleStyle),
-              const SizedBox(height: 4),
+              const SizedBox(height: TwSpace.s4),
               Text(
                 'It stands until $_pro accepts your new time.',
-                style: const TextStyle(
-                  color: AppTheme.body,
-                  fontSize: 14,
-                  height: 20 / 14,
-                ),
+                style: TwType.meta(color: AppTheme.body),
               ),
             ],
           ),
         ),
       ],
-      const SizedBox(height: 28),
-      Text('Select date', style: Theme.of(context).textTheme.headlineMedium),
-      const SizedBox(height: 12),
+      const SizedBox(height: TwSpace.s28),
+      Text('Select date', style: TwType.h2()),
+      const SizedBox(height: TwSpace.s12),
       SizedBox(
         height: 44,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: dates.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          separatorBuilder: (_, __) => const SizedBox(width: TwSpace.s8),
           itemBuilder: (_, index) {
             final date = dates[index];
-            return _choice(
+            return TwPill(
+              label: _dateLabel(date),
               selected: date == _selectedDate,
-              height: 44,
-              radius: 22,
-              onTap: () => _selectDate(date),
-              child: Text(_dateLabel(date),
-                  style: _choiceStyle(date == _selectedDate)),
+              onTap: () {
+                if (!_isSubmitting) _selectDate(date);
+              },
             );
           },
         ),
       ),
-      const SizedBox(height: 28),
+      const SizedBox(height: TwSpace.s28),
       Row(
         crossAxisAlignment: CrossAxisAlignment.baseline,
         textBaseline: TextBaseline.alphabetic,
         children: [
-          Expanded(
-            child: Text('Select time',
-                style: Theme.of(context).textTheme.headlineMedium),
-          ),
-          const Text(
-            '2-hour windows',
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-          ),
+          Expanded(child: Text('Select time', style: TwType.h2())),
+          Text('2-hour windows', style: TwType.caption()),
         ],
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: TwSpace.s12),
       _windowGrid(slots),
-      const SizedBox(height: 12),
+      const SizedBox(height: TwSpace.s12),
       Text(
         'Times come from $_pro’s calendar. Pick another day to see more.',
-        style: const TextStyle(
-          color: AppTheme.textSecondary,
-          fontSize: 13,
-          height: 19 / 13,
-        ),
+        style: TwType.caption(),
       ),
-      const SizedBox(height: 28),
-      const Text('Reason for rescheduling (optional)', style: _labelStyle),
-      const SizedBox(height: 8),
+      const SizedBox(height: TwSpace.s28),
+      const TwFieldLabel('Reason for rescheduling (optional)'),
       TextField(
         controller: _reasonController,
         minLines: 3,
         maxLines: 5,
         textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
-          hintText: 'Tell the pro why you need another time',
+        style: TwType.body(color: AppTheme.navy),
+        decoration: TwInputs.decoration(
+          hint: 'Tell the pro why you need another time',
         ),
       ),
     ];
@@ -454,20 +424,14 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
       if (cap != null) 'Cap ${formatUsd(cap)} not-to-exceed',
     ].where((part) => part.isNotEmpty).join(' · ');
     return [
-      Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppTheme.cardBorder),
-        ),
+      TwCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                _ProTile(name: _pro),
-                const SizedBox(width: 12),
+                TwAvatar(name: _pro, size: 48),
+                const SizedBox(width: TwSpace.s12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -483,65 +447,50 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
               ],
             ),
             if (cap != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: TwSpace.s12),
               const Divider(height: 1, color: AppTheme.cardBorder),
-              const SizedBox(height: 12),
+              const SizedBox(height: TwSpace.s12),
               Text(
                 'You’re approving a cap of ${formatUsd(cap)}',
-                style: const TextStyle(
-                  color: AppTheme.navy,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TwType.label(),
               ),
             ],
           ],
         ),
       ),
-      const SizedBox(height: 24),
+      const SizedBox(height: TwSpace.s20),
       Text(
         'Pick a 2-hour window for the repair. It’s booked on $_pro’s calendar.',
-        style: const TextStyle(color: AppTheme.body, fontSize: 16, height: 1.5),
+        style: TwType.bodySm(),
       ),
-      const SizedBox(height: 20),
-      const Text('Day', style: _labelStyle),
-      const SizedBox(height: 10),
+      const SizedBox(height: TwSpace.s20),
+      Text('Day', style: _labelStyle),
+      const SizedBox(height: TwSpace.s8),
       SizedBox(
-        height: 60,
+        height: TwDayTile.heightOf(context),
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: dates.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          separatorBuilder: (_, __) => const SizedBox(width: TwSpace.s8),
           itemBuilder: (_, index) {
             final date = dates[index];
             final day = DateTime.parse(date);
-            final selected = date == _selectedDate;
-            return _choice(
-              selected: selected,
-              width: 92,
-              height: 60,
-              onTap: () => _selectDate(date),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    DateFormat('EEE').format(day),
-                    style: const TextStyle(
-                        color: AppTheme.textSecondary, fontSize: 13),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(DateFormat('MMM d').format(day),
-                      style: _choiceStyle(selected)),
-                ],
-              ),
+            return TwDayTile(
+              top: DateFormat('EEE').format(day),
+              bottom: DateFormat('MMM d').format(day),
+              selected: date == _selectedDate,
+              onTap: () {
+                if (!_isSubmitting) _selectDate(date);
+              },
             );
           },
         ),
       ),
-      const SizedBox(height: 20),
-      if (_selectedDate != null)
+      const SizedBox(height: TwSpace.s20),
+      if (_selectedDate != null) ...[
         Text('Window · ${_dateLabel(_selectedDate!)}', style: _labelStyle),
-      const SizedBox(height: 10),
+        const SizedBox(height: TwSpace.s8),
+      ],
       _windowGrid(slots),
     ];
   }
@@ -554,164 +503,74 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
   /// Two columns of "8:00–10:00 AM" windows; nothing preselected.
   Widget _windowGrid(List<Map<String, dynamic>> slots) {
     if (slots.isEmpty) {
-      return const Text('No open windows on this day.', style: _metaStyle);
+      return Text('No open windows on this day.', style: _metaStyle);
     }
+    // SPEC §1.4: two columns; one on Compact or at large text sizes.
+    final perRow = TwLayout.stackRows(context) ? 1 : 2;
     final rows = <Widget>[];
-    for (var i = 0; i < slots.length; i += 2) {
+    for (var i = 0; i < slots.length; i += perRow) {
       rows.add(Padding(
-        padding: EdgeInsets.only(bottom: i + 2 < slots.length ? 10 : 0),
+        padding: EdgeInsets.only(
+            bottom: i + perRow < slots.length ? TwSpace.s8 : 0),
         child: Row(
           children: [
             Expanded(child: _windowTile(slots[i])),
-            const SizedBox(width: 10),
-            Expanded(
-              child: i + 1 < slots.length
-                  ? _windowTile(slots[i + 1])
-                  : const SizedBox.shrink(),
-            ),
+            if (perRow == 2) ...[
+              const SizedBox(width: TwSpace.s8),
+              Expanded(
+                child: i + 1 < slots.length
+                    ? _windowTile(slots[i + 1])
+                    : const SizedBox.shrink(),
+              ),
+            ],
           ],
         ),
       ));
     }
-    return Column(children: rows);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
+    );
   }
 
   Widget _windowTile(Map<String, dynamic> slot) {
     final start = DateTime.parse('${slot['start']}').toLocal();
     final end = DateTime.parse('${slot['end']}').toLocal();
     final selected = slot['start'] == _selectedSlot?['start'];
-    return _choice(
-      selected: selected,
-      onTap: () => setState(() => _selectedSlot = slot),
-      child: Text(formatWindow(start, end), style: _choiceStyle(selected)),
-    );
-  }
-
-  /// v3.3 selection: blue border and tint when selected, grey border
-  /// otherwise (design standard rule 4).
-  Widget _choice({
-    required bool selected,
-    required VoidCallback onTap,
-    required Widget child,
-    double height = 48,
-    double? width,
-    double radius = 12,
-  }) {
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: InkWell(
-        onTap: _isSubmitting ? null : onTap,
-        borderRadius: BorderRadius.circular(radius),
-        child: Container(
-          width: width,
-          height: height,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: selected ? AppTheme.blueTint : Colors.white,
-            borderRadius: BorderRadius.circular(radius),
-            border: Border.all(
-              color: selected ? AppTheme.blue : AppTheme.border,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: child,
-        ),
+    return SizedBox(
+      width: double.infinity,
+      child: TwPill(
+        label: formatWindow(start, end),
+        selected: selected,
+        square: true,
+        height: 48,
+        onTap: () {
+          if (!_isSubmitting) setState(() => _selectedSlot = slot);
+        },
       ),
     );
   }
-
-  TextStyle _choiceStyle(bool selected) => TextStyle(
-        color: AppTheme.navy,
-        fontSize: 15,
-        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-      );
 
   Widget _actionBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: AppTheme.cardBorder)),
-        boxShadow: AppTheme.floatShadow,
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: ElevatedButton(
-            onPressed: _selectedSlot == null || _isSubmitting ? null : _submit,
-            child: _isSubmitting
-                ? const SizedBox(
-                    height: 22,
-                    width: 22,
-                    child: CircularProgressIndicator(
-                        color: AppTheme.onOrange, strokeWidth: 2),
-                  )
-                : Text(widget.selectSlotOnly
-                    ? 'Approve cap and book'
-                    : 'Send proposal'),
-          ),
+    return TwStickyBar(
+      children: [
+        TwPrimaryButton(
+          label: widget.selectSlotOnly
+              ? 'Approve cap and book'
+              : 'Send proposal',
+          onPressed: _selectedSlot == null || _isSubmitting ? null : _submit,
+          loading: _isSubmitting,
         ),
-      ),
+      ],
     );
   }
 }
 
-const _labelStyle = TextStyle(
-  color: AppTheme.navy,
-  fontWeight: FontWeight.w600,
-  fontSize: 14,
-);
+TextStyle get _labelStyle => TwType.label();
 
-const _titleStyle = TextStyle(
-  color: AppTheme.navy,
-  fontWeight: FontWeight.w600,
-  fontSize: 16,
-);
+TextStyle get _titleStyle => TwType.title();
 
-const _metaStyle = TextStyle(
-  color: AppTheme.textSecondary,
-  fontSize: 14,
-  height: 20 / 14,
-);
-
-/// Pro initials on a navy tile, 12px radius (design standard rule 10).
-class _ProTile extends StatelessWidget {
-  const _ProTile({required this.name});
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    final initials = name
-        .split(RegExp(r'\s+'))
-        .where((part) =>
-            part.isNotEmpty && RegExp(r'[A-Za-z0-9]').hasMatch(part[0]))
-        .map((part) => part[0])
-        .take(2)
-        .join()
-        .toUpperCase();
-    return Container(
-      width: 48,
-      height: 48,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: AppTheme.navy,
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-      ),
-      child: Text(
-        initials.isEmpty ? 'P' : initials,
-        style: AppTheme.headingStyle.copyWith(
-          color: Colors.white,
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
+TextStyle get _metaStyle => TwType.meta();
 
 class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.message, required this.onRetry});
@@ -720,21 +579,19 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.event_busy_outlined,
-                size: 40, color: AppTheme.textSecondary),
-            const SizedBox(height: 12),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 16),
-            OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
-          ]),
+        child: SingleChildScrollView(
+          child: TwPage(
+            top: TwSpace.s28,
+            child: TwEmptyState(
+              icon: Icons.event_busy_outlined,
+              title: message,
+              action: TwSecondaryButton(
+                label: 'Try again',
+                onPressed: onRetry,
+                expand: false,
+              ),
+            ),
+          ),
         ),
       );
 }

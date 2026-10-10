@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../utils/app_error_utils.dart';
 import '../widgets/offline_state.dart';
 import 'account/home_profile.dart';
@@ -180,70 +181,79 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
         color: AppTheme.navy,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 110),
+          padding: EdgeInsets.zero,
           children: [
-            Text('Profile', style: Theme.of(context).textTheme.headlineLarge),
-            const SizedBox(height: 12),
-            _accountHeader(),
-            const SizedBox(height: 12),
-            _creditsCard(),
-            _sectionLabel('Account'),
-            _settingsCard(
-              icon: Icons.person_outline_rounded,
-              title: 'Personal info',
-              subtitle: _personalSubtitle(),
-              onTap: _editPersonalInfo,
+            TwPage(
+              top: 14,
+              bottom: 110,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Profile', style: Theme.of(context).textTheme.headlineLarge),
+                  const SizedBox(height: 12),
+                  _accountHeader(),
+                  const SizedBox(height: 12),
+                  _creditsCard(),
+                  _sectionLabel('Account'),
+                  _settingsCard(
+                    icon: Icons.person_outline_rounded,
+                    title: 'Personal info',
+                    subtitle: _personalSubtitle(),
+                    onTap: _editPersonalInfo,
+                  ),
+                  _settingsCard(
+                    icon: Icons.location_on_outlined,
+                    title: 'Addresses',
+                    subtitle: _addressSubtitle(),
+                    onTap: _manageAddresses,
+                  ),
+                  _settingsCard(
+                    icon: Icons.credit_card_outlined,
+                    title: 'Payment methods',
+                    subtitle: 'Pay your booked pro directly',
+                    onTap: _managePayments,
+                    last: true,
+                  ),
+                  _sectionLabel('Your home'),
+                  _settingsCard(
+                    icon: Icons.home_outlined,
+                    title: 'Home profile',
+                    subtitle: _homeProfileSubtitle(),
+                    onTap: _openHomeProfileScreen,
+                    last: true,
+                  ),
+                  _sectionLabel('Preferences'),
+                  _settingsCard(
+                    icon: Icons.notifications_none_rounded,
+                    title: 'Notifications',
+                    subtitle: 'Push & email preferences',
+                    onTap: _openNotifications,
+                    last: true,
+                  ),
+                  _sectionLabel('Support'),
+                  _settingsCard(
+                    icon: Icons.help_outline_rounded,
+                    title: 'Help & support',
+                    subtitle: 'FAQs, contact us, report an issue',
+                    onTap: _openSupport,
+                  ),
+                  _settingsCard(
+                    icon: Icons.security_outlined,
+                    title: 'Account security',
+                    subtitle: 'Password and account closure',
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const AccountSecurityScreen())),
+                    last: true,
+                  ),
+                  const SizedBox(height: 24),
+                  _signOutButton(),
+                  const SizedBox(height: 8),
+                  _deleteAccountButton(),
+                ],
+              ),
             ),
-            _settingsCard(
-              icon: Icons.location_on_outlined,
-              title: 'Addresses',
-              subtitle: _addressSubtitle(),
-              onTap: _manageAddresses,
-            ),
-            _settingsCard(
-              icon: Icons.credit_card_outlined,
-              title: 'Payment methods',
-              subtitle: 'Pay your booked pro directly',
-              onTap: _managePayments,
-              last: true,
-            ),
-            _sectionLabel('Your home'),
-            _settingsCard(
-              icon: Icons.home_outlined,
-              title: 'Home profile',
-              subtitle: _homeProfileSubtitle(),
-              onTap: _openHomeProfileScreen,
-              last: true,
-            ),
-            _sectionLabel('Preferences'),
-            _settingsCard(
-              icon: Icons.notifications_none_rounded,
-              title: 'Notifications',
-              subtitle: 'Push & email preferences',
-              onTap: _openNotifications,
-              last: true,
-            ),
-            _sectionLabel('Support'),
-            _settingsCard(
-              icon: Icons.help_outline_rounded,
-              title: 'Help & support',
-              subtitle: 'FAQs, contact us, report an issue',
-              onTap: _openSupport,
-            ),
-            _settingsCard(
-              icon: Icons.security_outlined,
-              title: 'Account security',
-              subtitle: 'Password and account closure',
-              onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const AccountSecurityScreen())),
-              last: true,
-            ),
-            const SizedBox(height: 24),
-            _signOutButton(),
-            const SizedBox(height: 8),
-            _deleteAccountButton(),
           ],
         ),
       ),
@@ -293,7 +303,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
               children: [
                 Text(
                   userName,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: AppTheme.headingStyle.copyWith(
                     fontSize: 20,
@@ -304,7 +314,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                 const SizedBox(height: 3),
                 Text(
                   userEmail,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: _mutedText, fontSize: 14),
                 ),
@@ -434,7 +444,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                 children: [
                   Text(
                     title,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: _inkStrong,
@@ -480,8 +490,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: AppTheme.white,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _lineSoft),
       ),
       child: child,

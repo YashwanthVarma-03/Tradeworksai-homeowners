@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/homeowner_service.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../utils/display_format.dart';
 import '../widgets/app_notification.dart';
 import '../widgets/offline_state.dart';
@@ -129,26 +130,32 @@ class _RewardTabState extends State<RewardTab> {
     }
   }
 
-  Widget _heading(String text, {String? meta, double bottom = 12}) => Padding(
-        padding: EdgeInsets.only(top: 28, bottom: bottom),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Expanded(
-              child:
-                  Text(text, style: Theme.of(context).textTheme.headlineMedium),
+  Widget _heading(String text, {String? meta, double bottom = TwSpace.s12}) {
+    final title = Text(text, style: TwType.h2());
+    return Padding(
+      padding: EdgeInsets.only(top: TwSpace.s28, bottom: bottom),
+      child: meta != null && TwLayout.stackRows(context)
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                title,
+                const SizedBox(height: TwSpace.s4),
+                Text(meta, style: TwType.caption()),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Expanded(child: title),
+                if (meta != null) Text(meta, style: TwType.caption()),
+              ],
             ),
-            if (meta != null)
-              Text(meta,
-                  style: const TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 13)),
-          ],
-        ),
-      );
+    );
+  }
 
   static const _bodyStyle =
-      TextStyle(color: AppTheme.body, fontSize: 15, height: 23 / 15);
+      TextStyle(color: AppTheme.body, fontSize: 15, height: 22 / 15);
   static const _metaStyle =
       TextStyle(color: AppTheme.textSecondary, fontSize: 13);
 
@@ -190,67 +197,73 @@ class _RewardTabState extends State<RewardTab> {
         onRefresh: () => _load(refresh: true),
         child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 110),
+            padding: EdgeInsets.zero,
             children: [
-              Text('Rewards', style: Theme.of(context).textTheme.headlineLarge),
-              const SizedBox(height: 12),
-              if (_error != null)
-                const Padding(
-                    padding: EdgeInsets.only(bottom: 16),
-                    child: Text(
-                        'Could not update credits. Showing saved information.',
-                        style: TextStyle(color: AppTheme.amber))),
-              _balanceCard(d),
-              if (receipts.isNotEmpty) ...[
-                _heading('Upload your paid receipt'),
-                const Text(
-                    'Your customer-paid portion earns credits once the paid receipt is uploaded.',
-                    style: _bodyStyle),
-                for (final r in receipts) ...[
-                  const SizedBox(height: 12),
-                  _receiptRow(r),
-                ],
-              ],
-              if (spend != null || earned != null)
-                _yearSection(d, bands, spend, earned),
-              if (bands.isNotEmpty) ...[
-                _heading('Earning bands', bottom: 4),
-                const Text(
-                    'Each dollar earns at its band’s rate. Earlier earnings never change.',
-                    style: _bodyStyle),
-                for (var i = 0; i < bands.length; i++)
-                  _bandRow(bands[i], spend,
-                      isCurrent: i == currentBand, last: i == bands.length - 1),
-              ],
-              if (milestones.isNotEmpty) ...[
-                _heading('Milestones', bottom: 4),
-                const Text('Milestone credits expire after 90 days.',
-                    style: _bodyStyle),
-                for (var i = 0; i < milestones.length; i++)
-                  _milestoneRow(milestones[i],
-                      last: i == milestones.length - 1),
-              ],
-              _heading('Service credits ledger', bottom: 0),
-              if (ledger.isEmpty)
-                const Padding(
-                    padding: EdgeInsets.only(top: 12),
-                    child: Text('No credit activity to show yet.',
-                        style: _bodyStyle)),
-              for (var i = 0; i < ledger.length; i++)
-                _ledgerRow(ledger[i], last: i == ledger.length - 1),
-              _heading('How credits work'),
-              const Text(
-                  'Earn up to 8% back — plus a growing bonus at every band you reach, up to \$2,665 a year in service credits. '
-                  'There are no codes, and nothing is applied without you asking. '
-                  'Credits lower what you pay, so they also lower what this job earns and what it adds toward your band. '
-                  'Credits are used soonest-expiring first, with milestones before band credits.',
-                  style: _bodyStyle),
-              const SizedBox(height: 24),
-              SizedBox(
-                height: 52,
-                child: ElevatedButton(
-                    onPressed: widget.onBookTap,
-                    child: const Text('Browse services')),
+              TwPage(
+                top: 14,
+                bottom: 110,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_error != null)
+                      const Padding(
+                          padding: EdgeInsets.only(bottom: 16),
+                          child: Text(
+                              'Could not update credits. Showing saved information.',
+                              style: TextStyle(color: AppTheme.amber))),
+                    _balanceCard(d),
+                    if (receipts.isNotEmpty) ...[
+                      _heading('Upload your paid receipt'),
+                      const Text(
+                          'Your customer-paid portion earns credits once the paid receipt is uploaded.',
+                          style: _bodyStyle),
+                      for (final r in receipts) ...[
+                        const SizedBox(height: 12),
+                        _receiptRow(r),
+                      ],
+                    ],
+                    if (spend != null || earned != null)
+                      _yearSection(d, bands, spend, earned),
+                    if (bands.isNotEmpty) ...[
+                      _heading('Earning bands', bottom: 4),
+                      const Text(
+                          'Each dollar earns at its band’s rate. Earlier earnings never change.',
+                          style: _bodyStyle),
+                      for (var i = 0; i < bands.length; i++)
+                        _bandRow(bands[i], spend,
+                            isCurrent: i == currentBand,
+                            last: i == bands.length - 1),
+                    ],
+                    if (milestones.isNotEmpty) ...[
+                      _heading('Milestones', bottom: 4),
+                      const Text('Milestone credits expire after 90 days.',
+                          style: _bodyStyle),
+                      for (var i = 0; i < milestones.length; i++)
+                        _milestoneRow(milestones[i],
+                            last: i == milestones.length - 1),
+                    ],
+                    _heading('Service credits ledger', bottom: 0),
+                    if (ledger.isEmpty)
+                      const Padding(
+                          padding: EdgeInsets.only(top: 12),
+                          child: Text('No credit activity to show yet.',
+                              style: _bodyStyle)),
+                    for (var i = 0; i < ledger.length; i++)
+                      _ledgerRow(ledger[i], last: i == ledger.length - 1),
+                    _heading('How credits work'),
+                    const Text(
+                        'Earn up to 8% back — plus a growing bonus at every band you reach, up to \$2,665 a year in service credits. '
+                        'There are no codes, and nothing is applied without you asking. '
+                        'Credits lower what you pay, so they also lower what this job earns and what it adds toward your band. '
+                        'Credits are used soonest-expiring first, with milestones before band credits.',
+                        style: _bodyStyle),
+                    const SizedBox(height: TwSpace.s28),
+                    TwPrimaryButton(
+                      label: 'Browse services',
+                      onPressed: widget.onBookTap,
+                    ),
+                  ],
+                ),
               ),
             ]));
   }
@@ -273,7 +286,7 @@ class _RewardTabState extends State<RewardTab> {
         ? null
         : 'Earliest expiry: ${_money(earliest['amount'])} on ${_date(earliest['expiresAt'])}';
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -296,7 +309,7 @@ class _RewardTabState extends State<RewardTab> {
                 height: 36,
                 decoration: const BoxDecoration(
                     color: AppTheme.purpleTint, shape: BoxShape.circle),
-                child: const Icon(Icons.card_giftcard_rounded,
+                child: const Icon(Icons.redeem_outlined,
                     size: 18, color: AppTheme.purple),
               ),
             ],
@@ -336,7 +349,7 @@ class _RewardTabState extends State<RewardTab> {
       if (completed.isNotEmpty) 'Completed $completed',
     ].whereType<String>().join(' · ');
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -350,7 +363,7 @@ class _RewardTabState extends State<RewardTab> {
             height: 36,
             decoration: const BoxDecoration(
                 color: AppTheme.amberTint, shape: BoxShape.circle),
-            child: const Icon(Icons.receipt_long_outlined,
+            child: const Icon(Icons.file_upload_outlined,
                 size: 18, color: AppTheme.amber),
           ),
           const SizedBox(width: 12),
@@ -363,11 +376,11 @@ class _RewardTabState extends State<RewardTab> {
                         color: AppTheme.navy,
                         fontSize: 15,
                         fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(detail,
                     style: const TextStyle(
                         color: AppTheme.body, fontSize: 14, height: 20 / 14)),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Row(
                   children: [
                     Container(
@@ -390,6 +403,7 @@ class _RewardTabState extends State<RewardTab> {
                     padding: EdgeInsets.zero,
                     minimumSize: const Size(44, 44),
                     alignment: Alignment.centerLeft,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   child: const Text('Upload receipt',
                       style:
@@ -454,7 +468,7 @@ class _RewardTabState extends State<RewardTab> {
             meta: resets == null ? null : 'Resets ${_date(resets)}'),
         if (spend != null)
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             decoration: BoxDecoration(
               color: AppTheme.subtle,
               borderRadius: BorderRadius.circular(AppTheme.radius),
@@ -462,20 +476,26 @@ class _RewardTabState extends State<RewardTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Expanded(
-                      child: Text(formatUsd(spend),
-                          style: AppTheme.headingStyle.copyWith(fontSize: 24)),
-                    ),
-                    const Text('counted this year',
-                        style: TextStyle(color: AppTheme.body, fontSize: 14)),
-                  ],
-                ),
+                TwLayout.stackRows(context)
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(formatUsd(spend), style: TwType.h1Sm()),
+                          Text('counted this year', style: TwType.meta()),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Expanded(
+                            child: Text(formatUsd(spend), style: TwType.h1Sm()),
+                          ),
+                          Text('counted this year', style: TwType.meta()),
+                        ],
+                      ),
                 if (nextFloor != null && nextFloor > 0) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: TwSpace.s4),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
@@ -489,22 +509,30 @@ class _RewardTabState extends State<RewardTab> {
                   ),
                 ],
                 if (bandLine != null || toNext != null) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(bandLine ?? '',
-                            style: const TextStyle(
-                                color: AppTheme.body, fontSize: 14)),
-                      ),
-                      if (toNext != null)
-                        Text(toNext,
-                            style: const TextStyle(
-                                color: AppTheme.navy,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600)),
-                    ],
-                  ),
+                  const SizedBox(height: TwSpace.s8),
+                  TwLayout.stackRows(context)
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (bandLine != null)
+                              Text(bandLine, style: TwType.meta()),
+                            if (toNext != null)
+                              Text(toNext, style: TwType.label()),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            Expanded(
+                              child: Text(bandLine ?? '', style: TwType.meta()),
+                            ),
+                            if (toNext != null)
+                              Flexible(
+                                child: Text(toNext,
+                                    textAlign: TextAlign.right,
+                                    style: TwType.label()),
+                              ),
+                          ],
+                        ),
                 ],
               ],
             ),
@@ -519,8 +547,7 @@ class _RewardTabState extends State<RewardTab> {
           resets == null
               ? 'Your bands and milestones reset on your anniversary. Credits you’ve already earned keep their own expiry dates.'
               : 'Your bands and milestones reset on your anniversary, ${DateFormat('MMM d').format(resets)}. Credits you’ve already earned keep their own expiry dates.',
-          style: const TextStyle(
-              color: AppTheme.textSecondary, fontSize: 13, height: 19 / 13),
+          style: TwType.caption(),
         ),
       ],
     );
@@ -535,18 +562,21 @@ class _RewardTabState extends State<RewardTab> {
             ? const Border(bottom: BorderSide(color: AppTheme.cardBorder))
             : null,
       ),
-      child: Row(
-        children: [
-          Expanded(
-              child: Text(label,
-                  style: const TextStyle(color: AppTheme.body, fontSize: 15))),
-          Text(value,
-              style: TextStyle(
-                  color: valueColor,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600)),
-        ],
-      ),
+      child: TwLayout.stackRows(context)
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: TwType.bodySm()),
+                const SizedBox(height: TwSpace.s4),
+                Text(value, style: TwType.value(color: valueColor)),
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(child: Text(label, style: TwType.bodySm())),
+                Text(value, style: TwType.value(color: valueColor)),
+              ],
+            ),
     );
   }
 
@@ -560,7 +590,7 @@ class _RewardTabState extends State<RewardTab> {
             ? 'Not reached'
             : null;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
         border: last
             ? null
@@ -615,7 +645,7 @@ class _RewardTabState extends State<RewardTab> {
   Widget _milestoneRow(Map<String, dynamic> m, {required bool last}) {
     final reached = m['reachedAt'] != null;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 9),
       decoration: BoxDecoration(
         border: last
             ? null

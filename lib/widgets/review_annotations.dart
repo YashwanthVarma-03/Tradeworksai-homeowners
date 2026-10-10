@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../theme.dart';
+import '../ui/tw.dart';
 
 class ReviewAnnotations extends StatelessWidget {
   const ReviewAnnotations(
@@ -22,17 +22,15 @@ class ReviewAnnotations extends StatelessWidget {
         Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text('Edited ${DateFormat.yMMMd().format(edited.toLocal())}',
-                style: const TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 12))),
+                style: TwType.caption())),
       if (response.trim().isNotEmpty)
         Padding(
             padding: const EdgeInsets.only(left: 16, top: 12),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Response from $businessName',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text('Response from $businessName', style: TwType.label()),
               const SizedBox(height: 4),
-              Text(response),
+              Text(response, style: TwType.bodySm()),
             ])),
     ]);
   }

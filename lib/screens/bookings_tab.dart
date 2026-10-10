@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../utils/display_format.dart';
 import '../utils/work_order_status.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../services/homeowner_service.dart';
 import '../widgets/app_notification.dart';
 import 'work_orders/work_order_detail.dart';
@@ -260,21 +261,16 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return _string(job['address']) ?? 'Home';
   }
 
+  /// The job's real level (Oct 1) — read from every field it can arrive in,
+  /// the same set `reschedule_work_order.dart` reads.
   String _jobPriority(Map<String, dynamic> job) {
     return _string(job['priority']) ??
         _string(job['urgency']) ??
+        _string(job['urgencyLevel']) ??
+        _string(job['urgency_level']) ??
         _string(job['serviceLevel']) ??
+        _string(job['service_level']) ??
         'Standard';
-  }
-
-  String _jobInitials(String name) {
-    final parts = name
-        .split(RegExp(r'\s+'))
-        .where((part) => part.trim().isNotEmpty)
-        .toList();
-    final initials =
-        parts.map((part) => part.trim()[0]).take(2).join().toUpperCase();
-    return initials.isEmpty ? 'P' : initials;
   }
 
   int _jobRating(Map<String, dynamic> job) {
@@ -368,18 +364,20 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Cancel Booking',
-            style:
-                TextStyle(fontWeight: FontWeight.bold, color: AppTheme.error)),
-        content: const Text(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+        title: Text('Cancel Booking', style: TwType.h3()),
+        content: Text(
           'Are you sure you want to cancel this booking? Cancel is free before work begins, with no homeowner fees.',
+          style: TwType.bodySm(),
         ),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Keep Booking'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () async {
               Navigator.pop(context);
               final workOrderId = _resolveWorkOrderId(job);
@@ -411,8 +409,10 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                 _pendingWorkOrderActions.remove(workOrderId);
               }
             },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.error, foregroundColor: Colors.white),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.red,
+              minimumSize: const Size(44, 44),
+            ),
             child: const Text('Cancel Job'),
           ),
         ],
@@ -513,119 +513,49 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.white,
+      color: AppTheme.pageBackground,
       child: Column(
         children: [
           _buildBookingsHeader(),
           Expanded(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: AppTheme.pageBackground,
-                border: Border(
-                  top: BorderSide(color: AppTheme.cardBorder, width: 1),
-                ),
-              ),
-              child: RefreshIndicator(
-                onRefresh: () => _fetchJobs(showLoading: false),
-                color: AppTheme.navy,
-                child: _buildJobsList(),
-              ),
+            child: RefreshIndicator(
+              onRefresh: () => _fetchJobs(showLoading: false),
+              color: AppTheme.navy,
+              child: _buildJobsList(),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Side padding that keeps the content in the gutter, and in a centred
+  /// 560 column on Wide (SPEC §1).
+  double _sidePadding(BuildContext context) {
+    final gutter = TwLayout.gutter(context);
+    final width = MediaQuery.of(context).size.width;
+    final centred = (width - TwLayout.maxContent) / 2;
+    return centred > gutter ? centred : gutter;
   }
 
   Widget _buildBookingsHeader() {
+    final side = _sidePadding(context);
+    final upcoming = _upcomingJobs.length;
     return Container(
       width: double.infinity,
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-      child: _buildHeaderControls(),
-    );
-  }
-
-  Widget _buildHeaderControls() {
-    return Container(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
-      ),
-      child: Row(
+      color: AppTheme.pageBackground,
+      padding: EdgeInsets.fromLTRB(side, 14, side, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSegmentTap(
-            index: 0,
-            label: 'Upcoming',
-            count: _upcomingJobs.length,
-          ),
-          _buildSegmentTap(
-            index: 1,
-            label: 'History',
+          TwUnderlineTabs(
+            labels: const ['Upcoming', 'History'],
+            index: _activeSegment,
+            onChanged: (index) => setState(() => _activeSegment = index),
+            counts:
+                _activeSegment == 0 && upcoming > 0 ? {0: upcoming} : const {},
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSegmentTap({
-    required int index,
-    required String label,
-    int? count,
-  }) {
-    final selected = _activeSegment == index;
-    return Expanded(
-      child: Semantics(
-        button: true,
-        selected: selected,
-        child: InkWell(
-          onTap: () => setState(() => _activeSegment = index),
-          child: Container(
-            height: 48,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: selected ? AppTheme.blue : Colors.transparent,
-                  width: 2,
-                ),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? AppTheme.blue : AppTheme.body,
-                    fontSize: 15,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-                if (selected && count != null && count > 0) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    constraints: const BoxConstraints(minWidth: 20),
-                    height: 20,
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppTheme.blueTint,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '$count',
-                      style: const TextStyle(
-                        color: AppTheme.blue,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -669,11 +599,12 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       );
     }
 
+    final side = _sidePadding(context);
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: EdgeInsets.fromLTRB(side, TwSpace.s20, side, TwSpace.s28),
           sliver: SliverList(
             delegate: SliverChildListDelegate(
               _activeSegment == 0
@@ -687,46 +618,48 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   }
 
   Widget _buildErrorState() {
-    return Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline, size: 46, color: AppTheme.error),
-          const SizedBox(height: 14),
-          Text(
-            _errorMessage!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppTheme.ink,
-              fontSize: 15,
-              height: 1.35,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 18),
-          _buildOutlineAction(
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(TwLayout.gutter(context)),
+        child: TwEmptyState(
+          icon: Icons.error_outline,
+          title: _errorMessage!,
+          action: TwSecondaryButton(
             label: 'Try again',
+            expand: false,
             onPressed: () => _fetchJobs(showLoading: true),
           ),
-        ],
+        ),
       ),
     );
   }
 
   List<Widget> _buildUpcomingItems(List<Map<String, dynamic>> jobs) {
     final items = <Widget>[];
+    final firstCap = jobs.indexWhere(WorkOrderStatus.capPending);
     for (var i = 0; i < jobs.length; i++) {
       final job = jobs[i];
       if (i > 0 && _isTomorrow(job) && !_isTomorrow(jobs[i - 1])) {
         items.add(const _BookingSectionLabel('Tomorrow'));
       }
-      items.add(_buildUpcomingJobCard(job));
+      items.add(_buildUpcomingJobCard(job, primary: i == firstCap));
       if (i != jobs.length - 1) {
-        items.add(const SizedBox(height: 12));
+        items.add(const SizedBox(height: TwSpace.s12));
       }
     }
     return items;
+  }
+
+  /// Cancelled, declined and no-show jobs show "Book again" only.
+  bool _historyIsCancelled(Map<String, dynamic> job) {
+    final statusLower =
+        (job['status']?.toString() ?? 'completed').toLowerCase();
+    return statusLower == 'cancelled' ||
+        statusLower == 'canceled' ||
+        statusLower == 'cancel' ||
+        statusLower == 'declined' ||
+        statusLower == 'pro_no_show' ||
+        statusLower == 'customer_no_show';
   }
 
   List<Widget> _buildHistoryItems(List<Map<String, dynamic>> jobs) {
@@ -736,17 +669,29 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       (_isLastWeek(job) ? lastWeek : earlier).add(job);
     }
 
+    // One orange per screen: the first card, in display order, that still
+    // owes a review gets the primary "Leave a review" (D02).
+    Map<String, dynamic>? firstReview;
+    for (final job in [...lastWeek, ...earlier]) {
+      if (!_historyIsCancelled(job) && !_jobHasReview(job)) {
+        firstReview = job;
+        break;
+      }
+    }
+    Widget card(Map<String, dynamic> job) =>
+        _buildHistoryJobCard(job, primary: identical(job, firstReview));
+
     // Each job sits in the bucket its own date puts it in — never moved up
     // to fill an empty "Last week".
     return [
       if (lastWeek.isNotEmpty) ...[
-        const _BookingSectionLabel('Last week'),
-        ..._withSpacing(lastWeek.map(_buildHistoryJobCard)),
+        const _BookingSectionLabel('Last week', first: true),
+        ..._withSpacing(lastWeek.map(card)),
       ],
       if (earlier.isNotEmpty) ...[
-        if (lastWeek.isNotEmpty) const SizedBox(height: 12),
-        const _BookingSectionLabel('Earlier'),
-        ..._withSpacing(earlier.map(_buildHistoryJobCard)),
+        if (lastWeek.isNotEmpty) const SizedBox(height: TwSpace.s12),
+        _BookingSectionLabel('Earlier', first: lastWeek.isEmpty),
+        ..._withSpacing(earlier.map(card)),
       ],
     ];
   }
@@ -757,13 +702,14 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     for (var i = 0; i < list.length; i++) {
       result.add(list[i]);
       if (i != list.length - 1) {
-        result.add(const SizedBox(height: 12));
+        result.add(const SizedBox(height: TwSpace.s12));
       }
     }
     return result;
   }
 
-  Widget _buildUpcomingJobCard(Map<String, dynamic> job) {
+  Widget _buildUpcomingJobCard(Map<String, dynamic> job,
+      {bool primary = false}) {
     final status = job['status']?.toString() ?? 'Active';
     final statusLower = status.toLowerCase();
     final isAlert = WorkOrderStatus.capPending(job);
@@ -778,9 +724,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     final service = _jobService(job);
     final addressStr = _jobAddress(job);
     final tier = _jobPriority(job);
-    final initials = _jobInitials(proName);
 
-    return GestureDetector(
+    return TwCard(
       onTap: () {
         Navigator.push(
           context,
@@ -789,126 +734,105 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           ),
         ).then((_) => _fetchJobs(showLoading: false));
       },
-      child: Container(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppTheme.cardBorder),
-        ),
-        child: Stack(
-          children: [
-            if (isAlert)
-              const Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                child: SizedBox(
-                  width: 4,
-                  child: ColoredBox(color: AppTheme.blue),
-                ),
-              ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(isAlert ? 20 : 14, 14, 14, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          service,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppTheme.navy,
-                            fontSize: 15,
-                            height: 1.15,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      _buildStatusBadge(job),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _buildProviderRow(
-                    initials: initials,
-                    proName: proName,
-                    priority: tier,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInfoLine(
-                    icon: Icons.insert_drive_file_outlined,
-                    label: _formatUpcomingLine(job, isAlert: isAlert),
-                  ),
-                  const SizedBox(height: 6),
-                  _buildInfoLine(
-                    icon: Icons.location_on_outlined,
-                    label: addressStr,
-                  ),
-                  const SizedBox(height: 12),
-                  if (isAlert)
-                    _buildPrimaryAction(
-                      label: 'Review the cap',
-                      onPressed: () => _openCapApproval(job),
-                    )
-                  else if (isLive)
-                    _buildLiveActions(job)
-                  else if (!isCancelled)
-                    _buildScheduledActions(job),
-                ],
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildCardTitleRow(service, job),
+          const SizedBox(height: 14),
+          _buildProviderRow(
+            job: job,
+            proName: proName,
+            priority: tier,
+          ),
+          const SizedBox(height: 14),
+          _buildInfoLine(
+            icon: isAlert
+                ? Icons.description_outlined
+                : Icons.calendar_today_outlined,
+            label: _formatUpcomingLine(job, isAlert: isAlert),
+          ),
+          const SizedBox(height: 6),
+          _buildInfoLine(
+            icon: Icons.location_on_outlined,
+            label: addressStr,
+          ),
+          if (WorkOrderStatus.proOnSite(job)) ...[
+            const SizedBox(height: TwSpace.s8),
+            _buildInfoLine(
+              icon: Icons.check_circle_outline_rounded,
+              label: '$proName has arrived',
             ),
           ],
-        ),
+          if (isAlert) ...[
+            const SizedBox(height: 14),
+            primary
+                ? _buildPrimaryAction(
+                    label: 'Review the cap',
+                    onPressed: () => _openCapApproval(job),
+                  )
+                : _buildOutlineAction(
+                    label: 'Review the cap',
+                    onPressed: () => _openCapApproval(job),
+                  ),
+          ] else if (isLive) ...[
+            const SizedBox(height: 14),
+            _buildLiveActions(job),
+          ] else if (!isCancelled) ...[
+            const SizedBox(height: 14),
+            _buildScheduledActions(job),
+          ],
+        ],
       ),
     );
   }
 
+  /// Service name (`h3`, up to 2 lines) with the status mark on the right.
+  Widget _buildCardTitleRow(String service, Map<String, dynamic> job) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 3,
+          child: Text(
+            service,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TwType.h3(),
+          ),
+        ),
+        const SizedBox(width: TwSpace.s12),
+        Flexible(flex: 2, child: _buildStatusBadge(job)),
+      ],
+    );
+  }
+
+  String? _jobProImage(Map<String, dynamic> job) {
+    final pro = job['pro'];
+    if (pro is! Map) return null;
+    return _string(pro['logoUrl'] ??
+        pro['logo_url'] ??
+        pro['avatarUrl'] ??
+        pro['avatar_url']);
+  }
+
   Widget _buildProviderRow({
-    required String initials,
+    required Map<String, dynamic> job,
     required String proName,
     required String priority,
   }) {
-    final avatarColor = _avatarColor(initials);
-
     return Row(
       children: [
-        Container(
-          width: 32,
-          height: 32,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: avatarColor,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Text(
-            initials,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              height: 1,
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
+        TwAvatar(name: proName, imageUrl: _jobProImage(job), size: 40),
+        const SizedBox(width: TwSpace.s12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 proName,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppTheme.navy,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TwType.title(),
               ),
               const SizedBox(height: 2),
               _urgencyMeta(priority),
@@ -929,27 +853,20 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             ? 'Urgent'
             : 'Standard';
     if (level == 'Standard') {
-      return const Text(
+      return Text(
         'Standard',
-        style: TextStyle(
-          color: AppTheme.textSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-        ),
+        style: TwType.caption().copyWith(fontWeight: FontWeight.w500),
       );
     }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Icon(Icons.schedule_rounded, size: 14, color: AppTheme.red),
-        const SizedBox(width: 4),
+        const SizedBox(width: TwSpace.s4),
         Text(
           level,
-          style: const TextStyle(
-            color: AppTheme.red,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TwType.caption(color: AppTheme.red)
+              .copyWith(fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -958,23 +875,25 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   Widget _buildStatusBadge(Map<String, dynamic> job) {
     final resolved = WorkOrderStatus.fromJob(job);
     // Booked is the default and is not shown on rows (design standard v3.3).
-    return Wrap(spacing: 12, runSpacing: 6, children: [
-      if (resolved.state != WorkOrderState.booked)
-        WorkOrderStatusChip(resolved),
-      if (resolved.waitingOnYou) const WaitingOnYouChip(),
-    ]);
+    return Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 12,
+        runSpacing: 6,
+        children: [
+          if (resolved.state != WorkOrderState.booked)
+            WorkOrderStatusChip(resolved),
+          if (resolved.waitingOnYou) const WaitingOnYouChip(),
+        ]);
   }
 
   Widget _buildInfoLine({required IconData icon, required String label}) =>
-      Row(children: [
-        Icon(icon, color: AppTheme.textSecondary, size: 14),
-        const SizedBox(width: 6),
-        Expanded(
-            child: Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 13))),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, color: AppTheme.navy, size: 16),
+        ),
+        const SizedBox(width: TwSpace.s8),
+        Expanded(child: Text(label, style: TwType.meta())),
       ]);
 
   Widget _buildLiveActions(Map<String, dynamic> job) => _buildOutlineAction(
@@ -1004,16 +923,16 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
           )
         else
           const Spacer(),
-        const SizedBox(width: 16),
+        const SizedBox(width: TwSpace.s16),
         TextButton(
           onPressed: () => _cancelDialog(job),
           style: TextButton.styleFrom(
             foregroundColor: AppTheme.red,
             minimumSize: const Size(88, 44),
           ),
-          child: const Text(
+          child: Text(
             'Cancel',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            style: TwType.link(color: AppTheme.red),
           ),
         ),
       ],
@@ -1025,167 +944,50 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     final title = history ? 'No history yet' : 'No bookings yet';
     final subtitle = history
         ? 'Completed and cancelled work orders will show up here.'
-        : 'When you book a service, your work\norders will show up here.';
+        : 'When you book a service, your work orders will show up here.';
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 48, 28, 32),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _buildEmptyIllustration(),
-          const SizedBox(height: 24),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 18,
-              height: 1.05,
-              fontWeight: FontWeight.w900,
-            ),
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+            TwLayout.gutter(context), 48, TwLayout.gutter(context), 32),
+        child: TwEmptyState(
+          icon: Icons.calendar_today_outlined,
+          title: title,
+          message: subtitle,
+          action: TwSecondaryButton(
+            label: 'Browse services',
+            expand: false,
+            onPressed: widget.onBookNowTap,
           ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 14,
-              height: 1.28,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: 160,
-            child: _buildPrimaryAction(
-              label: 'Browse services',
-              onPressed: widget.onBookNowTap,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildEmptyIllustration() {
-    return SizedBox(
-      width: 120,
-      height: 120,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppTheme.cardBorder),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.navy900.withOpacity(0.04),
-                  blurRadius: 6,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            width: 48,
-            height: 48,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppTheme.blueTint,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.calendar_today_outlined,
-              color: AppTheme.navy700,
-              size: 28,
-            ),
-          ),
-          Positioned(
-            right: 11,
-            bottom: 11,
-            child: Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppTheme.navy,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
-              ),
-              child: const Icon(
-                Icons.check_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHistoryJobCard(Map<String, dynamic> job) {
-    final status = job['status']?.toString() ?? 'completed';
-    final statusLower = status.toLowerCase();
-    final isCancelled = statusLower == 'cancelled' ||
-        statusLower == 'canceled' ||
-        statusLower == 'cancel' ||
-        statusLower == 'declined' ||
-        statusLower == 'pro_no_show' ||
-        statusLower == 'customer_no_show';
+  Widget _buildHistoryJobCard(Map<String, dynamic> job,
+      {bool primary = false}) {
+    final isCancelled = _historyIsCancelled(job);
     final proName = _jobProName(job);
     final service = _jobService(job);
     final address = _jobAddress(job);
-    final initials = _jobInitials(proName);
     final reviewed = _jobHasReview(job);
     final reviewRating = _jobRating(job);
     final reviewText = _jobReviewText(job);
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.cardBorder),
-      ),
+    return TwCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  service,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 15,
-                    height: 1.15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              _buildStatusBadge(job),
-            ],
-          ),
-          const SizedBox(height: 12),
+          _buildCardTitleRow(service, job),
+          const SizedBox(height: 14),
           _buildProviderRow(
-            initials: initials,
+            job: job,
             proName: proName,
             priority: _jobPriority(job),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           _buildInfoLine(
-            icon: Icons.insert_drive_file_outlined,
+            icon: Icons.description_outlined,
             label: _formatHistoryLine(job, isCancelled: isCancelled),
           ),
           const SizedBox(height: 6),
@@ -1194,16 +996,17 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             label: address,
           ),
           if (WorkOrderStatus.receiptPending(job)) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             _buildReceiptRow(job),
           ],
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           _buildHistoryActions(
             job,
             reviewed: reviewed,
             reviewRating: reviewRating,
             reviewText: reviewText,
             isCancelled: isCancelled,
+            primary: primary,
           ),
         ],
       ),
@@ -1294,6 +1097,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     required int reviewRating,
     required String reviewText,
     required bool isCancelled,
+    bool primary = false,
   }) {
     if (isCancelled) {
       return _buildOutlineAction(
@@ -1315,42 +1119,39 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                     mainAxisSize: MainAxisSize.min,
                     children: List.generate(
                       5,
-                      (index) => Icon(
-                        index < reviewRating
-                            ? Icons.star_rounded
-                            : Icons.star_border_rounded,
-                        color: index < reviewRating
-                            ? AppTheme.gold
-                            : AppTheme.textTertiary,
-                        size: 18,
+                      (index) => Padding(
+                        padding: EdgeInsets.only(left: index == 0 ? 0 : 2),
+                        child: Icon(
+                          index < reviewRating
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: index < reviewRating
+                              ? AppTheme.gold
+                              : AppTheme.textTertiary,
+                          size: 14,
+                        ),
                       ),
                     ),
                   ),
                 )
               else
                 const Icon(
-                  Icons.check_circle_rounded,
-                  color: AppTheme.success,
-                  size: 19,
+                  Icons.check_rounded,
+                  color: AppTheme.greenMark,
+                  size: 16,
                 ),
-              const SizedBox(width: 8),
-              const Expanded(
+              const SizedBox(width: 10),
+              Expanded(
                 child: Text(
                   'Review submitted',
-                  style: TextStyle(
-                    color: AppTheme.success,
-                    fontSize: 14,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
-                  ),
+                  style: TwType.label(color: AppTheme.green),
                 ),
               ),
-              SizedBox(
-                width: 110,
-                child: _buildOutlineAction(
-                  label: 'Book again',
-                  onPressed: widget.onBookNowTap,
-                ),
+              TwSecondaryButton(
+                label: 'Book again',
+                expand: false,
+                height: 44,
+                onPressed: widget.onBookNowTap,
               ),
             ],
           ),
@@ -1362,19 +1163,18 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                   const {}),
           TextButton(
               onPressed: () => _leaveReviewDialog(job),
-              child: const Text('Edit your review')),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(44, 44),
+                padding: EdgeInsets.zero,
+              ),
+              child: Text('Edit your review', style: TwType.link())),
           if (reviewText.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: TwSpace.s4),
             Text(
               '“$reviewText”',
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppTheme.navy,
-                fontSize: 12.5,
-                height: 1.35,
-                fontStyle: FontStyle.italic,
-              ),
+              style: TwType.meta(color: AppTheme.body),
             ),
           ],
         ],
@@ -1384,85 +1184,46 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     return Row(
       children: [
         Expanded(
-          child: _buildPrimaryAction(
-            label: 'Leave a review',
-            onPressed: () => _openReviewWhenEligible(job),
-          ),
+          child: primary
+              ? _buildPrimaryAction(
+                  label: 'Leave a review',
+                  onPressed: () => _openReviewWhenEligible(job),
+                )
+              : _buildOutlineAction(
+                  label: 'Leave a review',
+                  onPressed: () => _openReviewWhenEligible(job),
+                ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: TwSpace.s12),
         Expanded(
           child: _buildOutlineAction(
             label: 'Book again',
             onPressed: widget.onBookNowTap,
+            height: primary ? 52 : 50,
           ),
         ),
       ],
     );
   }
 
+  /// The orange call to action: navy label on orange, 52 high (SPEC §4).
   Widget _buildPrimaryAction({
     required String label,
     required VoidCallback onPressed,
   }) {
-    return SizedBox(
-      height: 40,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.orange500,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-      ),
-    );
+    return TwPrimaryButton(label: label, onPressed: onPressed);
   }
 
+  /// Secondary: white, #D0D5DD border, ink label, 50 high (SPEC §4).
   Widget _buildOutlineAction({
     required String label,
     required VoidCallback onPressed,
-    Color color = AppTheme.navy700,
+    double height = 50,
   }) {
-    return SizedBox(
-      height: 40,
-      child: OutlinedButton(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: color,
-          backgroundColor: Colors.white,
-          side: BorderSide(
-            color: color == AppTheme.navy700
-                ? AppTheme.cardBorder
-                : color.withOpacity(0.52),
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-      ),
+    return TwSecondaryButton(
+      label: label,
+      onPressed: onPressed,
+      height: height,
     );
   }
 
@@ -1519,12 +1280,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         );
       }
     }
-  }
-
-  Color _avatarColor(String initials) {
-    if (initials == 'CA') return AppTheme.teal500;
-    if (initials == 'SE') return AppTheme.pageBackground;
-    return AppTheme.navy700;
   }
 
   bool _isTomorrow(Map<String, dynamic> job) {
@@ -1651,21 +1406,18 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
 
 class _BookingSectionLabel extends StatelessWidget {
   final String label;
+  final bool first;
 
-  const _BookingSectionLabel(this.label);
+  const _BookingSectionLabel(this.label, {this.first = false});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Text(
-        label,
-        style: AppTheme.headingStyle.copyWith(
-          fontSize: 20,
-          height: 1.3,
-          fontWeight: FontWeight.w600,
-        ),
+      padding: EdgeInsets.only(
+        top: first ? 0 : TwSpace.s12,
+        bottom: TwSpace.s12,
       ),
+      child: Text(label, style: TwType.h2()),
     );
   }
 }

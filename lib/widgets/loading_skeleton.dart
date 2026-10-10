@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 
 enum SkeletonLayout {
   cards,
@@ -34,12 +35,25 @@ class LoadingSkeleton extends StatelessWidget {
         liveRegion: true,
         child: ExcludeSemantics(
           child: IgnorePointer(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: _layoutChildren(),
+            child: Align(
+              alignment: Alignment.topCenter,
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth:
+                      TwLayout.maxContent + TwLayout.gutter(context) * 2,
+                ),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: TwLayout.gutter(context),
+                    vertical: 16,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: _layoutChildren(),
+                  ),
+                ),
               ),
             ),
           ),
@@ -240,7 +254,7 @@ class LoadingSkeleton extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           border: Border.all(color: AppTheme.cardBorder),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -309,8 +323,8 @@ class SkeletonBlock extends StatelessWidget {
         width: width,
         height: height,
         decoration: BoxDecoration(
-          color: AppTheme.cardBorder.withOpacity(.55),
-          borderRadius: BorderRadius.circular(6),
+          color: AppTheme.subtle,
+          borderRadius: BorderRadius.circular(8),
         ),
       );
 }

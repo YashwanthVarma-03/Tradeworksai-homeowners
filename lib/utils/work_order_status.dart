@@ -31,22 +31,55 @@ enum WorkOrderState {
   noShowCustomer,
 }
 
-/// How one status chip renders. One chip per card or row.
+/// The shape drawn in front of a status word (v3.3 §4 Status).
+enum StatusMarkKind {
+  /// 8px solid dot: Waiting on you (amber), Cancelled / No-show (grey).
+  dot,
+
+  /// 8px blue dot with a 3px blue-tint halo: En route, In progress.
+  ringedDot,
+
+  /// 8px hollow ring, 1.5px #98A2B3: Booked (usually not shown).
+  hollowDot,
+
+  /// 14px check in greenMark: Completed.
+  check,
+
+  /// 14px clock: Urgent / Emergency (red), Standard (grey).
+  clock,
+}
+
+/// How one status renders. v3.3 (Batch 20 Part B): a mark and the word,
+/// 13/600, with no background and no border. One status per card or row.
 class StatusChipStyle {
+  /// The colour of the word.
   final Color foreground;
+
+  /// Retained so older callers compile. Not drawn in v3.3.
   final Color background;
+
+  /// Retained so older callers compile. Not drawn in v3.3.
   final Color border;
 
-  /// In progress is the only filled chip in the app — white on solid blue.
-  /// Everything else is outlined.
+  /// Retained so older callers compile. v3.3 has no filled chip.
   final bool filled;
+
+  /// The mark in front of the word.
+  final StatusMarkKind kind;
+
+  /// The mark's colour when it differs from the word's.
+  final Color? mark;
 
   const StatusChipStyle({
     required this.foreground,
     required this.background,
     required this.border,
     this.filled = false,
+    this.kind = StatusMarkKind.dot,
+    this.mark,
   });
+
+  Color get markColor => mark ?? foreground;
 }
 
 class WorkOrderStatus {
@@ -57,6 +90,13 @@ class WorkOrderStatus {
   final bool waitingOnYou;
 
   const WorkOrderStatus(this.state, {this.waitingOnYou = false});
+
+  /// The contractor's recorded on-site event. It is displayed separately
+  /// from the four homeowner progress states.
+  static bool proOnSite(Map<String, dynamic> job) {
+    final raw = job['status']?.toString().trim().toLowerCase();
+    return raw == 'arrived' || raw == 'on_site' || raw == 'on site';
+  }
 
   /// Reads a raw backend status onto the four states.
   ///
@@ -213,28 +253,33 @@ class WorkOrderStatus {
     switch (state) {
       case WorkOrderState.booked:
         return const StatusChipStyle(
-          foreground: AppTheme.chipBooked,
-          background: AppTheme.chipBookedTint,
-          border: AppTheme.chipBooked,
+          foreground: AppTheme.textSecondary,
+          background: AppTheme.white,
+          border: AppTheme.textTertiary,
+          kind: StatusMarkKind.hollowDot,
+          mark: AppTheme.textTertiary,
         );
       case WorkOrderState.enRoute:
         return const StatusChipStyle(
           foreground: AppTheme.blue,
           background: AppTheme.blueTint,
           border: AppTheme.blue,
+          kind: StatusMarkKind.ringedDot,
         );
       case WorkOrderState.inProgress:
         return const StatusChipStyle(
-          foreground: Colors.white,
-          background: AppTheme.blue,
+          foreground: AppTheme.blue,
+          background: AppTheme.blueTint,
           border: AppTheme.blue,
-          filled: true,
+          kind: StatusMarkKind.ringedDot,
         );
       case WorkOrderState.completed:
         return const StatusChipStyle(
           foreground: AppTheme.green,
           background: AppTheme.greenTint,
           border: AppTheme.green,
+          kind: StatusMarkKind.check,
+          mark: AppTheme.greenMark,
         );
       case WorkOrderState.cancelledByYou:
       case WorkOrderState.cancelledByPro:
@@ -242,18 +287,38 @@ class WorkOrderStatus {
       case WorkOrderState.noShowPro:
       case WorkOrderState.noShowCustomer:
         return const StatusChipStyle(
-          foreground: AppTheme.chipNeutral,
-          background: AppTheme.chipNeutralTint,
-          border: AppTheme.chipNeutral,
+          foreground: AppTheme.textSecondary,
+          background: AppTheme.white,
+          border: AppTheme.textTertiary,
+          kind: StatusMarkKind.dot,
+          mark: AppTheme.textTertiary,
         );
     }
   }
 
-  /// The amber overlay chip. Always carries the words — never colour alone.
+  /// The amber "Waiting on you" mark. Always carries the words — never
+  /// colour alone.
   static const StatusChipStyle waitingChip = StatusChipStyle(
     foreground: AppTheme.amber,
     background: AppTheme.amberTint,
     border: AppTheme.amber,
+    kind: StatusMarkKind.dot,
+  );
+
+  /// Urgent / Emergency response: red clock + red word.
+  static const StatusChipStyle urgentChip = StatusChipStyle(
+    foreground: AppTheme.red,
+    background: AppTheme.white,
+    border: AppTheme.red,
+    kind: StatusMarkKind.clock,
+  );
+
+  /// Standard response: grey clock + grey word.
+  static const StatusChipStyle standardChip = StatusChipStyle(
+    foreground: AppTheme.textSecondary,
+    background: AppTheme.white,
+    border: AppTheme.textTertiary,
+    kind: StatusMarkKind.clock,
   );
 
   static const String waitingLabel = 'Waiting on you';
@@ -274,7 +339,8 @@ class WorkOrderStatus {
   bool get isTerminalWithoutProgress => progressionIndex < 0;
 }
 
-/// One status chip. Use this everywhere a status is shown.
+/// One status. Use this everywhere a status is shown. v3.3: draws a mark
+/// and the word (see [StatusMark]); the name is kept so callers don't change.
 class WorkOrderStatusChip extends StatelessWidget {
   final WorkOrderStatus status;
 
@@ -286,26 +352,11 @@ class WorkOrderStatusChip extends StatelessWidget {
   }
 
   static Widget _chip(String label, StatusChipStyle style) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: style.background,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: style.border),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: style.foreground,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
+    return StatusMark(label: label, style: style);
   }
 }
 
-/// The amber "Waiting on you" chip, rendered beside the state chip when the
+/// The amber "Waiting on you" mark, rendered beside the state when the
 /// homeowner has something to do.
 class WaitingOnYouChip extends StatelessWidget {
   const WaitingOnYouChip({super.key});
@@ -315,6 +366,116 @@ class WaitingOnYouChip extends StatelessWidget {
     return WorkOrderStatusChip._chip(
       WorkOrderStatus.waitingLabel,
       WorkOrderStatus.waitingChip,
+    );
+  }
+}
+
+/// v3.3 status display (Batch 20 Part B): an 8px dot (or a 14px icon) and
+/// the word, 13/600, no background, no border.
+///
+///   Waiting on you — amber dot
+///   En route / In progress — blue dot with a 3px blue-tint halo
+///   Booked — hollow grey ring (usually not shown)
+///   Completed — green check + green word
+///   Cancelled / No-show — grey dot
+///   Urgent / Emergency — red clock + red word · Standard — grey clock
+class StatusMark extends StatelessWidget {
+  const StatusMark({
+    super.key,
+    required this.label,
+    required this.style,
+    this.fontSize = 13,
+  });
+
+  /// The mark for a work order's state.
+  factory StatusMark.of(WorkOrderStatus status, {Key? key}) =>
+      StatusMark(key: key, label: status.label, style: status.chip);
+
+  /// The amber "Waiting on you" mark.
+  const StatusMark.waiting({super.key, this.fontSize = 13})
+      : label = WorkOrderStatus.waitingLabel,
+        style = WorkOrderStatus.waitingChip;
+
+  /// Response level: red clock for Urgent / Emergency, grey for Standard.
+  factory StatusMark.urgency({
+    Key? key,
+    required bool urgent,
+    String? label,
+  }) =>
+      StatusMark(
+        key: key,
+        label: label ?? (urgent ? 'Urgent' : 'Standard'),
+        style:
+            urgent ? WorkOrderStatus.urgentChip : WorkOrderStatus.standardChip,
+      );
+
+  final String label;
+  final StatusChipStyle style;
+
+  /// 13 in rows and cards; 14 where the mockup sets it larger.
+  final double fontSize;
+
+  Widget _mark() {
+    final color = style.markColor;
+    switch (style.kind) {
+      case StatusMarkKind.check:
+        return Icon(Icons.check_rounded, size: 14, color: color);
+      case StatusMarkKind.clock:
+        return Icon(Icons.schedule_rounded, size: 14, color: color);
+      case StatusMarkKind.hollowDot:
+        return Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 1.5),
+          ),
+        );
+      case StatusMarkKind.ringedDot:
+        return Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            boxShadow: const [
+              BoxShadow(color: AppTheme.blueTint, spreadRadius: 3),
+            ],
+          ),
+        );
+      case StatusMarkKind.dot:
+        return Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: label,
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _mark(),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: AppTheme.fontInter,
+                color: style.foreground,
+                fontSize: fontSize,
+                height: 18 / 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

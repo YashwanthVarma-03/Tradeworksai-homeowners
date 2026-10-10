@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
+import '../../ui/tw.dart';
 import '../../widgets/app_notification.dart';
 import '../../widgets/transaction_guard.dart';
 
@@ -71,32 +72,45 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
       final approved = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-                title: const Text('Delete account'),
+                title: Text('Delete account', style: TwType.h3()),
                 content: SingleChildScrollView(
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(
-                      'Available credits: ${preflight['serviceCredits'] ?? 0}. Remaining credits will be forfeited. Reviews will be anonymized. Download your invoices and documents before continuing.'),
-                  const SizedBox(height: 16),
-                  TextField(
-                      controller: confirmation,
-                      decoration: const InputDecoration(
-                          labelText: 'Type CLOSE to confirm')),
-                  TextField(
-                      controller: password,
-                      obscureText: true,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: const InputDecoration(
-                          labelText: 'Current password (password accounts)')),
-                  const Text(
-                      'Apple and Google accounts may need a recent sign-in.'),
-                ])),
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                      Text(
+                          'Available credits: ${preflight['serviceCredits'] ?? 0}. Remaining credits will be forfeited. Reviews will be anonymized. Download your invoices and documents before continuing.',
+                          style: TwType.bodySm()),
+                      const SizedBox(height: TwSpace.s16),
+                      const TwFieldLabel('Type CLOSE to confirm'),
+                      TextField(
+                          controller: confirmation,
+                          style: TwType.body(color: AppTheme.navy),
+                          decoration: TwInputs.decoration()),
+                      const SizedBox(height: TwSpace.s16),
+                      const TwFieldLabel('Current password (password accounts)'),
+                      TextField(
+                          controller: password,
+                          obscureText: true,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          style: TwType.body(color: AppTheme.navy),
+                          decoration: TwInputs.decoration()),
+                      const SizedBox(height: TwSpace.s8),
+                      Text(
+                          'Apple and Google accounts may need a recent sign-in.',
+                          style: TwType.caption()),
+                    ])),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                          foregroundColor: AppTheme.navy),
                       child: const Text('Keep account')),
                   TextButton(
                       onPressed: () => Navigator.pop(context, true),
+                      style: TextButton.styleFrom(
+                          foregroundColor: AppTheme.red),
                       child: const Text('Request deletion'))
                 ],
               ));
@@ -113,9 +127,10 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           context: context,
           barrierDismissible: false,
           builder: (context) => AlertDialog(
-                title: const Text('Deletion requested'),
+                title: Text('Deletion requested', style: TwType.h3()),
                 content: Text(
-                    'Reference: ${closure['requestReference'] ?? closure['request_reference'] ?? 'Received'}. Your request is pending processing; your account has not yet been deleted.'),
+                    'Reference: ${closure['requestReference'] ?? closure['request_reference'] ?? 'Received'}. Your request is pending processing; your account has not yet been deleted.',
+                    style: TwType.bodySm()),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(context),
@@ -140,91 +155,89 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
   Widget build(BuildContext context) => TransactionGuard(
       isProcessing: _busy,
       child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          title: const Text('Account security'),
-          centerTitle: true,
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(1),
-            child: Divider(height: 1, color: AppTheme.cardBorder),
-          ),
-        ),
-        body: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-            children: [
-              Text('Change password',
-                  style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 4),
-              const Text(
-                'For accounts that sign in with a password. Changing it signs '
-                'you out on your other devices.',
-                style: TextStyle(
-                    color: AppTheme.body, fontSize: 15, height: 23 / 15),
-              ),
-              for (final field in [
-                (_current, 'Current password', null),
-                (_password, 'New password', 'At least 8 characters'),
-                (_confirm, 'Confirm new password', null),
-              ])
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(field.$2,
-                          style: const TextStyle(
-                              color: AppTheme.navy,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      TextField(
-                          controller: field.$1,
-                          enabled: !_busy,
-                          obscureText: true,
-                          autocorrect: false,
-                          enableSuggestions: false),
-                      if (field.$3 != null) ...[
-                        const SizedBox(height: 8),
-                        Text(field.$3!,
-                            style: const TextStyle(
-                                color: AppTheme.textSecondary, fontSize: 13)),
+        backgroundColor: AppTheme.white,
+        appBar: TwAppBar(title: 'Account security'),
+        body: ListView(padding: EdgeInsets.zero, children: [
+          TwPage(
+            top: TwSpace.s20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Change password', style: TwType.h2()),
+                const SizedBox(height: TwSpace.s4),
+                Text(
+                  'For accounts that sign in with a password. Changing it signs '
+                  'you out on your other devices.',
+                  style: TwType.bodySm(),
+                ),
+                for (final field in [
+                  (_current, 'Current password', null),
+                  (_password, 'New password', 'At least 8 characters'),
+                  (_confirm, 'Confirm new password', null),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(top: TwSpace.s16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TwFieldLabel(field.$2),
+                        TextField(
+                            controller: field.$1,
+                            enabled: !_busy,
+                            obscureText: true,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            style: TwType.body(color: AppTheme.navy),
+                            decoration: TwInputs.decoration()),
+                        if (field.$3 != null) ...[
+                          const SizedBox(height: TwSpace.s8),
+                          Text(field.$3!, style: TwType.caption()),
+                        ],
                       ],
-                    ],
+                    ),
+                  ),
+                const SizedBox(height: TwSpace.s20),
+                TwPrimaryButton(
+                  label: 'Change password',
+                  onPressed: _busy ? null : _changePassword,
+                ),
+                const SizedBox(height: TwSpace.s28),
+                const Divider(height: 1, color: AppTheme.cardBorder),
+                const SizedBox(height: TwSpace.s28),
+                Text('Delete account', style: TwType.h2()),
+                const SizedBox(height: TwSpace.s4),
+                Text(
+                    'Review active bookings, credits and documents before requesting deletion.',
+                    style: TwType.bodySm()),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _busy ? null : _closeAccount,
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Review account deletion'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.red,
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(44, 44),
+                      textStyle: TwType.link(),
+                    ),
                   ),
                 ),
-              const SizedBox(height: 20),
-              SizedBox(
-                height: 52,
-                child: ElevatedButton(
-                    onPressed: _busy ? null : _changePassword,
-                    child: const Text('Change password')),
-              ),
-              const SizedBox(height: 32),
-              const Divider(height: 1, color: AppTheme.cardBorder),
-              const SizedBox(height: 24),
-              Text('Delete account',
-                  style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 4),
-              const Text(
-                  'Review active bookings, credits and documents before requesting deletion.',
-                  style: TextStyle(
-                      color: AppTheme.body, fontSize: 15, height: 23 / 15)),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _busy ? null : _closeAccount,
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: const Text('Review account deletion'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppTheme.red,
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(44, 44),
-                    textStyle: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600),
+                if (_busy)
+                  const Padding(
+                    padding: EdgeInsets.only(top: TwSpace.s16),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppTheme.navy),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              if (_busy) const Center(child: CircularProgressIndicator()),
-            ]),
+              ],
+            ),
+          ),
+        ]),
       ));
 }

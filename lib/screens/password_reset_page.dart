@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../widgets/app_notification.dart';
 
 class PasswordResetPage extends StatefulWidget {
@@ -90,14 +91,6 @@ class _PasswordResetPageState extends State<PasswordResetPage>
     }
   }
 
-  InputDecoration _field(String hint) => InputDecoration(
-        hintText: hint,
-        filled: true,
-        fillColor: AppTheme.subtle,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
-      );
-
   @override
   Widget build(BuildContext context) => PopScope(
         canPop: !_isLoading && _tabController.index == 0,
@@ -113,30 +106,32 @@ class _PasswordResetPageState extends State<PasswordResetPage>
           }
         },
         child: Scaffold(
-          appBar: AppBar(
-            title: const Text(
-              'Reset password',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-            ),
-            centerTitle: true,
-            bottom: TabBar(
-              controller: _tabController,
-              labelColor: AppTheme.blue,
-              unselectedLabelColor: AppTheme.body,
-              indicatorColor: AppTheme.blue,
-              indicatorSize: TabBarIndicatorSize.tab,
-              tabs: const [
-                Tab(text: 'Request link'),
-                Tab(text: 'Set password'),
-              ],
-            ),
+          backgroundColor: AppTheme.pageBackground,
+          // maybePop so the PopScope above still decides (Set password goes
+          // back to Request link; nothing happens while a request runs).
+          appBar: TwAppBar(
+            title: 'Reset password',
+            onBack: () => Navigator.maybePop(context),
           ),
           body: SafeArea(
-            child: TabBarView(
-              controller: _tabController,
+            top: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _requestPanel(),
-                _resetPanel(),
+                TwUnderlineTabs(
+                  labels: const ['Request link', 'Set password'],
+                  index: _tabController.index,
+                  onChanged: (index) => _tabController.animateTo(index),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _requestPanel(),
+                      _resetPanel(),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -144,100 +139,88 @@ class _PasswordResetPageState extends State<PasswordResetPage>
       );
 
   Widget _requestPanel() => SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-        child: Form(
-          key: _requestFormKey,
-          child: _Panel(
-            children: [
-              Text('Request reset link',
-                  style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 8),
-              const Text(
-                'Enter your email address and we’ll send you a secure link carrying your reset token.',
-                style: TextStyle(color: AppTheme.textSecondary, height: 1.45),
-              ),
-              const SizedBox(height: 26),
-              const _FieldLabel('Email address'),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                enabled: !_isLoading,
-                decoration: _field('you@example.com'),
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Please enter your email'
-                    : null,
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitRequest,
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Send reset link'),
+        child: TwPage(
+          top: 24,
+          child: Form(
+            key: _requestFormKey,
+            child: _Panel(
+              children: [
+                Text('Request reset link', style: TwType.h2()),
+                const SizedBox(height: 6),
+                Text(
+                  'Enter your email address and we’ll send you a secure link carrying your reset token.',
+                  style: TwType.bodySm(color: AppTheme.textSecondary),
                 ),
-              ),
-            ],
+                const SizedBox(height: 24),
+                const TwFieldLabel('Email address'),
+                TextFormField(
+                  controller: _emailController,
+                  style: TwType.body(color: AppTheme.navy),
+                  keyboardType: TextInputType.emailAddress,
+                  enabled: !_isLoading,
+                  decoration: TwInputs.decoration(hint: 'you@example.com'),
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Please enter your email'
+                      : null,
+                ),
+                const SizedBox(height: TwSpace.s28),
+                TwPrimaryButton(
+                  label: 'Send reset link',
+                  onPressed: _submitRequest,
+                  loading: _isLoading,
+                ),
+              ],
+            ),
           ),
         ),
       );
 
   Widget _resetPanel() => SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-        child: Form(
-          key: _resetFormKey,
-          child: _Panel(
-            children: [
-              Text('Set new password',
-                  style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 8),
-              const Text(
-                'Enter the token from your email and choose a new password.',
-                style: TextStyle(color: AppTheme.textSecondary, height: 1.45),
-              ),
-              const SizedBox(height: 26),
-              const _FieldLabel('Reset token'),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _tokenController,
-                enabled: !_isLoading,
-                decoration: _field('Paste token from email link'),
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Please enter your reset token'
-                    : null,
-              ),
-              const SizedBox(height: 18),
-              const _FieldLabel('New password'),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: true,
-                enabled: !_isLoading,
-                decoration: _field('At least 8 characters'),
-                validator: (value) => value == null || value.length < 8
-                    ? 'Password must be at least 8 characters'
-                    : null,
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitReset,
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Update password'),
+        child: TwPage(
+          top: 24,
+          child: Form(
+            key: _resetFormKey,
+            child: _Panel(
+              children: [
+                Text('Set new password', style: TwType.h2()),
+                const SizedBox(height: 6),
+                Text(
+                  'Enter the token from your email and choose a new password.',
+                  style: TwType.bodySm(color: AppTheme.textSecondary),
                 ),
-              ),
-            ],
+                const SizedBox(height: 24),
+                const TwFieldLabel('Reset token'),
+                TextFormField(
+                  controller: _tokenController,
+                  style: TwType.body(color: AppTheme.navy),
+                  enabled: !_isLoading,
+                  decoration:
+                      TwInputs.decoration(hint: 'Paste token from email link'),
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Please enter your reset token'
+                      : null,
+                ),
+                const SizedBox(height: 18),
+                const TwFieldLabel('New password'),
+                TextFormField(
+                  controller: _passwordController,
+                  style: TwType.body(color: AppTheme.navy),
+                  obscureText: true,
+                  enabled: !_isLoading,
+                  decoration:
+                      TwInputs.decoration(hint: 'At least 8 characters'),
+                  validator: (value) => value == null || value.length < 8
+                      ? 'Password must be at least 8 characters'
+                      : null,
+                ),
+                const SizedBox(height: TwSpace.s28),
+                TwPrimaryButton(
+                  label: 'Update password',
+                  onPressed: _submitReset,
+                  loading: _isLoading,
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -248,33 +231,13 @@ class _Panel extends StatelessWidget {
 
   final List<Widget> children;
 
+  // B07: hairline card, radius 14, padding 24 × 20.
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppTheme.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTheme.cardBorder),
-        ),
+  Widget build(BuildContext context) => TwCard(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: children,
-        ),
-      );
-}
-
-class _FieldLabel extends StatelessWidget {
-  const _FieldLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Text(
-        text,
-        style: const TextStyle(
-          color: AppTheme.navy,
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
         ),
       );
 }

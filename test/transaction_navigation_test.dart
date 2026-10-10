@@ -26,7 +26,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Booking confirmed'), findsOneWidget);
-    await tester.tap(find.byTooltip('Back to search'));
+    await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
 
     expect(find.text('Start booking'), findsOneWidget);

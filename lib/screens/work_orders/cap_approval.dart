@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../utils/display_format.dart';
 import '../../widgets/alert_row.dart';
 import '../../widgets/transaction_guard.dart';
+import '../../ui/tw.dart';
 import 'reschedule_work_order.dart';
 
 /// The homeowner approves the pro's not-to-exceed cap.
@@ -227,28 +228,27 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.pageBackground,
-        title: const Text(
-          'Decline this cap?',
-          style: TextStyle(color: AppTheme.navy, fontWeight: FontWeight.w900),
-        ),
-        content: const Text(
+        title: Text('Decline this cap?', style: TwType.h3()),
+        content: Text(
           'Declining cancels this booking. You can message your pro if you want to '
           'discuss the price first.',
-          style: TextStyle(color: AppTheme.textSecondary),
+          style: TwType.bodySm(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text(
+            style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+            child: Text(
               'Keep reviewing',
-              style: TextStyle(color: AppTheme.textSecondary),
+              style: TwType.button(color: AppTheme.navy),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text(
+            style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+            child: Text(
               'Decline',
-              style: TextStyle(color: AppTheme.red),
+              style: TwType.button(color: AppTheme.red),
             ),
           ),
         ],
@@ -265,24 +265,20 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       blockedMessage: 'Please wait while your response is being saved.',
       child: Scaffold(
         backgroundColor: AppTheme.pageBackground,
-        body: Column(
-          children: [
-            _screenHeader('Approve the cap'),
-            Expanded(
-              child: SafeArea(
-                top: false,
-                child: cap == null
-                    ? _missingCapState()
-                    : Column(
-                        children: [
-                          Expanded(child: _capContent(cap)),
-                          _actionBar(),
-                        ],
-                      ),
-              ),
-            ),
-          ],
+        appBar: TwAppBar(
+          title: 'Approve the cap',
+          onBack: () {
+            if (!_isProcessing) Navigator.pop(context);
+          },
         ),
+        body: cap == null
+            ? SafeArea(top: false, child: _missingCapState())
+            : Column(
+                children: [
+                  Expanded(child: _capContent(cap)),
+                  _actionBar(),
+                ],
+              ),
       ),
     );
   }
@@ -291,35 +287,25 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
   /// approve, so no approve button is offered.
   Widget _missingCapState() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'This cap isn\'t ready yet',
-            style: TextStyle(
-              color: AppTheme.navy,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
+      child: TwPage(
+        top: TwSpace.s40,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This cap isn\'t ready yet', style: TwType.h2()),
+            const SizedBox(height: TwSpace.s8),
+            Text(
+              'Your pro hasn\'t submitted a price for this job yet. You\'ll be '
+              'notified as soon as they do.',
+              style: TwType.bodySm(),
             ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Your pro hasn\'t submitted a price for this job yet. You\'ll be '
-            'notified as soon as they do.',
-            style: TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 14,
-              height: 1.4,
+            const SizedBox(height: TwSpace.s20),
+            TwSecondaryButton(
+              label: 'Back',
+              onPressed: () => Navigator.pop(context),
             ),
-          ),
-          const SizedBox(height: 24),
-          _outlineButton(
-            'Back',
-            color: AppTheme.navy,
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -328,71 +314,57 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
     final items = _lineItems;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: TwPage(top: TwSpace.s20, child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _infoBanner(),
-          const SizedBox(height: 22),
+          const SizedBox(height: TwSpace.s28),
           if (_diagnosis != null || _proName != null) ...[
             _sectionLabel('What your pro found'),
-            const SizedBox(height: 10),
+            const SizedBox(height: TwSpace.s12),
             _diagnosisCard(),
-            const SizedBox(height: 16),
+            const SizedBox(height: TwSpace.s16),
           ],
           _capCard(cap),
           if (items.isNotEmpty) ...[
-            const SizedBox(height: 22),
+            const SizedBox(height: TwSpace.s28),
             _sectionLabel('Breakdown'),
-            const SizedBox(height: 14),
-            for (final item in items) ...[
+            const SizedBox(height: TwSpace.s4),
+            for (final item in items)
               _lineItem(
                 _readString(item['label'] ?? item['name'])!,
                 _amountOrNull(item['amount'] ?? item['total']),
               ),
-              const SizedBox(height: 14),
-            ],
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 4),
-              child: Divider(height: 1, color: AppTheme.cardBorder),
-            ),
-            const SizedBox(height: 14),
-            _lineItem('Not to exceed', cap, isTotal: true),
           ],
         ],
-      ),
+      )),
     );
   }
 
   Widget _actionBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-      decoration: const BoxDecoration(
-        color: AppTheme.pageBackground,
-        border: Border(top: BorderSide(color: AppTheme.cardBorder)),
-        boxShadow: AppTheme.floatShadow,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _primaryButton('Approve cap', _approve),
-          const SizedBox(height: 6),
-          Center(
-            child: TextButton(
-              onPressed: _isProcessing || _isChoosingSlot ? null : _decline,
-              style: TextButton.styleFrom(
-                foregroundColor: AppTheme.red,
-                minimumSize: const Size(44, 44),
-              ),
-              child: const Text(
-                'Decline this cap',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+    final busy = _isProcessing || _isChoosingSlot;
+    return TwStickyBar(
+      children: [
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TwPrimaryButton(
+              label: 'Approve cap',
+              onPressed: busy ? null : _approve,
+              loading: busy,
+            ),
+            const SizedBox(height: TwSpace.s4),
+            Center(
+              child: TwTextAction(
+                label: 'Decline this cap',
+                onPressed: busy ? null : _decline,
+                destructive: true,
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -428,51 +400,6 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
   /// "$460.00" — cents always (Part B1).
   String _money(num amount) => formatUsd(amount);
 
-  String _initials(String name) {
-    final parts = name
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return 'P';
-    return parts.map((part) => part[0]).take(2).join().toUpperCase();
-  }
-
-  Widget _screenHeader(String title) {
-    return Container(
-      width: double.infinity,
-      height: 50 + MediaQuery.of(context).padding.top,
-      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-      decoration: const BoxDecoration(
-        color: AppTheme.pageBackground,
-        border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned(
-            left: 16,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              icon: const Icon(Icons.arrow_back_rounded,
-                  color: AppTheme.navy, size: 24),
-              onPressed: _isProcessing ? null : () => Navigator.pop(context),
-            ),
-          ),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppTheme.navy,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// v3.3 alert row: tinted icon circle, bold line, one sentence (E01).
   Widget _infoBanner() {
     return const AlertRow(
@@ -486,7 +413,7 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
 
   /// Section heading: Outfit 20, sentence case — never all-caps (v3.3).
   Widget _sectionLabel(String text) {
-    return Text(text, style: Theme.of(context).textTheme.headlineMedium);
+    return Text(text, style: TwType.h2());
   }
 
   /// Who sent the cap, for which job, what they found, and the diagnostic
@@ -497,38 +424,17 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
     final meta = [_serviceName, _woNumber].whereType<String>().join(' · ');
     final visit = _diagnosticVisit;
     final fee = _diagnosticFee;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.pageBackground,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.cardBorder),
-      ),
+    final visitText =
+        visit == null ? 'Diagnostic visit' : 'Diagnostic visit · $visit';
+    return TwCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (proName != null)
             Row(
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppTheme.navy,
-                    borderRadius: BorderRadius.circular(AppTheme.radius),
-                  ),
-                  child: Text(
-                    _initials(proName),
-                    style: AppTheme.headingStyle.copyWith(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
+                TwAvatar(name: proName, size: 48),
+                const SizedBox(width: TwSpace.s12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -537,21 +443,11 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
                         proName,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppTheme.navy,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: TwType.title(),
                       ),
                       if (meta.isNotEmpty) ...[
                         const SizedBox(height: 2),
-                        Text(
-                          meta,
-                          style: const TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 14,
-                          ),
-                        ),
+                        Text(meta, style: TwType.meta()),
                       ],
                     ],
                   ),
@@ -559,46 +455,35 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
               ],
             ),
           if (diagnosis != null) ...[
-            if (proName != null) const SizedBox(height: 14),
-            Text(
-              diagnosis,
-              style: const TextStyle(
-                color: AppTheme.navy,
-                fontSize: 15,
-                height: 1.53,
-              ),
-            ),
+            if (proName != null) const SizedBox(height: TwSpace.s12),
+            Text(diagnosis, style: TwType.bodySm(color: AppTheme.navy)),
           ],
           if (visit != null || fee != null) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: TwSpace.s12),
             const Divider(height: 1, color: AppTheme.cardBorder),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    visit == null
-                        ? 'Diagnostic visit'
-                        : 'Diagnostic visit · $visit',
-                    style: const TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-                if (fee != null) ...[
-                  const SizedBox(width: 12),
-                  Text(
-                    _money(fee),
-                    style: const TextStyle(
-                      color: AppTheme.navy,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+            const SizedBox(height: TwSpace.s12),
+            if (TwLayout.stackRows(context))
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(visitText, style: TwType.meta()),
+                  if (fee != null) ...[
+                    const SizedBox(height: TwSpace.s4),
+                    Text(_money(fee), style: TwType.label()),
+                  ],
                 ],
-              ],
-            ),
+              )
+            else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: Text(visitText, style: TwType.meta())),
+                  if (fee != null) ...[
+                    const SizedBox(width: TwSpace.s12),
+                    Text(_money(fee), style: TwType.label()),
+                  ],
+                ],
+              ),
           ],
         ],
       ),
@@ -606,110 +491,52 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
   }
 
   Widget _capCard(double cap) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
-      decoration: BoxDecoration(
-        color: AppTheme.pageBackground,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.cardBorder),
-      ),
-      child: Column(
-        children: [
-          const Text(
-            'Not to exceed',
-            style: TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+    return TwCard(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: TwSpace.s20),
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          children: [
+            Text(
+              'Not to exceed',
+              textAlign: TextAlign.center,
+              style: TwType.label(color: AppTheme.textSecondary),
             ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _money(cap),
-            style: const TextStyle(
-              color: AppTheme.navy,
-              fontSize: 34,
-              height: 1,
-              fontWeight: FontWeight.w900,
+            const SizedBox(height: 6),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                _money(cap),
+                maxLines: 1,
+                style: TwType.number(context),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _lineItem(String title, double? amount, {bool isTotal = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: TextStyle(
-              color: AppTheme.navy,
-              fontSize: isTotal ? 14.5 : 13,
-              fontWeight: isTotal ? FontWeight.w900 : FontWeight.w500,
+    final titleStyle =
+        isTotal ? TwType.title() : TwType.bodySm(color: AppTheme.navy);
+    final amountStyle = isTotal ? TwType.title() : TwType.label();
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: isTotal
+          ? null
+          : const BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
             ),
-          ),
-        ),
-        if (amount != null)
-          Text(
-            _money(amount),
-            style: TextStyle(
-              color: AppTheme.navy,
-              fontSize: isTotal ? 16 : 14,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _primaryButton(String label, VoidCallback onPressed) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: _isProcessing || _isChoosingSlot ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.orange,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-        ),
-        child: _isProcessing || _isChoosingSlot
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : Text(label),
-      ),
-    );
-  }
-
-  Widget _outlineButton(
-    String label, {
-    required Color color,
-    required VoidCallback onPressed,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton(
-        onPressed: _isProcessing ? null : onPressed,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: color,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          side: BorderSide(color: color),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
-        ),
-        child: Text(label),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Text(title, style: titleStyle)),
+          if (amount != null) ...[
+            const SizedBox(width: TwSpace.s12),
+            Text(_money(amount), style: amountStyle),
+          ],
+        ],
       ),
     );
   }

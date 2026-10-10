@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../theme.dart';
+import '../ui/tw.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/app_notification.dart';
 import '../widgets/transaction_guard.dart';
@@ -164,74 +166,55 @@ class _LoginPageState extends State<LoginPage> {
         fallback: 'We couldn\'t sign you in. Check your details and try again.',
       );
 
-  InputDecoration _field(String hint, {Widget? suffix}) => InputDecoration(
-        hintText: hint,
-        suffixIcon: suffix,
-        filled: true,
-        fillColor: AppTheme.subtle,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppTheme.cardBorder)),
-        enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppTheme.cardBorder)),
-      );
-
   @override
   Widget build(BuildContext context) => TransactionGuard(
         isProcessing: _loading,
         blockedMessage: 'Please wait while sign-in is being completed.',
         child: Scaffold(
           backgroundColor: AppTheme.pageBackground,
-          appBar: AppBar(backgroundColor: Colors.transparent),
+          appBar: authBackBar(context),
           body: SafeArea(
-              child: Center(
-                  child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-            child: Form(
-                key: _formKey,
-                child: Column(
+            child: SingleChildScrollView(
+              child: TwPage(
+                top: 24,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('Welcome back',
+                      Text('Welcome back',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: AppTheme.navy700,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 30)),
+                          style: TwType.h1(context)),
                       const SizedBox(height: 6),
-                      const Text('Log in to manage your home and bookings.',
+                      Text('Log in to manage your home and bookings.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: AppTheme.textSecondary, fontSize: 15)),
-                      const SizedBox(height: 34),
-                      const Text('Email address',
-                          style: TextStyle(color: AppTheme.ink, fontSize: 13)),
-                      const SizedBox(height: 8),
+                          style: TwType.body(color: AppTheme.textSecondary)),
+                      const SizedBox(height: 32),
+                      const TwFieldLabel('Email address'),
                       TextFormField(
                           controller: _email,
+                          style: TwType.body(color: AppTheme.navy),
                           keyboardType: TextInputType.emailAddress,
                           autofillHints: const [
                             AutofillHints.username,
                             AutofillHints.email,
                           ],
                           enabled: !_loading,
-                          decoration: _field('you@example.com'),
+                          decoration:
+                              TwInputs.decoration(hint: 'you@example.com'),
                           validator: (v) => v == null || v.trim().isEmpty
                               ? 'Please enter your email'
                               : null),
                       const SizedBox(height: 18),
-                      const Text('Password',
-                          style: TextStyle(color: AppTheme.ink, fontSize: 13)),
-                      const SizedBox(height: 8),
+                      const TwFieldLabel('Password'),
                       TextFormField(
                           controller: _password,
+                          style: TwType.body(color: AppTheme.navy),
                           obscureText: _obscure,
                           autofillHints: const [AutofillHints.password],
                           enabled: !_loading,
-                          decoration: _field('••••••••',
+                          decoration: TwInputs.decoration(
+                              hint: '••••••••',
                               suffix: IconButton(
                                   tooltip: _obscure
                                       ? 'Show password'
@@ -240,122 +223,216 @@ class _LoginPageState extends State<LoginPage> {
                                       _obscure
                                           ? Icons.visibility_off_outlined
                                           : Icons.visibility_outlined,
+                                      size: 20,
                                       color: AppTheme.textSecondary),
                                   onPressed: () =>
                                       setState(() => _obscure = !_obscure))),
                           validator: (v) => v == null || v.isEmpty
                               ? 'Please enter your password'
                               : null),
-                      Row(children: [
-                        Checkbox(
-                          value: _rememberMe,
-                          onChanged: _loading
-                              ? null
-                              : (value) =>
-                                  setState(() => _rememberMe = value ?? true),
-                          activeColor: AppTheme.blue,
-                        ),
-                        const Flexible(
-                          child: Text(
-                            'Remember me',
-                            maxLines: 1,
-                            style: TextStyle(color: AppTheme.ink, fontSize: 13),
+                      const SizedBox(height: TwSpace.s4),
+                      // Wraps onto two lines on Compact or at large text
+                      // sizes instead of squeezing "Forgot password?".
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Checkbox(
+                                value: _rememberMe,
+                                onChanged: _loading
+                                    ? null
+                                    : (value) => setState(
+                                        () => _rememberMe = value ?? true),
+                                activeColor: AppTheme.blue,
+                              ),
+                              Text('Remember me',
+                                  style: TwType.bodySm(color: AppTheme.navy)),
+                            ],
                           ),
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: TextButton(
-                            onPressed: _loading
-                                ? null
-                                : () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const PasswordResetPage(),
-                                      ),
-                                    ),
-                            child: const FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text('Forgot password?'),
-                            ),
+                          TwTextAction(
+                            label: 'Forgot password?',
+                            onPressed: () {
+                              if (_loading) return;
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const PasswordResetPage(),
+                                ),
+                              );
+                            },
                           ),
-                        ),
-                      ]),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                          height: 54,
-                          child: ElevatedButton(
-                              onPressed: _loading ? null : _submit,
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.orange500,
-                                  foregroundColor: AppTheme.navy,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14))),
-                              child: _loading
-                                  ? const CircularProgressIndicator(
-                                      color: AppTheme.navy)
-                                  : const Text('Log in',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 15)))),
-                      const SizedBox(height: 22),
-                      const Row(children: [
-                        Expanded(child: Divider()),
-                        Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 16),
-                            child: Text('or',
-                                style:
-                                    TextStyle(color: AppTheme.textSecondary))),
-                        Expanded(child: Divider())
-                      ]),
-                      const SizedBox(height: 22),
-                      SizedBox(
-                          height: 54,
-                          child: OutlinedButton.icon(
-                              onPressed: _loading ? null : _apple,
-                              icon: const Icon(Icons.apple,
-                                  color: AppTheme.navy700, size: 22),
-                              label: const Text('Continue with Apple',
-                                  style: TextStyle(
-                                      color: AppTheme.navy700,
-                                      fontWeight: FontWeight.w800)),
-                              style: OutlinedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14)),
-                                  side: const BorderSide(
-                                      color: AppTheme.cardBorder)))),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                          height: 54,
-                          child: OutlinedButton.icon(
-                              onPressed: _loading ? null : _google,
-                              icon: const Text('G',
-                                  style: TextStyle(
-                                      color: AppTheme.teal500,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w900)),
-                              label: const Text('Continue with Google',
-                                  style: TextStyle(
-                                      color: AppTheme.navy700,
-                                      fontWeight: FontWeight.w800)),
-                              style: OutlinedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14)),
-                                  side: const BorderSide(
-                                      color: AppTheme.cardBorder)))),
-                      const SizedBox(height: 80),
-                      Wrap(alignment: WrapAlignment.center, children: [
-                        const Text('Don’t have an account? ',
-                            style: TextStyle(color: AppTheme.textSecondary)),
-                        InkWell(
-                            onTap: _loading ? null : _openSignup,
-                            child: const Text('Sign up',
-                                style: TextStyle(
-                                    color: AppTheme.blue,
-                                    fontWeight: FontWeight.w900)))
-                      ]),
-                    ])),
-          ))),
+                        ],
+                      ),
+                      const SizedBox(height: TwSpace.s8),
+                      TwPrimaryButton(
+                        label: 'Log in',
+                        onPressed: _submit,
+                        loading: _loading,
+                      ),
+                      const SizedBox(height: 24),
+                      const AuthOrDivider(),
+                      const SizedBox(height: 24),
+                      AuthSocialButton(
+                        label: 'Continue with Apple',
+                        icon: const Icon(Icons.apple,
+                            color: AppTheme.navy, size: 22),
+                        onPressed: _loading ? null : _apple,
+                      ),
+                      const SizedBox(height: TwSpace.s12),
+                      AuthSocialButton(
+                        label: 'Continue with Google',
+                        icon: const GoogleMark(),
+                        onPressed: _loading ? null : _google,
+                      ),
+                      const SizedBox(height: TwSpace.s40),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text('Don’t have an account? ',
+                              style:
+                                  TwType.bodySm(color: AppTheme.textSecondary)),
+                          TwTextAction(
+                            label: 'Sign up',
+                            onPressed: () {
+                              if (!_loading) _openSignup();
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       );
+}
+
+/// Back arrow for the auth screens (B05, B06): white, no title, no hairline.
+/// Only shown when there is somewhere to go back to, like the old implied
+/// leading button.
+PreferredSizeWidget? authBackBar(BuildContext context) {
+  if (!(ModalRoute.of(context)?.canPop ?? false)) return null;
+  return AppBar(
+    backgroundColor: AppTheme.pageBackground,
+    surfaceTintColor: Colors.transparent,
+    elevation: 0,
+    scrolledUnderElevation: 0,
+    automaticallyImplyLeading: false,
+    leading: IconButton(
+      tooltip: 'Back',
+      icon:
+          const Icon(Icons.arrow_back_ios_new, size: 20, color: AppTheme.navy),
+      onPressed: () => Navigator.maybePop(context),
+    ),
+  );
+}
+
+/// "or" with a hairline either side (B05, B06).
+class AuthOrDivider extends StatelessWidget {
+  const AuthOrDivider({super.key});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          const Expanded(child: Divider(height: 1, color: AppTheme.cardBorder)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: TwSpace.s16),
+            child: Text('or', style: TwType.meta()),
+          ),
+          const Expanded(child: Divider(height: 1, color: AppTheme.cardBorder)),
+        ],
+      );
+}
+
+/// Apple / Google sign-in button: the theme's secondary (outlined) button
+/// with a logo. Grows with the text size instead of clipping.
+class AuthSocialButton extends StatelessWidget {
+  const AuthSocialButton({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String label;
+  final Widget icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: icon,
+          label: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TwType.button(color: AppTheme.navy)
+                .copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+}
+
+/// The four-colour Google "G", drawn so no image asset is needed.
+class GoogleMark extends StatelessWidget {
+  const GoogleMark({super.key, this.size = 20});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+        dimension: size,
+        child: const CustomPaint(painter: _GoogleMarkPainter()),
+      );
+}
+
+class _GoogleMarkPainter extends CustomPainter {
+  const _GoogleMarkPainter();
+
+  // Google's brand colours: the logo is the only place these screens draw
+  // colours that are not AppTheme tokens.
+  static const _blue = Color(0xFF4285F4);
+  static const _green = Color(0xFF34A853);
+  static const _yellow = Color(0xFFFBBC05);
+  static const _red = Color(0xFFEA4335);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.2;
+    final ring = Rect.fromLTWH(
+      stroke / 2,
+      stroke / 2,
+      size.width - stroke,
+      size.height - stroke,
+    );
+    Paint arc(Color color) => Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    const deg = math.pi / 180;
+    canvas.drawArc(ring, 0, 45 * deg, false, arc(_blue));
+    canvas.drawArc(ring, 45 * deg, 90 * deg, false, arc(_green));
+    canvas.drawArc(ring, 135 * deg, 75 * deg, false, arc(_yellow));
+    canvas.drawArc(ring, 210 * deg, 105 * deg, false, arc(_red));
+    final centre = size.center(Offset.zero);
+    canvas.drawRect(
+      Rect.fromLTRB(
+        centre.dx,
+        centre.dy - stroke / 2,
+        size.width,
+        centre.dy + stroke / 2,
+      ),
+      Paint()..color = _blue,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

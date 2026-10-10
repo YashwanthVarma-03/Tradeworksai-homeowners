@@ -45,7 +45,7 @@ void main() {
         ]
       },
     });
-    expect(find.text(r'$1,250.50'), findsNWidgets(3));
+    expect(find.text(r'$1,250.50'), findsNWidgets(2));
     expect(find.text(r'$1250.50'), findsNothing);
     expect(find.text('Replace fitting'), findsOneWidget);
     expect(find.text('Inspection'), findsOneWidget);

@@ -1,5 +1,9 @@
 import '../../widgets/loading_skeleton.dart';
+import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
+import '../../ui/tw.dart';
+import '../../widgets/capsules.dart';
+import '../../widgets/alert_row.dart';
 import '../../services/document_upload.dart';
 import '../../utils/arrival_check_state.dart';
 import 'arrival_check.dart';
@@ -30,6 +34,8 @@ class WorkOrderDetailScreen extends StatefulWidget {
 }
 
 class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
+  late Map<String, dynamic> _job;
+  bool _refreshingJob = false;
   Map<String, dynamic>? _review;
   bool _isReviewLoading = true;
   bool _isCancelling = false;
@@ -40,6 +46,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _job = Map<String, dynamic>.from(widget.job);
+    HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
+    unawaited(_refreshJob(forceRefresh: true));
     _fetchReview();
     if (widget.focusMoney) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -51,19 +60,51 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    HomeownerService.instance.syncVersion
+        .removeListener(_refreshFromSharedSync);
+    super.dispose();
+  }
+
+  void _refreshFromSharedSync() => unawaited(_refreshJob());
+
+  Future<void> _refreshJob({bool forceRefresh = false}) async {
+    if (_refreshingJob) return;
+    final id = int.tryParse('${_job['workOrderId'] ?? _job['id']}');
+    if (id == null || id <= 0) return;
+    _refreshingJob = true;
+    try {
+      final latest = await HomeownerService.instance
+          .findWorkOrder(id, forceRefresh: forceRefresh);
+      if (!mounted) return;
+      final wasCompleted =
+          WorkOrderStatus.fromJob(_job).state == WorkOrderState.completed;
+      setState(() => _job = latest);
+      if (!wasCompleted &&
+          WorkOrderStatus.fromJob(latest).state == WorkOrderState.completed) {
+        unawaited(_fetchReview());
+      }
+    } catch (_) {
+      // Keep the last visible work order when a refresh is unavailable.
+    } finally {
+      _refreshingJob = false;
+    }
+  }
+
   Future<void> _fetchReview() async {
-    final status = widget.job['status']?.toString().toLowerCase();
+    final status = _job['status']?.toString().toLowerCase();
     final isCompleted = status == 'completed' ||
         status == 'complete' ||
-        widget.job['timeline']?['completedAt'] != null;
+        _job['timeline']?['completedAt'] != null;
     if (!isCompleted) {
       if (mounted) setState(() => _isReviewLoading = false);
       return;
     }
 
     try {
-      final woId = int.tryParse(widget.job['id']?.toString() ??
-              widget.job['workOrderId']?.toString() ??
+      final woId = int.tryParse(_job['id']?.toString() ??
+              _job['workOrderId']?.toString() ??
               '0') ??
           0;
       var review = await HomeownerService.instance.getReview(woId);
@@ -105,32 +146,30 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   String _workOrderId() {
-    return _readString(widget.job['workOrderId']) ??
-        _readString(widget.job['id']) ??
-        '';
+    return _readString(_job['workOrderId']) ?? _readString(_job['id']) ?? '';
   }
 
   /// "WO-24144" — the work-order number, never the database id with a "#".
   String _woNumber() {
-    final value = _readString(widget.job['woNumber']) ??
-        _readString(widget.job['wo_number']) ??
-        _readString(widget.job['workOrderNumber']) ??
-        _readString(widget.job['work_order_number']) ??
+    final value = _readString(_job['woNumber']) ??
+        _readString(_job['wo_number']) ??
+        _readString(_job['workOrderNumber']) ??
+        _readString(_job['work_order_number']) ??
         _workOrderId();
     return value.startsWith('#') ? value.substring(1) : value;
   }
 
   String _serviceName() {
-    return _readString(widget.job['serviceCategory']) ??
-        _readString(widget.job['service_category']) ??
-        _readString(widget.job['serviceName']) ??
-        _readString(widget.job['service_name']) ??
-        _readString(widget.job['trade']) ??
+    return _readString(_job['serviceCategory']) ??
+        _readString(_job['service_category']) ??
+        _readString(_job['serviceName']) ??
+        _readString(_job['service_name']) ??
+        _readString(_job['trade']) ??
         'Service Request';
   }
 
   String _addressText() {
-    final address = widget.job['address'];
+    final address = _job['address'];
     if (address is Map) {
       final street = _readString(address['street']) ??
           _readString(address['line1']) ??
@@ -147,62 +186,48 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   String _proName() {
-    final pro = widget.job['pro'];
+    final pro = _job['pro'];
     if (pro is Map) {
       return _readString(pro['businessName']) ??
           _readString(pro['business_name']) ??
           _readString(pro['name']) ??
           '';
     }
-    return _readString(widget.job['proName']) ??
-        _readString(widget.job['businessName']) ??
+    return _readString(_job['proName']) ??
+        _readString(_job['businessName']) ??
         '';
   }
 
-  String _initialsFor(String value) {
-    final clean = value.replaceAll(RegExp(r'[^A-Za-z0-9 ]'), '').trim();
-    if (clean.isEmpty) return 'P';
-    final initials = clean
-        .split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty)
-        .map((part) => part[0])
-        .take(2)
-        .join()
-        .toUpperCase();
-    return initials.isEmpty ? 'P' : initials;
-  }
-
   String _priorityText() {
-    return _readString(widget.job['priority']) ??
-        _readString(widget.job['urgency']) ??
-        _readString(widget.job['serviceLevel']) ??
+    return _readString(_job['priority']) ??
+        _readString(_job['urgency']) ??
+        _readString(_job['serviceLevel']) ??
         'Standard';
   }
 
   /// The roster technician on the job ("Dale H."). Hidden until assigned.
   String? _technicianName() {
-    final tech = widget.job['technician'];
+    final tech = _job['technician'];
     return (tech is Map
             ? _readString(tech['displayName'] ?? tech['name'])
             : _readString(tech)) ??
-        _readString(widget.job['technicianName']) ??
-        _readString(widget.job['technician_name']);
+        _readString(_job['technicianName']) ??
+        _readString(_job['technician_name']);
   }
 
   /// The gate / access code the homeowner gave at booking (Oct 1, G-53).
   String? _accessCode() =>
-      _readString(widget.job['accessCode']) ??
-      _readString(widget.job['access_code']);
+      _readString(_job['accessCode']) ?? _readString(_job['access_code']);
 
   String _timeWindowText() {
     final priority = _priorityText().toLowerCase();
-    final deadline = _readString(
-        widget.job['slaArrivalTarget'] ?? widget.job['sla_arrival_target']);
+    final deadline =
+        _readString(_job['slaArrivalTarget'] ?? _job['sla_arrival_target']);
     if ((priority == 'urgent' || priority == 'emergency') && deadline != null) {
       return 'By ${_formatDateTime(deadline)}';
     }
-    final start = _readString(widget.job['scheduledStart']);
-    final end = _readString(widget.job['scheduledEnd']);
+    final start = _readString(_job['scheduledStart']);
+    final end = _readString(_job['scheduledEnd']);
     if (start == null) return 'TBD';
     if (end == null) return _formatDateTime(start);
     try {
@@ -216,7 +241,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final status = widget.job['status']?.toString() ?? 'Requested';
+    final status = _job['status']?.toString() ?? 'Requested';
     final statusLower = status.toLowerCase();
     final service = _serviceName();
     final addressStr = _addressText();
@@ -224,132 +249,145 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     final woId = _woNumber();
     final proName = _proName();
     final displayPro = proName.isEmpty ? 'Pro details pending' : proName;
+    final capPending = WorkOrderStatus.capPending(_job);
+    final resolved = WorkOrderStatus.fromJob(_job);
 
     return TransactionGuard(
       isProcessing: _isCancelling,
       blockedMessage: 'Please wait while this booking is being cancelled.',
       child: Scaffold(
         backgroundColor: AppTheme.pageBackground,
-        body: Column(
-          children: [
-            _screenHeader('Work order'),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(14, 16, 14, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      service,
-                      style: const TextStyle(
-                        color: AppTheme.navy700,
-                        fontSize: 20,
-                        height: 1.08,
-                        fontWeight: FontWeight.w900,
+        appBar: TwAppBar(
+          title: 'Work order',
+          onBack: () => Navigator.pop(context),
+        ),
+        // D04: the cap is the one thing the homeowner owes, so its button is
+        // pinned above the home indicator instead of sitting at the end of
+        // the scroll (SPEC §1.6).
+        bottomNavigationBar: capPending
+            ? TwStickyBar(
+                children: [
+                  TwPrimaryButton(
+                    label: 'Review the cap',
+                    onPressed: _openCapReview,
+                  ),
+                ],
+              )
+            : null,
+        body: SingleChildScrollView(
+          child: TwPage(
+            top: TwSpace.s20,
+            bottom: TwSpace.s40,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(service, style: _woTitleStyle(context)),
+                const SizedBox(height: TwSpace.s4),
+                Text(woId, style: TwType.meta()),
+                const SizedBox(height: 10),
+                _statusChip(),
+                if (WorkOrderStatus.proOnSite(_job))
+                  Padding(
+                    padding: const EdgeInsets.only(top: TwSpace.s12),
+                    child: AlertRow(
+                      icon: Icons.check_circle_outline_rounded,
+                      iconColor: AppTheme.blue,
+                      tint: AppTheme.blueTint,
+                      title: '$displayPro has arrived',
+                      body:
+                          'Your pro marked their arrival for this work order.',
+                    ),
+                  ),
+                // No-show (Oct 1): only while still Booked after the visit
+                // window (ArrivalCheckState.pending); opens the report directly.
+                if (ArrivalCheckState.pending(_job))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: AlertRow(
+                      icon: Icons.schedule_rounded,
+                      title: 'Your visit window has passed',
+                      body: 'Not started by your pro.',
+                      footer: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TwTextAction(
+                          label: 'Report a no-show',
+                          onPressed: () async {
+                            if (await openArrivalCheck(context, _job) &&
+                                mounted) Navigator.pop(context, true);
+                          },
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      woId,
-                      style: const TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        _statusChip(),
-                      ],
-                    ),
-                    if (ArrivalCheckState.pending(widget.job))
-                      Padding(
-                          padding: const EdgeInsets.only(top: 14),
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.help_outline),
-                            label: const Text('Did your pro arrive?'),
-                            onPressed: () async {
-                              if (await openArrivalCheck(context, widget.job) &&
-                                  mounted) Navigator.pop(context, true);
-                            },
-                          )),
-                    if (WorkOrderStatus.fromJob(widget.job).state ==
-                        WorkOrderState.noShowCustomer)
-                      const Padding(
-                          padding: EdgeInsets.only(top: 14),
-                          child: Text(
-                              'Your pro reported that they could not reach you at the booked time. This is private. Contact support if this is incorrect.')),
-                    const SizedBox(height: 22),
-                    if (!WorkOrderStatus.fromJob(widget.job)
-                        .isTerminalWithoutProgress)
-                      _sectionLabel('Status timeline'),
-                    const SizedBox(height: 12),
-                    _buildTimeline(statusLower, dateStr),
-                    const SizedBox(height: 18),
-                    const Divider(height: 1, color: AppTheme.line),
-                    const SizedBox(height: 12),
-                    _proPanel(displayPro),
-                    const SizedBox(height: 10),
-                    _proActions(),
-                    const SizedBox(height: 14),
-                    const Divider(height: 1, color: AppTheme.line),
-                    const SizedBox(height: 20),
-                    _sectionLabel('Details'),
-                    const SizedBox(height: 10),
-                    _detailsCard(
-                      when: dateStr,
-                      address: addressStr,
-                      urgency: _priorityText(),
-                      note: _readString(widget.job['description']) ??
-                          _readString(widget.job['note']) ??
-                          _readString(widget.job['customerNote']) ??
-                          _readString(widget.job['serviceDescription']) ??
-                          'No additional description',
-                    ),
-                    const SizedBox(height: 14),
-                    KeyedSubtree(key: _moneyKey, child: _moneyCard()),
-                    const SizedBox(height: 18),
-                    _actions(),
-                  ],
+                  ),
+                if (resolved.state == WorkOrderState.noShowCustomer)
+                  Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Text(
+                          'Your pro reported that they could not reach you at the booked time. This is private. Contact support if this is incorrect.',
+                          style: TwType.bodySm())),
+                const SizedBox(height: TwSpace.s28),
+                if (!resolved.isTerminalWithoutProgress) ...[
+                  _sectionLabel('Status timeline'),
+                  const SizedBox(height: TwSpace.s12),
+                ],
+                _buildTimeline(statusLower, dateStr),
+                const SizedBox(height: TwSpace.s12),
+                _proSection(displayPro),
+                const SizedBox(height: TwSpace.s28),
+                _sectionLabel('Details'),
+                const SizedBox(height: TwSpace.s12),
+                _detailsCard(
+                  when: dateStr,
+                  address: addressStr,
+                  urgency: _priorityText(),
+                  note: _readString(_job['description']) ??
+                      _readString(_job['note']) ??
+                      _readString(_job['customerNote']) ??
+                      _readString(_job['serviceDescription']) ??
+                      _noNote,
                 ),
-              ),
+                const SizedBox(height: TwSpace.s28),
+                KeyedSubtree(key: _moneyKey, child: _moneyCard()),
+                if (!capPending) ...[
+                  const SizedBox(height: TwSpace.s28),
+                  _actions(),
+                ],
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _screenHeader(String title) {
+  static const String _noNote = 'No additional description';
+
+  /// The work-order title: Outfit 26/32 (24/30 on Compact) — SPEC §2 h1.
+  TextStyle _woTitleStyle(BuildContext context) => TwType.h1Mid(context);
+
+  /// D03–D05: the pro, then one full-width Message button, between two
+  /// hairlines. There is no Call button — homeowners reach the pro through
+  /// TradeWorks messaging only (Batch 19 A1).
+  Widget _proSection(String displayPro) {
     return Container(
       width: double.infinity,
-      height: 50 + MediaQuery.of(context).padding.top,
-      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+      padding: const EdgeInsets.symmetric(vertical: TwSpace.s20),
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppTheme.line)),
+        border: Border(
+          top: BorderSide(color: AppTheme.cardBorder),
+          bottom: BorderSide(color: AppTheme.cardBorder),
+        ),
       ),
-      child: Stack(
-        alignment: Alignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Positioned(
-            left: 16,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              icon: const Icon(Icons.arrow_back_rounded,
-                  color: AppTheme.navy700, size: 24),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppTheme.navy700,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
+          _proPanel(displayPro),
+          const SizedBox(height: TwSpace.s16),
+          TwSecondaryButton(
+            label: 'Message',
+            icon: Icons.chat_bubble_outline_rounded,
+            onPressed: _openMessage,
+            height: 50,
           ),
         ],
       ),
@@ -357,7 +395,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   Widget _statusChip() {
-    final resolved = WorkOrderStatus.fromJob(widget.job);
+    final resolved = WorkOrderStatus.fromJob(_job);
     // Booked is the default and is not shown (design standard v3.3).
     return Wrap(spacing: 12, runSpacing: 6, children: [
       if (resolved.state != WorkOrderState.booked)
@@ -367,32 +405,34 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   Widget _sectionLabel(String text) {
-    return Text(
-      text,
-      style: AppTheme.headingStyle.copyWith(
-        fontSize: 20,
-        height: 1.3,
-        fontWeight: FontWeight.w600,
-      ),
-    );
+    return Text(text, style: TwType.h2());
   }
 
   Widget _buildTimeline(String currentStatus, String dateStr) {
-    final resolved = WorkOrderStatus.fromJob(widget.job);
+    final resolved = WorkOrderStatus.fromJob(_job);
     if (resolved.isTerminalWithoutProgress) return const SizedBox.shrink();
+    final timeline = _job['timeline'];
+    final arrivedAt = timeline is Map
+        ? _readString(timeline['arrivedAt'] ?? timeline['arrived_at'])
+        : null;
     final steps = <_TimelineStep>[
       _TimelineStep('Booked', _timelineBookedText(dateStr)),
-      const _TimelineStep('En route', null),
+      _TimelineStep(
+          'En route',
+          arrivedAt == null
+              ? null
+              : 'Arrived on site · ${_formatDateTime(arrivedAt)}'),
       const _TimelineStep('In progress', null),
       const _TimelineStep('Completed', null),
     ];
 
     final currentIndex = resolved.progressionIndex;
+    final jobCompleted = resolved.state == WorkOrderState.completed;
 
     return Column(
       children: List.generate(steps.length, (index) {
         final step = steps[index];
-        final timeline = widget.job['timeline'];
+        final timeline = _job['timeline'];
         final recorded = timeline is Map &&
             timeline[const [
                   'acceptedAt',
@@ -403,175 +443,172 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                 null;
         final isDone = index < currentIndex && (index == 0 || recorded);
         final isActive = index == currentIndex;
-        final color = isDone || isActive ? AppTheme.blue : AppTheme.line;
+        // D05: the Completed step of a completed job is a green check.
+        final isFinished = isActive && jobCompleted;
+        final isLast = index == steps.length - 1;
 
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 38,
-              child: Column(
-                children: [
-                  Container(
-                    width: isActive ? 20 : 17,
-                    height: isActive ? 20 : 17,
-                    decoration: BoxDecoration(
-                      color: isDone ? AppTheme.blue : AppTheme.pageBackground,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: color,
-                        width: isActive ? 3 : 2,
-                      ),
-                    ),
-                    child: isDone
-                        ? const Icon(Icons.check_rounded,
-                            size: 12, color: Colors.white)
-                        : null,
-                  ),
-                  if (index < steps.length - 1)
-                    Container(
-                      width: 2,
-                      height: 34,
-                      color:
-                          index < currentIndex ? AppTheme.blue : AppTheme.line,
-                    ),
-                ],
-              ),
+        final Widget mark;
+        if (isDone || isFinished) {
+          mark = Container(
+            width: 20,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: isFinished ? AppTheme.greenMark : AppTheme.blue,
+              shape: BoxShape.circle,
             ),
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(top: isActive ? 1 : 0),
+            child:
+                const Icon(Icons.check_rounded, size: 12, color: Colors.white),
+          );
+        } else if (isActive) {
+          mark = Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppTheme.blue, width: 6),
+              boxShadow: const [
+                BoxShadow(color: AppTheme.blueTint, spreadRadius: 3),
+              ],
+            ),
+          );
+        } else {
+          mark = Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppTheme.border, width: 2),
+            ),
+          );
+        }
+
+        final Color labelColor = isFinished
+            ? AppTheme.green
+            : isActive
+                ? AppTheme.blue
+                : (index <= currentIndex
+                    ? AppTheme.ink
+                    : AppTheme.textSecondary);
+
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: 20,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      step.title,
-                      style: TextStyle(
-                        color: isActive
-                            ? AppTheme.blue
-                            : (index <= currentIndex
-                                ? AppTheme.ink
-                                : AppTheme.gray),
-                        fontSize: 13,
-                        fontWeight: index <= currentIndex
-                            ? FontWeight.w900
-                            : FontWeight.w500,
-                      ),
-                    ),
-                    if (step.caption != null) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        step.caption!,
-                        style: const TextStyle(
-                          color: AppTheme.gray,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                    mark,
+                    if (!isLast)
+                      Expanded(
+                        child: Container(
+                          width: 2,
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          color: index < currentIndex
+                              ? AppTheme.blue
+                              : AppTheme.cardBorder,
                         ),
                       ),
-                    ],
                   ],
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+                  child: ConstrainedBox(
+                    // Keeps a 22pt connector between steps without a caption.
+                    constraints: BoxConstraints(minHeight: isLast ? 0 : 34),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          step.title,
+                          style: TwType.title(color: labelColor).copyWith(
+                            fontSize: 15,
+                            height: 20 / 15,
+                            fontWeight: index <= currentIndex
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                          ),
+                        ),
+                        if (step.caption != null) ...[
+                          const SizedBox(height: 2),
+                          Text(step.caption!, style: TwType.caption()),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       }),
     );
   }
 
   String _timelineBookedText(String dateStr) {
-    final scheduled = _readString(widget.job['createdAt']) ??
-        _readString(widget.job['created_at']);
+    final scheduled =
+        _readString(_job['createdAt']) ?? _readString(_job['created_at']);
     if (scheduled != null) return _formatDateTime(scheduled);
-    return dateStr == 'TBD' ? 'Not recorded' : dateStr;
+    return 'Not recorded';
   }
 
   Widget _proPanel(String proName) {
-    final dynamic rating = widget.job['pro']?['verifiedRating'] ??
-        widget.job['verifiedRating'] ??
-        widget.job['proRating'];
-    final proMap = widget.job['pro'] is Map
-        ? widget.job['pro'] as Map
-        : const <String, dynamic>{};
+    final dynamic rating = _job['pro']?['verifiedRating'] ??
+        _job['verifiedRating'] ??
+        _job['proRating'];
+    final proMap =
+        _job['pro'] is Map ? _job['pro'] as Map : const <String, dynamic>{};
     final trade = _readString(proMap['category']) ??
         _readString(proMap['trade']) ??
-        _readString(widget.job['trade']) ??
-        _readString(widget.job['serviceCategory']) ??
+        _readString(_job['trade']) ??
+        _readString(_job['serviceCategory']) ??
         'Service professional';
     final reviewCount = proMap['verifiedReviewCount'] ??
         proMap['reviewCount'] ??
-        widget.job['proReviewCount'];
+        _job['proReviewCount'];
+    final num? ratingValue =
+        rating is num ? rating : num.tryParse(rating?.toString() ?? '');
+    final int? countValue = reviewCount is num
+        ? reviewCount.toInt()
+        : int.tryParse(reviewCount?.toString() ?? '');
+    final logo = _readString(proMap['logoUrl'] ??
+        proMap['logo_url'] ??
+        proMap['avatarUrl'] ??
+        proMap['avatar_url']);
 
     return Row(
       children: [
-        CircleAvatar(
-          radius: 22,
-          backgroundColor: AppTheme.navy700,
-          child: Text(
-            _initialsFor(proName),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
+        TwAvatar(name: proName, imageUrl: logo, size: 48),
+        const SizedBox(width: 14),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 proName,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppTheme.ink,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TwType.h3(),
               ),
-              const SizedBox(height: 4),
-              Row(
+              const SizedBox(height: 3),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  if (rating != null) ...[
-                    const Icon(Icons.star_rounded,
-                        color: AppTheme.gold, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$rating',
-                      style: const TextStyle(
-                        color: AppTheme.navy,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  if (ratingValue != null)
+                    RatingCapsule(
+                      rating: ratingValue,
+                      count: countValue,
+                      compact: TwLayout.size(context) == TwSize.compact,
                     ),
-                    if (reviewCount != null)
-                      Text(
-                        ' ($reviewCount reviews)',
-                        style: const TextStyle(
-                          color: AppTheme.textSecondary,
-                          fontSize: 14,
-                        ),
-                      ),
-                    const Text(
-                      ' · ',
-                      style: TextStyle(
-                          color: AppTheme.textSecondary, fontSize: 14),
-                    ),
-                  ],
-                  Flexible(
-                    child: Text(
-                      trade,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.gray,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
+                  Text(trade, style: TwType.meta()),
                 ],
               ),
             ],
@@ -587,81 +624,92 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     required String urgency,
     required String note,
   }) {
-    return Container(
+    final valueStyle = TwType.bodySm(color: AppTheme.ink)
+        .copyWith(fontWeight: FontWeight.w600);
+    final technician = _technicianName();
+    final accessCode = _accessCode();
+    final urgent = _urgencyColor(urgency) == AppTheme.red;
+    return SizedBox(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.line),
-      ),
-      child: Column(
-        children: [
-          _plainDetailRow('When', when),
-          if (_technicianName() != null) ...[
-            const SizedBox(height: 10),
-            _plainDetailRow('Technician', _technicianName()!),
-          ],
-          const SizedBox(height: 10),
-          _plainDetailRow('Address', address),
-          if (_accessCode() != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 78, top: 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.key_outlined,
-                      size: 16, color: AppTheme.navy),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Gate code ${_accessCode()} · shared with your pro',
-                      style: const TextStyle(
-                        color: AppTheme.body,
-                        fontSize: 12.5,
-                        height: 1.25,
-                      ),
+      child: TwFactPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TwDetailRow(label: 'When', value: when),
+            if (technician != null) ...[
+              const SizedBox(height: 14),
+              TwDetailRow(label: 'Technician', value: technician),
+            ],
+            const SizedBox(height: 14),
+            TwDetailRow(
+              label: 'Address',
+              value: address,
+              valueWidget: accessCode == null
+                  ? null
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(address, style: valueStyle),
+                        const SizedBox(height: TwSpace.s4),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.only(top: 2),
+                              child: Icon(Icons.key_outlined,
+                                  size: 16, color: AppTheme.navy),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Gate code $accessCode · shared with your pro',
+                                style: TwType.meta(color: AppTheme.body)
+                                    .copyWith(fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
             ),
-          const SizedBox(height: 10),
-          _plainDetailRow('Urgency', urgency,
-              valueColor: _urgencyColor(urgency)),
-          const SizedBox(height: 10),
-          _plainDetailRow('Your note', note),
-        ],
+            const SizedBox(height: 14),
+            TwDetailRow(
+              label: 'Urgency',
+              value: urgency,
+              valueWidget: urgent
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.schedule_rounded,
+                            size: 14, color: AppTheme.red),
+                        const SizedBox(width: TwSpace.s4),
+                        Flexible(
+                          child: Text(
+                            urgency,
+                            style: TwType.bodySm(color: AppTheme.red)
+                                .copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      urgency,
+                      style: TwType.bodySm(color: AppTheme.textSecondary)
+                          .copyWith(fontWeight: FontWeight.w500),
+                    ),
+            ),
+            const SizedBox(height: 14),
+            TwDetailRow(
+              label: 'Your note',
+              value: note,
+              valueWidget: note == _noNote
+                  ? Text(note,
+                      style: TwType.bodySm(color: AppTheme.textSecondary))
+                  : null,
+            ),
+          ],
+        ),
       ),
-    );
-  }
-
-  Widget _plainDetailRow(String label, String value, {Color? valueColor}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 78,
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: AppTheme.gray,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: TextStyle(
-              color: valueColor ?? AppTheme.ink,
-              fontSize: 12.5,
-              height: 1.25,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -674,13 +722,13 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   String _jobType() =>
-      _readString(widget.job['work_order_type']) ??
-      _readString(widget.job['workOrderType']) ??
+      _readString(_job['work_order_type']) ??
+      _readString(_job['workOrderType']) ??
       'rate_card';
 
   double? _firstAmount(List<String> keys) {
     for (final key in keys) {
-      final value = readAmount(widget.job[key]);
+      final value = readAmount(_job[key]);
       if (value != null) return value;
     }
     return null;
@@ -688,11 +736,11 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
 
   bool get _receiptUploaded =>
       _receiptDocumentId != null ||
-      widget.job['receiptDocumentId'] != null ||
-      _readString(widget.job['paidReceiptUrl']) != null;
+      _job['receiptDocumentId'] != null ||
+      _readString(_job['paidReceiptUrl']) != null;
 
   bool get _receiptOwed =>
-      !_receiptUploaded && WorkOrderStatus.receiptPending(widget.job);
+      !_receiptUploaded && WorkOrderStatus.receiptPending(_job);
 
   Widget _amberWell(IconData icon) => Container(
         width: 36,
@@ -708,18 +756,15 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   Widget _moneyRow(String label, String value,
       {Color? valueColor, bool strong = false}) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(color: AppTheme.body, fontSize: 15),
-          ),
+          child: Text(label, style: TwType.bodySm(color: AppTheme.body)),
         ),
+        const SizedBox(width: TwSpace.s12),
         Text(
           value,
-          style: TextStyle(
-            color: valueColor ?? AppTheme.navy,
-            fontSize: 15,
+          style: TwType.bodySm(color: valueColor ?? AppTheme.navy).copyWith(
             fontWeight: strong ? FontWeight.w700 : FontWeight.w600,
           ),
         ),
@@ -729,29 +774,28 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
 
   /// D04: the cap waiting for approval, inside Job money.
   Widget _capBlock() {
-    final quote = widget.job['quote'] is Map
-        ? widget.job['quote'] as Map
-        : const <String, dynamic>{};
-    final cap = readAmount(widget.job['capAmount'] ??
-        widget.job['cap_amount'] ??
-        widget.job['quoteCap'] ??
-        widget.job['quote_cap'] ??
-        widget.job['quoteAmount'] ??
-        widget.job['quote_amount'] ??
+    final quote =
+        _job['quote'] is Map ? _job['quote'] as Map : const <String, dynamic>{};
+    final cap = readAmount(_job['capAmount'] ??
+        _job['cap_amount'] ??
+        _job['quoteCap'] ??
+        _job['quote_cap'] ??
+        _job['quoteAmount'] ??
+        _job['quote_amount'] ??
         quote['total'] ??
         quote['totalNTE'] ??
-        widget.job['approvedCap'] ??
-        widget.job['approved_cap']);
-    final sentRaw = _readString(widget.job['capSubmittedAt'] ??
-        widget.job['cap_submitted_at'] ??
-        widget.job['quoteSentAt'] ??
-        widget.job['quote_sent_at'] ??
+        _job['approvedCap'] ??
+        _job['approved_cap']);
+    final sentRaw = _readString(_job['capSubmittedAt'] ??
+        _job['cap_submitted_at'] ??
+        _job['quoteSentAt'] ??
+        _job['quote_sent_at'] ??
         quote['createdAt']);
     final sent = sentRaw == null ? null : DateTime.tryParse(sentRaw)?.toLocal();
-    final scope = _readString(widget.job['quoteScope'] ??
-        widget.job['quote_scope'] ??
+    final scope = _readString(_job['quoteScope'] ??
+        _job['quote_scope'] ??
         quote['diagnosis'] ??
-        widget.job['diagnosis']);
+        _job['diagnosis']);
     final title = cap == null
         ? 'Your pro sent a cap'
         : 'Cap sent${sent == null ? '' : ' ${DateFormat('MMM d').format(sent)}'}: ${formatUsd(cap)} not-to-exceed';
@@ -806,8 +850,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   /// D05: the paid receipt is owed — the primary action on a completed job
   /// (Oct 1, G-46).
   Widget _receiptBlock() {
-    final earn = readAmount(widget.job['receiptRewardAmount'] ??
-        widget.job['receipt_reward_amount']);
+    final earn = readAmount(
+        _job['receiptRewardAmount'] ?? _job['receipt_reward_amount']);
     return Container(
       margin: const EdgeInsets.only(top: 14),
       padding: const EdgeInsets.only(top: 14),
@@ -886,7 +930,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   Widget _moneyCard() {
     final type = _jobType();
     final completed =
-        WorkOrderStatus.fromJob(widget.job).state == WorkOrderState.completed;
+        WorkOrderStatus.fromJob(_job).state == WorkOrderState.completed;
     final price = _firstAmount(const [
       'upfrontPrice',
       'upfront_price',
@@ -913,108 +957,90 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       _ => 'Upfront price',
     };
     final hasCredits = credits != null && credits > 0;
-    const meta = TextStyle(
-      color: AppTheme.textSecondary,
-      fontSize: 14,
-      height: 1.43,
-    );
+    final meta = TwType.meta();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionLabel('Job money'),
-        const SizedBox(height: 10),
-        Container(
+        const SizedBox(height: TwSpace.s12),
+        SizedBox(
           width: double.infinity,
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppTheme.cardBorder),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    headline,
-                    style: AppTheme.headingStyle.copyWith(fontSize: 32),
-                  ),
-                  if (headlineLabel.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    Text(
-                      headlineLabel,
-                      style: const TextStyle(
-                        color: AppTheme.navy,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
+          child: TwCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: TwSpace.s8,
+                  crossAxisAlignment: WrapCrossAlignment.end,
+                  children: [
+                    Text(headline, style: TwType.display(context)),
+                    if (headlineLabel.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          headlineLabel,
+                          style: TwType.bodySm(color: AppTheme.navy)
+                              .copyWith(fontWeight: FontWeight.w600),
+                        ),
                       ),
-                    ),
                   ],
-                ],
-              ),
-              if (type == 'nte') ...[
-                const SizedBox(height: 4),
-                Text(
-                  '${_serviceName()} · You approve the cap',
-                  style: const TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                ),
+                if (type == 'nte') ...[
+                  const SizedBox(height: TwSpace.s4),
+                  Text(
+                    '${_serviceName()} · You approve the cap',
+                    style: TwType.label(),
                   ),
-                ),
-              ],
-              if (type == 'quote_request') ...[
-                const SizedBox(height: 4),
-                const Text('The pro sends you an estimate', style: meta),
-              ],
-              if (hasCredits) ...[
+                ],
+                if (type == 'quote_request') ...[
+                  const SizedBox(height: TwSpace.s4),
+                  Text('The pro sends you an estimate', style: meta),
+                ],
+                if (hasCredits) ...[
+                  const SizedBox(height: 14),
+                  _moneyRow('Credits applied', '−${formatUsd(credits)}',
+                      valueColor: AppTheme.purple),
+                ],
+                if (completed && paid != null) ...[
+                  if (hasCredits) ...[
+                    const SizedBox(height: 10),
+                    const Divider(height: 1, color: AppTheme.cardBorder),
+                  ],
+                  const SizedBox(height: 10),
+                  _moneyRow('You paid the pro', formatUsd(paid), strong: true),
+                ] else if (!completed &&
+                    type == 'rate_card' &&
+                    price != null) ...[
+                  if (hasCredits) ...[
+                    const SizedBox(height: 10),
+                    const Divider(height: 1, color: AppTheme.cardBorder),
+                  ],
+                  const SizedBox(height: 10),
+                  _moneyRow(
+                    'You pay the pro',
+                    formatUsd((price - (credits ?? 0)).clamp(0, price)),
+                    strong: true,
+                  ),
+                ],
+                if (paid == 0) ...[
+                  const SizedBox(height: 10),
+                  Text('No customer-paid portion. This job earns no credits.',
+                      style: meta),
+                ],
+                if (WorkOrderStatus.capPending(_job)) _capBlock(),
+                if (completed && _receiptOwed) _receiptBlock(),
+                if (completed && paid != 0 && _receiptUploaded) ...[
+                  const SizedBox(height: 10),
+                  Text('Paid receipt uploaded.', style: meta),
+                ],
                 const SizedBox(height: 14),
-                _moneyRow('Credits applied', '−${formatUsd(credits)}',
-                    valueColor: AppTheme.purple),
-              ],
-              if (completed && paid != null) ...[
-                if (hasCredits) ...[
-                  const SizedBox(height: 10),
-                  const Divider(height: 1, color: AppTheme.cardBorder),
-                ],
-                const SizedBox(height: 10),
-                _moneyRow('You paid the pro', formatUsd(paid), strong: true),
-              ] else if (!completed &&
-                  type == 'rate_card' &&
-                  price != null) ...[
-                if (hasCredits) ...[
-                  const SizedBox(height: 10),
-                  const Divider(height: 1, color: AppTheme.cardBorder),
-                ],
-                const SizedBox(height: 10),
-                _moneyRow(
-                  'You pay the pro',
-                  formatUsd((price - (credits ?? 0)).clamp(0, price)),
-                  strong: true,
+                Text(
+                  'You pay your pro directly. TradeWorks adds no markup and takes no fee — we only fund the credits you apply.',
+                  style: meta,
                 ),
               ],
-              if (paid == 0) ...[
-                const SizedBox(height: 10),
-                const Text(
-                    'No customer-paid portion. This job earns no credits.',
-                    style: meta),
-              ],
-              if (WorkOrderStatus.capPending(widget.job)) _capBlock(),
-              if (completed && _receiptOwed) _receiptBlock(),
-              if (completed && paid != 0 && _receiptUploaded) ...[
-                const SizedBox(height: 10),
-                const Text('Paid receipt uploaded.', style: meta),
-              ],
-              const SizedBox(height: 14),
-              const Text(
-                'You pay your pro directly. TradeWorks adds no markup and takes no fee — we only fund the credits you apply.',
-                style: meta,
-              ),
-            ],
+            ),
           ),
         ),
       ],
@@ -1025,7 +1051,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     final changed = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) => CapApprovalScreen(job: widget.job),
+        builder: (context) => CapApprovalScreen(job: _job),
       ),
     );
     if (changed == true && mounted) Navigator.pop(context, true);
@@ -1049,16 +1075,10 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
 
   /// Bottom actions (D03–D05), keyed on what the homeowner owes (Oct 1).
   Widget _actions() {
-    final resolved = WorkOrderStatus.fromJob(widget.job);
-    if (WorkOrderStatus.capPending(widget.job)) {
-      return SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: ElevatedButton(
-          onPressed: _openCapReview,
-          child: const Text('Review the cap'),
-        ),
-      );
+    final resolved = WorkOrderStatus.fromJob(_job);
+    if (WorkOrderStatus.capPending(_job)) {
+      // D04: "Review the cap" lives in the sticky bar (build()).
+      return const SizedBox.shrink();
     }
     if (resolved.state == WorkOrderState.completed) {
       return Row(
@@ -1087,7 +1107,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
             final sent = await Navigator.push<bool>(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => NoShowReplyScreen(job: widget.job)));
+                    builder: (_) => NoShowReplyScreen(job: _job)));
             if (sent == true && mounted) Navigator.pop(context, true);
           },
           child: const Text('Tell us what happened'),
@@ -1134,12 +1154,12 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   Widget _reviewAction() {
     if (_isReviewLoading) {
       return Container(
-        height: 42,
+        height: 50,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: AppTheme.pageBackground,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppTheme.cardBorder),
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          border: Border.all(color: AppTheme.border),
         ),
         child: Semantics(
             label: 'Loading review',
@@ -1154,57 +1174,11 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     return _outlineButton('Leave review', onPressed: _openReviewPage);
   }
 
-  Widget _proActions() {
-    return Row(
-      children: [
-        Expanded(
-          child: _outlineButton(
-            'Message',
-            icon: Icons.chat_bubble_outline_rounded,
-            onPressed: _openMessage,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _outlineButton(
-            'Call',
-            icon: Icons.phone_outlined,
-            onPressed: _callPro,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _callPro() async {
-    try {
-      final pro = widget.job['pro'] is Map
-          ? Map<String, dynamic>.from(widget.job['pro'])
-          : <String, dynamic>{};
-      var phone = _readString(
-          pro['phone'] ?? pro['business_phone'] ?? widget.job['proPhone']);
-      final slug = _readString(pro['slug']);
-      if (phone == null && slug != null) {
-        final response =
-            await HomeownerService.instance.getContractorProfile(slug);
-        final profile =
-            response['profile'] is Map ? response['profile'] as Map : response;
-        phone = _readString(profile['phone'] ?? profile['business_phone']);
-      }
-      if (phone == null)
-        throw Exception(
-            'This pro has not shared a phone number. You can message them instead.');
-      final dial = phone.replaceAll(RegExp(r'[^0-9+]'), '');
-      if (dial.isEmpty || !await launchUrl(Uri(scheme: 'tel', path: dial)))
-        throw Exception('Calling is not available on this device.');
-    } catch (e) {
-      if (mounted) AppNotification.showError(context, e);
-    }
-  }
-
+  // Batch 19 A1: no Call button and no tel: launcher on the homeowner side.
+  // The pro is reached through Message only (see _proSection).
   Future<void> _openMessage() async {
-    final pro = widget.job['pro'];
-    final contractor = widget.job['contractor'];
+    final pro = _job['pro'];
+    final contractor = _job['contractor'];
     final proData = pro is Map
         ? Map<String, dynamic>.from(pro)
         : contractor is Map
@@ -1212,18 +1186,18 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
             : const <String, dynamic>{};
     String? messagingUserId =
         StreamService.instance.resolveMessagingUserId(proData) ??
-            _readString(widget.job['chatUserId']) ??
-            _readString(widget.job['chat_user_id']) ??
-            _readString(widget.job['streamUserId']) ??
-            _readString(widget.job['stream_user_id']) ??
-            _readString(widget.job['contractorUserId']) ??
-            _readString(widget.job['contractor_user_id']);
+            _readString(_job['chatUserId']) ??
+            _readString(_job['chat_user_id']) ??
+            _readString(_job['streamUserId']) ??
+            _readString(_job['stream_user_id']) ??
+            _readString(_job['contractorUserId']) ??
+            _readString(_job['contractor_user_id']);
 
     if (messagingUserId == null) {
-      final slug = _readString(widget.job['proSlug']) ??
-          _readString(widget.job['pro_slug']) ??
-          _readString(widget.job['contractorSlug']) ??
-          _readString(widget.job['contractor_slug']) ??
+      final slug = _readString(_job['proSlug']) ??
+          _readString(_job['pro_slug']) ??
+          _readString(_job['contractorSlug']) ??
+          _readString(_job['contractor_slug']) ??
           _readString(proData['slug']) ??
           _readString(proData['profileSlug']) ??
           _readString(proData['profile_slug']) ??
@@ -1259,7 +1233,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           contractorId: messagingUserId!,
           contractorName: _proName().isEmpty ? 'Contractor' : _proName(),
           jobReference:
-              '${_serviceName()} · ${widget.job['woNumber'] ?? _workOrderId()}',
+              '${_serviceName()} · ${_job['woNumber'] ?? _workOrderId()}',
         ),
       ),
     );
@@ -1273,29 +1247,25 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }) {
     return OutlinedButton.icon(
       onPressed: onPressed,
-      icon: icon == null ? const SizedBox.shrink() : Icon(icon, size: 17),
+      icon: icon == null ? const SizedBox.shrink() : Icon(icon, size: 18),
       label: Text(label),
       style: OutlinedButton.styleFrom(
         foregroundColor: color,
-        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
-        side: BorderSide(color: color),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+        minimumSize: const Size(0, 50),
       ),
     );
   }
 
   Future<void> _openReviewPage() async {
     if (_isReviewLoading) return;
-    final woId = int.tryParse(widget.job['id']?.toString() ??
-            widget.job['workOrderId']?.toString() ??
-            '0') ??
+    final woId = int.tryParse(
+            _job['id']?.toString() ?? _job['workOrderId']?.toString() ?? '0') ??
         0;
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
         builder: (_) => LeaveReviewScreen(
-          job: widget.job,
+          job: _job,
           jobId: woId,
           initialRating: (_review?['rating'] as num?)?.toDouble() ?? 0,
           hasExistingReview: _review != null,
@@ -1322,9 +1292,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     if (_isCancelling) return;
     setState(() => _isCancelling = true);
 
-    final woId = int.tryParse(widget.job['id']?.toString() ??
-            widget.job['workOrderId']?.toString() ??
-            '0') ??
+    final woId = int.tryParse(
+            _job['id']?.toString() ?? _job['workOrderId']?.toString() ?? '0') ??
         0;
 
     var didCancel = false;
@@ -1350,7 +1319,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   Future<void> _requestReschedule() async {
-    final changed = await openRescheduleWorkOrder(context, widget.job);
+    final changed = await openRescheduleWorkOrder(context, _job);
     if (!changed || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -1376,8 +1345,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       if (!mounted) return;
       setState(() {
         _receiptDocumentId = documentId;
-        widget.job['receiptDocumentId'] = documentId;
-        widget.job['receiptUploadedAt'] =
+        _job['receiptDocumentId'] = documentId;
+        _job['receiptUploadedAt'] =
             document['updatedAt'] ?? document['updated_at'];
       });
       AppNotification.showSuccess(context, 'Receipt uploaded successfully.');
@@ -1389,21 +1358,22 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   void _showReceiptModal(BuildContext context) {
-    final invoice = _readString(widget.job['invoiceUrl']);
-    final receipt = _readString(widget.job['paidReceiptUrl']);
-    final documentId = _receiptDocumentId ??
-        int.tryParse('${widget.job['receiptDocumentId']}');
-    showModalBottomSheet(
-        context: context,
+    final invoice = _readString(_job['invoiceUrl']);
+    final receipt = _readString(_job['paidReceiptUrl']);
+    final documentId =
+        _receiptDocumentId ?? int.tryParse('${_job['receiptDocumentId']}');
+    TwSheet.show<void>(context,
+        scrollControlled: false,
         builder: (context) => SafeArea(
                 child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.fromLTRB(
+                  TwLayout.gutter(context), 8, TwLayout.gutter(context), 20),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('Job documents',
-                    style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 16),
+                Text('Job documents', style: TwType.h3()),
+                const SizedBox(height: TwSpace.s16),
                 if (invoice == null && receipt == null && documentId == null)
-                  const Text('No invoice or paid receipt has been uploaded.'),
+                  Text('No invoice or paid receipt has been uploaded.',
+                      style: TwType.bodySm()),
                 if (invoice != null)
                   TextButton(
                       onPressed: () => _openReceiptUrl(invoice),

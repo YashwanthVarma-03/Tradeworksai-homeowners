@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../ui/tw.dart';
 
 /// The signed-out treatment for tabs that require an account.
 class GuestGateTab extends StatelessWidget {
@@ -24,50 +25,53 @@ class GuestGateTab extends StatelessWidget {
         color: AppTheme.pageBackground,
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(32, 32, 32, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 96,
-                  height: 96,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.subtle,
-                    shape: BoxShape.circle,
+            padding: EdgeInsets.symmetric(
+              horizontal: TwLayout.gutter(context),
+              vertical: TwSpace.s28,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 96,
+                      height: 96,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.subtle,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: AppTheme.navy, size: 36),
+                    ),
                   ),
-                  child: Icon(icon, color: AppTheme.navy, size: 34),
-                ),
-                const SizedBox(height: 42),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                        fontSize: 25,
-                        height: 1.18,
-                      ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontSize: 17,
-                        height: 1.45,
-                      ),
-                ),
-                const SizedBox(height: 30),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
+                  const SizedBox(height: 24),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: TwType.h1Sm(),
+                  ),
+                  const SizedBox(height: TwSpace.s8),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: TwType.body(),
+                  ),
+                  const SizedBox(height: 24),
+                  TwPrimaryButton(
+                    label: 'Create account',
                     onPressed: onCreateAccount,
-                    child: const Text('Create account'),
                   ),
-                ),
-                TextButton(
-                  onPressed: onSignIn,
-                  child: const Text('Already have an account? Sign in'),
-                ),
-              ],
+                  const SizedBox(height: TwSpace.s8),
+                  Center(
+                    child: TwTextAction(
+                      label: 'Already have an account? Sign in',
+                      onPressed: onSignIn,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

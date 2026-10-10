@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/homeowner_service.dart';
 import '../../theme.dart';
+import '../../ui/tw.dart';
 import '../../utils/app_error_utils.dart';
 import '../../widgets/offline_state.dart';
 import '../../widgets/transaction_guard.dart';
@@ -18,9 +19,6 @@ class PersonalInfoScreen extends StatefulWidget {
 
 class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
   static const Color _pageBackground = AppTheme.pageBackground;
-  static const Color _inkStrong = AppTheme.navy;
-  static const Color _mutedText = AppTheme.textSecondary;
-  static const Color _lineSoft = AppTheme.cardBorder;
 
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -168,57 +166,63 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
       bottom: _saveBar(),
       child: Form(
         key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 124),
-          children: [
-            _fieldLabel('Full name'),
-            _textField(
-              controller: _nameController,
-              keyboardType: TextInputType.name,
-              validator: (value) =>
-                  _string(value) == null ? 'Full name is required' : null,
+        child: SingleChildScrollView(
+          child: TwPage(
+            top: TwSpace.s20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const TwFieldLabel('Full name'),
+                _textField(
+                  controller: _nameController,
+                  keyboardType: TextInputType.name,
+                  validator: (value) =>
+                      _string(value) == null ? 'Full name is required' : null,
+                ),
+                const SizedBox(height: TwSpace.s16),
+                const TwFieldLabel('Email'),
+                _textField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    final email = _string(value);
+                    if (email == null) return 'Email is required';
+                    if (!email.contains('@')) return 'Enter a valid email';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: TwSpace.s16),
+                const TwFieldLabel('Phone'),
+                _textField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: TwSpace.s8),
+                Text(
+                  'For your account and TradeWorks support. Pros never see your '
+                  'phone number.',
+                  style: TwType.caption(),
+                ),
+                if (_emailController.text.trim() != _originalEmail) ...[
+                  const SizedBox(height: TwSpace.s16),
+                  const TwFieldLabel('Current password (password accounts)'),
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    style: TwType.body(color: AppTheme.navy),
+                    decoration: TwInputs.decoration(),
+                  ),
+                ],
+                const SizedBox(height: TwSpace.s20),
+                _infoCallout(
+                  text:
+                      'Email changes require confirmation. Password accounts must enter their current password; Apple and Google accounts may need to sign in again.',
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            _fieldLabel('Email'),
-            _textField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              validator: (value) {
-                final email = _string(value);
-                if (email == null) return 'Email is required';
-                if (!email.contains('@')) return 'Enter a valid email';
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            _fieldLabel('Phone'),
-            _textField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'For your account and TradeWorks support. Pros never see your '
-              'phone number.',
-              style:
-                  TextStyle(color: _mutedText, fontSize: 13, height: 18 / 13),
-            ),
-            if (_emailController.text.trim() != _originalEmail) ...[
-              const SizedBox(height: 16),
-              TextFormField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: const InputDecoration(
-                      labelText: 'Current password (password accounts)')),
-            ],
-            const SizedBox(height: 20),
-            _infoCallout(
-              text:
-                  'Email changes require confirmation. Password accounts must enter their current password; Apple and Google accounts may need to sign in again.',
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -231,50 +235,12 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
           'Please wait while your personal information is being saved.',
       child: Scaffold(
         backgroundColor: _pageBackground,
-        appBar: _appBar('Personal info'),
+        appBar: TwAppBar(
+          title: 'Personal info',
+          onBack: () => Navigator.pop(context, _hasChanges),
+        ),
         body: child,
         bottomNavigationBar: bottom,
-      ),
-    );
-  }
-
-  PreferredSizeWidget _appBar(String title) {
-    return AppBar(
-      toolbarHeight: 56,
-      backgroundColor: Colors.white,
-      elevation: 0,
-      leadingWidth: 54,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded, size: 25),
-        color: AppTheme.navy700,
-        onPressed: () => Navigator.pop(context, _hasChanges),
-      ),
-      titleSpacing: 0,
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: AppTheme.navy700,
-          fontSize: 20,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      bottom: const PreferredSize(
-        preferredSize: Size.fromHeight(1),
-        child: Divider(height: 1, color: _lineSoft),
-      ),
-    );
-  }
-
-  Widget _fieldLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: _inkStrong,
-          fontSize: 13.5,
-          fontWeight: FontWeight.w900,
-        ),
       ),
     );
   }
@@ -288,43 +254,13 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
       controller: controller,
       keyboardType: keyboardType,
       validator: validator,
-      style: const TextStyle(
-        color: _inkStrong,
-        fontSize: 15,
-        fontWeight: FontWeight.w500,
-      ),
-      decoration: InputDecoration(
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: const BorderSide(color: _lineSoft),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: const BorderSide(color: AppTheme.teal500, width: 1.3),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: const BorderSide(color: AppTheme.error),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: const BorderSide(color: AppTheme.error),
-        ),
-      ),
+      style: TwType.body(color: AppTheme.navy),
+      decoration: TwInputs.decoration(),
     );
   }
 
   Widget _infoCallout({required String text}) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.subtle,
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-      ),
+    return TwFactPanel(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -333,77 +269,30 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
             color: AppTheme.navy,
             size: 20,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: TwSpace.s12),
           Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                color: AppTheme.body,
-                fontSize: 14,
-                height: 21 / 14,
-              ),
-            ),
+            child: Text(text, style: TwType.bodySm()),
           ),
         ],
       ),
     );
   }
 
+  /// F03 sticky bar: one orange button (navy label, navy spinner) and the
+  /// enable hint.
   Widget _saveBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: _lineSoft)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _hasChanges && !_isSaving ? _saveProfile : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.orange500,
-                disabledBackgroundColor: AppTheme.orange500.withOpacity(0.45),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 19,
-                      height: 19,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Text(
-                      'Save changes',
-                      style: TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _hasChanges
-                ? 'Review your changes before saving'
-                : 'Save is enabled once something changes',
-            style: const TextStyle(
-              color: _mutedText,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
+    return TwStickyBar(
+      note: _hasChanges
+          ? 'Review your changes before saving'
+          : 'Save is enabled once something changes',
+      noteBelow: true,
+      children: [
+        TwPrimaryButton(
+          label: 'Save changes',
+          loading: _isSaving,
+          onPressed: _hasChanges && !_isSaving ? _saveProfile : null,
+        ),
+      ],
     );
   }
 

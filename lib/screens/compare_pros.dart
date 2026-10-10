@@ -1,11 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../services/homeowner_service.dart';
 import '../theme.dart';
 import '../utils/display_format.dart';
 import '../widgets/loading_skeleton.dart';
 import '../widgets/offline_state.dart';
+import '../widgets/capsules.dart';
+import '../ui/tw.dart';
 
 /// Compare two or three pros (B03; Oct 1 G-48).
 ///
@@ -57,6 +60,11 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
   ];
 
   static const double _gap = 8;
+
+  /// Narrowest a pro column may get (at 1.0× text) before the grid scrolls
+  /// sideways. Three columns fit a 360-wide phone, as in B03; Compact phones
+  /// and large text sizes scroll.
+  static const double _minColumn = 104;
 
   late List<String> _ids;
   List<Map<String, dynamic>>? _profiles;
@@ -125,16 +133,15 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
         centerTitle: true,
         leading: IconButton(
           tooltip: 'Close comparison',
-          icon: const Icon(Icons.close_rounded, color: AppTheme.navy),
+          constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+          icon: const Icon(Icons.close_rounded, size: 22, color: AppTheme.navy),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'Compare ${_ids.length} pros',
-          style: GoogleFonts.outfit(
-            color: AppTheme.navy,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TwType.appBarTitle(),
         ),
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
@@ -155,19 +162,52 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _contextLine(),
-        // The pro names stay put; only the attributes scroll.
-        _headerRow(profiles),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final row in _rows) _attributeRow(row, profiles),
-                _actionsRow(profiles),
-              ],
-            ),
-          ),
+          child: LayoutBuilder(builder: (context, constraints) {
+            // B03 sets the grid 16 from the edge on a phone; the gutter is
+            // used when it is smaller (Compact).
+            final pad = math.min(TwLayout.gutter(context), 16.0);
+            final n = profiles.length;
+            final minCol = MediaQuery.textScalerOf(context).scale(_minColumn);
+            final needed = n * minCol + (n - 1) * _gap;
+            final content = math.min(
+                constraints.maxWidth - pad * 2, TwLayout.maxContent);
+            final scrolls = needed > content;
+            final gridWidth = scrolls ? needed : content;
+            // Centred on Wide; hairlines still run edge to edge.
+            final side =
+                scrolls ? pad : (constraints.maxWidth - gridWidth) / 2;
+            final grid = SizedBox(
+              width: gridWidth + side * 2,
+              height: constraints.maxHeight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // The pro names stay put; only the attributes scroll.
+                  _headerRow(profiles, side),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(side, 0, side, 28),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final row in _rows) _attributeRow(row, profiles),
+                          _actionsRow(profiles),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+            if (!scrolls) return grid;
+            // Too narrow for equal columns at this text size: the whole grid
+            // (names and rows together) scrolls sideways.
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: grid,
+            );
+          }),
         ),
       ],
     );
@@ -179,29 +219,36 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
         widget.serviceLabel!.trim(),
       if (widget.zip?.trim().isNotEmpty == true) widget.zip!.trim(),
     ];
+    final gutter = TwLayout.gutter(context);
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+      padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 12),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (parts.isNotEmpty)
-            Text(
-              parts.join(' · '),
-              style: const TextStyle(
-                color: AppTheme.navy,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: TwLayout.maxContent),
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (parts.isNotEmpty)
+                  Text(
+                    parts.join(' · '),
+                    style: TwType.bodySm(color: AppTheme.navy)
+                        .copyWith(fontWeight: FontWeight.w600),
+                  ),
+                const SizedBox(height: 2),
+                Text(
+                  'No score, no ranking. You choose.',
+                  style: TwType.caption(),
+                ),
+              ],
             ),
-          const SizedBox(height: 2),
-          const Text(
-            'No score, no ranking. You choose.',
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -220,9 +267,9 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
     );
   }
 
-  Widget _headerRow(List<Map<String, dynamic>> profiles) {
+  Widget _headerRow(List<Map<String, dynamic>> profiles, double side) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: EdgeInsets.fromLTRB(side, 12, side, 12),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: AppTheme.cardBorder)),
@@ -241,23 +288,7 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppTheme.navy,
-                borderRadius: BorderRadius.circular(AppTheme.radius),
-              ),
-              child: Text(
-                _initials(name),
-                style: GoogleFonts.outfit(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+            TwAvatar(name: name, size: 40),
             const Spacer(),
             IconButton(
               tooltip: 'Remove $name from comparison',
@@ -275,12 +306,8 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
           name,
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.outfit(
-            color: AppTheme.navy,
-            fontSize: 15,
-            height: 1.27,
-            fontWeight: FontWeight.w600,
-          ),
+          // B03: Outfit 15/19 600 — the h3 face at the column's size.
+          style: TwType.h3().copyWith(fontSize: 15, height: 19 / 15),
         ),
       ],
     );
@@ -298,11 +325,7 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
         children: [
           Text(
             row.label,
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TwType.caption().copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           _columns([
@@ -313,21 +336,12 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
     );
   }
 
-  static const TextStyle _value = TextStyle(
-    color: AppTheme.navy,
-    fontSize: 14,
-    height: 1.43,
-    fontWeight: FontWeight.w600,
-  );
-  static const TextStyle _meta = TextStyle(
-    color: AppTheme.textSecondary,
-    fontSize: 13,
-    height: 1.38,
-  );
-  static const Widget _notListed = Text(
-    'Not listed',
-    style: TextStyle(color: AppTheme.textTertiary, fontSize: 14, height: 1.43),
-  );
+  static TextStyle get _value => TwType.label();
+  static TextStyle get _meta => TwType.caption();
+  static Widget get _notListed => Text(
+        'Not listed',
+        style: TwType.meta(color: AppTheme.textTertiary),
+      );
 
   /// Every value is rendered in the same ink at the same weight, whether or
   /// not another column matches it.
@@ -340,19 +354,12 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
       case 'rating':
         final agg = _map(_map(p['reviews'])['verified_aggregate']);
         final rating = _num(agg['avg_rating']);
-        if (rating == null) return const Text('No reviews yet', style: _meta);
+        if (rating == null) return Text('No reviews yet', style: _meta);
         final count = _num(agg['count'])?.toInt() ?? 0;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              const Icon(Icons.star_rounded, size: 16, color: AppTheme.gold),
-              const SizedBox(width: 4),
-              Text(rating.toStringAsFixed(1), style: _value),
-            ]),
-            if (count > 0)
-              Text('($count review${count == 1 ? '' : 's'})', style: _meta),
-          ],
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: AlignmentDirectional.centerStart,
+          child: RatingCapsule(rating: rating, count: count, compact: true),
         );
 
       case 'price':
@@ -363,12 +370,7 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
           children: [
             Text(
               price.headline,
-              style: GoogleFonts.outfit(
-                color: AppTheme.navy,
-                fontSize: 17,
-                height: 1.3,
-                fontWeight: FontWeight.w700,
-              ),
+              style: TwType.h3().copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 2),
             Text(price.note, style: _meta),
@@ -382,10 +384,12 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
         // fact. Standard carries no fee line.
         final urgentFee = _num(em['urgent_fee']);
         final emergencyFee = _num(em['emergency_fee']);
-        final urgentOffered =
-            urgentFee != null && em['urgent_available'] != false;
-        final emergencyOffered =
-            emergencyFee != null && em['available'] != false;
+        final urgentOffered = urgentFee != null &&
+            urgentFee > 0 &&
+            em['urgent_available'] != false;
+        final emergencyOffered = emergencyFee != null &&
+            emergencyFee > 0 &&
+            em['available'] != false;
         Widget tier(String label, String window, double? fee, bool offered) =>
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -427,9 +431,9 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
         final checked = badges['background_checked'] == true ||
             creds['background_checked'] == true;
         if (!checked) return _notListed;
-        return const Row(children: [
-          Icon(Icons.check_rounded, size: 16, color: AppTheme.greenMark),
-          SizedBox(width: 4),
+        return Row(children: [
+          const Icon(Icons.check_rounded, size: 16, color: AppTheme.greenMark),
+          const SizedBox(width: 4),
           Text('Yes', style: _value),
         ]);
 
@@ -519,6 +523,9 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
             children: [
               ElevatedButton(
                 onPressed: () => _book(profile),
+                style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 4)),
                 child: Semantics(
                   label: 'Book ${_nameOf(profile)}',
                   excludeSemantics: true,
@@ -529,7 +536,7 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
               OutlinedButton(
                 onPressed: () => _message(profile),
                 style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 44),
+                    minimumSize: const Size(0, 48),
                     padding: const EdgeInsets.symmetric(horizontal: 4)),
                 child: Semantics(
                   label: 'Message ${_nameOf(profile)}',
@@ -584,13 +591,6 @@ class _CompareProsScreenState extends State<CompareProsScreen> {
       return double.tryParse(v.replaceAll(RegExp(r'[^0-9.]'), ''));
     }
     return null;
-  }
-
-  static String _initials(String name) {
-    final parts =
-        name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-    if (parts.isEmpty) return 'P';
-    return parts.map((p) => p[0]).take(2).join().toUpperCase();
   }
 }
 

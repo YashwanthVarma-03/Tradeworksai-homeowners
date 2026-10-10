@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../../services/notification_preferences.dart';
 import '../../services/push_notification_service.dart';
 import '../../theme.dart';
+import '../../ui/tw.dart';
 import '../../widgets/app_notification.dart';
 import '../../widgets/transaction_guard.dart';
 
@@ -20,8 +21,6 @@ class NotificationSettingsScreen extends StatefulWidget {
 class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
   static const Color _pageBackground = AppTheme.pageBackground;
-  static const Color _inkStrong = AppTheme.navy;
-  static const Color _mutedText = AppTheme.textSecondary;
   static const Color _lineSoft = AppTheme.cardBorder;
 
   bool _isLoading = true;
@@ -177,7 +176,10 @@ class _NotificationSettingsScreenState
           'Please wait while your notification settings are being saved.',
       child: Scaffold(
         backgroundColor: _pageBackground,
-        appBar: _appBar('Notifications'),
+        appBar: TwAppBar(
+          title: 'Notifications',
+          onBack: () => Navigator.pop(context),
+        ),
         body: _isLoading
             ? const SkeletonPage(layout: SkeletonLayout.form)
             : RefreshIndicator(
@@ -185,116 +187,126 @@ class _NotificationSettingsScreenState
                 color: AppTheme.navy,
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                  padding: EdgeInsets.zero,
                   children: [
-                    _sectionLabel('Push notifications'),
-                    _toggleTile(
-                      title: 'Work-order status updates',
-                      subtitle: 'Booked, en route, in progress, completed',
-                      value: _pushStatus,
-                      onChanged: _isSaving
-                          ? null
-                          : (value) => _savePreferences(
-                                NotificationPreferences(
-                                  pushStatus: value,
-                                  pushMessages: _pushMessages,
-                                  pushCredits: _pushCredits,
-                                  pushPromos: _pushPromos,
-                                  emailReceipts: _emailReceipts,
-                                  emailPromos: _emailPromos,
-                                ),
-                              ),
+                    TwPage(
+                      top: TwSpace.s20,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _sectionLabel('Push notifications'),
+                          _toggleTile(
+                            title: 'Work-order status updates',
+                            subtitle: 'Booked, en route, in progress, completed',
+                            value: _pushStatus,
+                            onChanged: _isSaving
+                                ? null
+                                : (value) => _savePreferences(
+                                      NotificationPreferences(
+                                        pushStatus: value,
+                                        pushMessages: _pushMessages,
+                                        pushCredits: _pushCredits,
+                                        pushPromos: _pushPromos,
+                                        emailReceipts: _emailReceipts,
+                                        emailPromos: _emailPromos,
+                                      ),
+                                    ),
+                          ),
+                          _toggleTile(
+                            title: 'Messages from your pro',
+                            subtitle: 'New messages from your pros',
+                            value: _pushMessages,
+                            onChanged: _isSaving
+                                ? null
+                                : (value) => _savePreferences(
+                                      NotificationPreferences(
+                                        pushStatus: _pushStatus,
+                                        pushMessages: value,
+                                        pushCredits: _pushCredits,
+                                        pushPromos: _pushPromos,
+                                        emailReceipts: _emailReceipts,
+                                        emailPromos: _emailPromos,
+                                      ),
+                                    ),
+                          ),
+                          _toggleTile(
+                            title: 'Service credits & rewards',
+                            subtitle:
+                                'When credits are ready, and before they expire',
+                            value: _pushCredits,
+                            onChanged: _isSaving
+                                ? null
+                                : (value) => _savePreferences(
+                                      NotificationPreferences(
+                                        pushStatus: _pushStatus,
+                                        pushMessages: _pushMessages,
+                                        pushCredits: value,
+                                        pushPromos: _pushPromos,
+                                        emailReceipts: _emailReceipts,
+                                        emailPromos: _emailPromos,
+                                      ),
+                                    ),
+                          ),
+                          _toggleTile(
+                            title: 'Promotions & offers',
+                            subtitle: 'Occasional offers · Off unless you turn it on',
+                            last: true,
+                            value: _pushPromos,
+                            onChanged: _isSaving
+                                ? null
+                                : (value) => _savePreferences(
+                                      NotificationPreferences(
+                                        pushStatus: _pushStatus,
+                                        pushMessages: _pushMessages,
+                                        pushCredits: _pushCredits,
+                                        pushPromos: value,
+                                        emailReceipts: _emailReceipts,
+                                        emailPromos: _emailPromos,
+                                      ),
+                                    ),
+                          ),
+                          const SizedBox(height: TwSpace.s28),
+                          _sectionLabel('Email'),
+                          _toggleTile(
+                            title: 'Booking receipts',
+                            subtitle: 'A receipt after each completed job',
+                            value: _emailReceipts,
+                            onChanged: _isSaving
+                                ? null
+                                : (value) => _savePreferences(
+                                      NotificationPreferences(
+                                        pushStatus: _pushStatus,
+                                        pushMessages: _pushMessages,
+                                        pushCredits: _pushCredits,
+                                        pushPromos: _pushPromos,
+                                        emailReceipts: value,
+                                        emailPromos: _emailPromos,
+                                      ),
+                                    ),
+                          ),
+                          _toggleTile(
+                            title: 'Promotions & offers',
+                            subtitle: 'Occasional offers · Off unless you turn it on',
+                            last: true,
+                            value: _emailPromos,
+                            onChanged: _isSaving
+                                ? null
+                                : (value) => _savePreferences(
+                                      NotificationPreferences(
+                                        pushStatus: _pushStatus,
+                                        pushMessages: _pushMessages,
+                                        pushCredits: _pushCredits,
+                                        pushPromos: _pushPromos,
+                                        emailReceipts: _emailReceipts,
+                                        emailPromos: value,
+                                      ),
+                                    ),
+                          ),
+                          const SizedBox(height: TwSpace.s20),
+                          _infoCallout(),
+                        ],
+                      ),
                     ),
-                    _toggleTile(
-                      title: 'Messages from your pro',
-                      subtitle: 'New messages from your pros',
-                      value: _pushMessages,
-                      onChanged: _isSaving
-                          ? null
-                          : (value) => _savePreferences(
-                                NotificationPreferences(
-                                  pushStatus: _pushStatus,
-                                  pushMessages: value,
-                                  pushCredits: _pushCredits,
-                                  pushPromos: _pushPromos,
-                                  emailReceipts: _emailReceipts,
-                                  emailPromos: _emailPromos,
-                                ),
-                              ),
-                    ),
-                    _toggleTile(
-                      title: 'Service credits & rewards',
-                      subtitle:
-                          'When credits are ready, and before they expire',
-                      value: _pushCredits,
-                      onChanged: _isSaving
-                          ? null
-                          : (value) => _savePreferences(
-                                NotificationPreferences(
-                                  pushStatus: _pushStatus,
-                                  pushMessages: _pushMessages,
-                                  pushCredits: value,
-                                  pushPromos: _pushPromos,
-                                  emailReceipts: _emailReceipts,
-                                  emailPromos: _emailPromos,
-                                ),
-                              ),
-                    ),
-                    _toggleTile(
-                      title: 'Promotions & offers',
-                      subtitle: 'Occasional offers · Off unless you turn it on',
-                      value: _pushPromos,
-                      onChanged: _isSaving
-                          ? null
-                          : (value) => _savePreferences(
-                                NotificationPreferences(
-                                  pushStatus: _pushStatus,
-                                  pushMessages: _pushMessages,
-                                  pushCredits: _pushCredits,
-                                  pushPromos: value,
-                                  emailReceipts: _emailReceipts,
-                                  emailPromos: _emailPromos,
-                                ),
-                              ),
-                    ),
-                    const SizedBox(height: 18),
-                    _sectionLabel('Email'),
-                    _toggleTile(
-                      title: 'Booking receipts',
-                      subtitle: 'A receipt after each completed job',
-                      value: _emailReceipts,
-                      onChanged: _isSaving
-                          ? null
-                          : (value) => _savePreferences(
-                                NotificationPreferences(
-                                  pushStatus: _pushStatus,
-                                  pushMessages: _pushMessages,
-                                  pushCredits: _pushCredits,
-                                  pushPromos: _pushPromos,
-                                  emailReceipts: value,
-                                  emailPromos: _emailPromos,
-                                ),
-                              ),
-                    ),
-                    _toggleTile(
-                      title: 'Promotions & offers',
-                      subtitle: 'Occasional offers · Off unless you turn it on',
-                      value: _emailPromos,
-                      onChanged: _isSaving
-                          ? null
-                          : (value) => _savePreferences(
-                                NotificationPreferences(
-                                  pushStatus: _pushStatus,
-                                  pushMessages: _pushMessages,
-                                  pushCredits: _pushCredits,
-                                  pushPromos: _pushPromos,
-                                  emailReceipts: _emailReceipts,
-                                  emailPromos: value,
-                                ),
-                              ),
-                    ),
-                    const SizedBox(height: 18),
-                    _infoCallout(),
                   ],
                 ),
               ),
@@ -302,52 +314,29 @@ class _NotificationSettingsScreenState
     );
   }
 
-  PreferredSizeWidget _appBar(String title) {
-    return AppBar(
-      toolbarHeight: 56,
-      backgroundColor: Colors.white,
-      elevation: 0,
-      leadingWidth: 54,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded, size: 25),
-        color: AppTheme.navy700,
-        onPressed: () => Navigator.pop(context),
-      ),
-      titleSpacing: 0,
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: AppTheme.navy700,
-          fontSize: 20,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      bottom: const PreferredSize(
-        preferredSize: Size.fromHeight(1),
-        child: Divider(height: 1, color: _lineSoft),
-      ),
-    );
-  }
-
   /// Section heading: Outfit 20, sentence case (v3.3 rule 2).
   Widget _sectionLabel(String text) {
     return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 4),
-      child: Text(text, style: Theme.of(context).textTheme.headlineMedium),
+      padding: const EdgeInsets.only(bottom: TwSpace.s4),
+      child: Text(text, style: TwType.h2()),
     );
   }
 
-  /// A hairline row: title, one meta line, a switch (F08).
+  /// A hairline row: title, one meta line, a switch (F08). The last row
+  /// in a section has no rule under it.
   Widget _toggleTile({
     required String title,
     required String subtitle,
     required bool value,
     required ValueChanged<bool>? onChanged,
+    bool last = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: _lineSoft)),
+      padding: const EdgeInsets.symmetric(vertical: TwSpace.s12),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : const Border(bottom: BorderSide(color: _lineSoft)),
       ),
       child: Row(
         children: [
@@ -355,34 +344,20 @@ class _NotificationSettingsScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: _inkStrong,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(title, style: TwType.title()),
                 const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: _mutedText,
-                    fontSize: 14,
-                    height: 20 / 14,
-                  ),
-                ),
+                Text(subtitle, style: TwType.meta()),
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: TwSpace.s12),
           Semantics(
             label: title,
             child: Switch(
               value: value,
-              activeColor: Colors.white,
+              activeColor: AppTheme.white,
               activeTrackColor: AppTheme.blue,
-              inactiveThumbColor: Colors.white,
+              inactiveThumbColor: AppTheme.white,
               inactiveTrackColor: AppTheme.border,
               trackOutlineColor:
                   const WidgetStatePropertyAll(Colors.transparent),
@@ -395,25 +370,17 @@ class _NotificationSettingsScreenState
   }
 
   Widget _infoCallout() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.subtle,
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-      ),
-      child: const Row(
+    return TwFactPanel(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline_rounded, color: AppTheme.navy, size: 20),
-          SizedBox(width: 12),
+          const Icon(Icons.info_outline_rounded,
+              color: AppTheme.navy, size: 20),
+          const SizedBox(width: TwSpace.s12),
           Expanded(
             child: Text(
               'Push alerts open the work order they’re about.',
-              style: TextStyle(
-                color: AppTheme.body,
-                fontSize: 14,
-                height: 21 / 14,
-              ),
+              style: TwType.bodySm(),
             ),
           ),
         ],

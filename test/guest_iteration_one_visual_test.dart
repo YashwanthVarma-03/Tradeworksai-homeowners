@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:homeowners_app/screens/guest_experience.dart';
 import 'package:homeowners_app/screens/home_tab.dart';
 import 'package:homeowners_app/screens/login_page.dart';
@@ -34,7 +33,6 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    GoogleFonts.config.allowRuntimeFetching = false;
   });
 
   Future<void> pumpPhone(
@@ -118,6 +116,38 @@ void main() {
       find.byKey(const ValueKey('phone-surface')),
       matchesGoldenFile('goldens/guest-home.png'),
     );
+  });
+
+  testWidgets(
+      'home search cycles through service names and searches the visible one',
+      (tester) async {
+    String? submitted;
+    await pumpPhone(
+      tester,
+      HomeTab(
+        isGuest: true,
+        onBookTap: () {},
+        onJobTap: (_) {},
+        onInboxTap: () {},
+        onHelpTap: () {},
+        onSearchQuery: (query) => submitted = query,
+        onCategorySelected: (_) {},
+        onGuidesTap: () {},
+        onManageHomeTap: () {},
+      ),
+      withNavigation: true,
+    );
+
+    final ticker = tester.widget<PageView>(find.byType(PageView));
+    final start = ticker.controller!.page!;
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 750));
+    expect(ticker.controller!.page, closeTo(start + 1, 0.01));
+    expect(find.text('Drain cleaning'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.arrow_forward_rounded).first);
+    await tester.pump();
+    expect(submitted, 'Drain cleaning');
   });
 
   testWidgets('bookings gate matches the iteration one surface',
