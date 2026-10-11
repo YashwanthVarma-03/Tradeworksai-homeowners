@@ -328,6 +328,7 @@ class _DashboardShellState extends State<DashboardShell>
         },
       ),
       RewardTab(
+        active: _currentIndex == 3,
         onBookTap: () async {
           final booked = await Navigator.push(
             context,

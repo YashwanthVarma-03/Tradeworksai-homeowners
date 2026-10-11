@@ -49,7 +49,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('Rewards'), findsOneWidget); // Tab label only.
+    expect(find.text('Rewards'), findsNWidgets(2)); // Page title and tab label.
     expect(find.text('Available service credits'), findsOneWidget);
     expect(find.text('Upload your paid receipt'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -91,8 +91,7 @@ void main() {
           reason: 'Rewards at ${size.width} wide and $scale text scale');
       await expectLater(
         find.byType(Scaffold),
-        matchesGoldenFile(
-            'goldens/rewards-${size.width.toInt()}-large.png'),
+        matchesGoldenFile('goldens/rewards-${size.width.toInt()}-large.png'),
       );
       await tester.ensureVisible(find.text('Browse services'));
       await tester.pump();
@@ -118,8 +117,9 @@ final _seed = <String, dynamic>{
   'periodSpend': 2140,
   'earnedInWindow': 64.20,
   'programPeriodStart': '2026-03-02',
-  'programPeriodEnd': '2027-03-01',
+  'programPeriodEnd': '2027-03-02', // Exclusive anniversary boundary.
   'resetDate': '2027-03-02',
+  'milestoneExpiryDays': 90,
   'bands': [
     {'floor': 0, 'ceiling': 2500, 'rate': 3, 'earnedInBand': 64.20},
     {'floor': 2500, 'ceiling': 6000, 'rate': 4},

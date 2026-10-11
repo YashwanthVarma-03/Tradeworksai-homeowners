@@ -3,6 +3,81 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:homeowners_app/screens/reward_tab.dart';
 
 void main() {
+  testWidgets('backend program fields render bands, milestones and progress',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: RewardTab(
+                onBookTap: () {},
+                loadRewards: ({bool forceRefresh = false}) async => {
+                      'balance': 12.5,
+                      'periodSpend': 1250,
+                      'programPeriodStart': '2026-03-02',
+                      'programPeriodEnd': '2027-03-02',
+                      'resetDate': '2027-03-02',
+                      'milestoneExpiryDays': 90,
+                      'bands': [
+                        {'floor': 0, 'ceiling': 2500, 'rate': 3},
+                        {'floor': 2500, 'ceiling': 6000, 'rate': 4},
+                      ],
+                      'milestones': [
+                        {'threshold': 2500, 'amount': 50},
+                      ],
+                      'ledger': [],
+                    }))));
+    await tester.pumpAndSettle();
+    expect(find.text('Earning bands'), findsOneWidget);
+    expect(find.text('Milestones'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.text('Your band'), findsOneWidget);
+    expect(find.text('Mar 2, 2026 – Mar 1, 2027'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('missing backend program data stays visible as unavailable',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: RewardTab(
+                onBookTap: () {},
+                loadRewards: ({bool forceRefresh = false}) async => {
+                      'balance': 0,
+                      'programPeriodStart': '2026-03-02',
+                      'programPeriodEnd': '2027-03-02',
+                      'ledger': [],
+                    }))));
+    await tester.pumpAndSettle();
+    expect(
+        find.text('Earning bands are unavailable right now.'), findsOneWidget);
+    expect(find.text('Milestones are unavailable right now.'), findsOneWidget);
+    expect(
+        find.text('Counted spend and band progress are unavailable right now.'),
+        findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.textContaining('8%'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('opening the rewards tab requests fresh backend data',
+      (tester) async {
+    var calls = 0;
+    final loader = ({bool forceRefresh = false}) async {
+      expect(forceRefresh, isTrue);
+      calls++;
+      return <String, dynamic>{'balance': 0, 'ledger': []};
+    };
+    Widget screen(bool active) => MaterialApp(
+        home: Scaffold(
+            body: RewardTab(
+                active: active, onBookTap: () {}, loadRewards: loader)));
+    await tester.pumpWidget(screen(false));
+    expect(calls, 0);
+    await tester.pumpWidget(screen(true));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('failed rewards do not manufacture balances, bands or promises',
       (tester) async {
     await tester.pumpWidget(MaterialApp(

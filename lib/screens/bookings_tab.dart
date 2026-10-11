@@ -975,6 +975,14 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     final reviewText = _jobReviewText(job);
 
     return TwCard(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => WorkOrderDetailScreen(job: job),
+          ),
+        ).then((_) => _fetchJobs(showLoading: false));
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
