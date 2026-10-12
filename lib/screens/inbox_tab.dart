@@ -498,7 +498,6 @@ class _InboxActivityViewState extends State<InboxActivityView> {
       final who = pro.isEmpty ? 'Your pro' : pro;
       for (final step in [
         ('status', '$who marked $service en route', timeline['enRouteAt']),
-        ('status', '$who arrived for $service', timeline['arrivedAt']),
         (
           'status',
           '$who marked $service in progress',
@@ -725,3 +724,4 @@ class _ActivityRow extends StatelessWidget {
     );
   }
 }
+

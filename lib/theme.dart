@@ -304,7 +304,7 @@ class AppTheme {
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 12,
+          vertical: 14,
         ),
         floatingLabelBehavior: FloatingLabelBehavior.never,
         border: _inputBorder(cardBorder, 1),
@@ -364,7 +364,7 @@ class AppTheme {
         ),
       ),
       // §4 Dialogs: radius 20, inset 24, Outfit h3 title, bodySm content.
-      dialogTheme: const DialogTheme(
+      dialogTheme: const DialogThemeData(
         backgroundColor: white,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -410,3 +410,4 @@ class AppTheme {
     );
   }
 }
+

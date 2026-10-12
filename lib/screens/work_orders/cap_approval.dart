@@ -163,6 +163,7 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       await HomeownerService.instance.respondToCap(
         workOrderId: _workOrderId(),
         accept: true,
+        expectedCap: _capAmount!,
         reason: 'homeowner_approved_cap',
         contractorId: contractorId,
         startsAt: startsAt,
@@ -205,6 +206,7 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       await HomeownerService.instance.respondToCap(
         workOrderId: _workOrderId(),
         accept: false,
+        expectedCap: _capAmount!,
         reason: 'homeowner_declined_cap',
       );
       if (mounted) {
@@ -230,8 +232,7 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
         backgroundColor: AppTheme.pageBackground,
         title: Text('Decline this cap?', style: TwType.h3()),
         content: Text(
-          'Declining cancels this booking. You can message your pro if you want to '
-          'discuss the price first.',
+          'The pro will be told you didn\'t approve the cap. Your diagnostic visit stays as booked.',
           style: TwType.bodySm(),
         ),
         actions: [
@@ -541,3 +542,4 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
     );
   }
 }
+

@@ -422,7 +422,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
     final deadline =
         DateTime.tryParse('${widget.workOrder?['slaArrivalTarget'] ?? ''}');
     if ((tier == 'urgent' || tier == 'emergency') && deadline != null) {
-      return 'By ${DateFormat('EEE d MMM, h:mm a').format(deadline.toLocal())}';
+      return 'By ${DateFormat('EEE, MMM d · h:mm a').format(deadline.toLocal())}';
     }
     final start = DateTime.tryParse(startRaw)?.toLocal();
     final end = DateTime.tryParse(endRaw)?.toLocal();
@@ -515,3 +515,4 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
     return text.isEmpty || text.toLowerCase() == 'null' ? fallback : text;
   }
 }
+

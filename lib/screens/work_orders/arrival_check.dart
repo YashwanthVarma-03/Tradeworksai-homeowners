@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/homeowner_service.dart';
-import '../../services/service_location.dart';
 import '../../widgets/app_notification.dart';
 import '../../widgets/transaction_guard.dart';
-import '../dashboard_shell.dart';
 import 'package:intl/intl.dart';
 import '../../theme.dart';
 import '../../ui/tw.dart';
@@ -29,74 +27,6 @@ String _name(Map<String, dynamic> job) {
 
 int _id(Map<String, dynamic> job) =>
     int.tryParse('${job['workOrderId'] ?? job['id']}') ?? 0;
-
-class ArrivalCheckScreen extends StatefulWidget {
-  const ArrivalCheckScreen({super.key, required this.job});
-  final Map<String, dynamic> job;
-  @override
-  State<ArrivalCheckScreen> createState() => _ArrivalCheckScreenState();
-}
-
-class _ArrivalCheckScreenState extends State<ArrivalCheckScreen> {
-  bool _saving = false;
-  Future<void> _answer(String action) async {
-    if (_saving) return;
-    setState(() => _saving = true);
-    try {
-      await HomeownerService.instance
-          .performWorkOrderAction(workOrderId: _id(widget.job), action: action);
-      if (mounted) Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _saving = false);
-        AppNotification.showError(context, e);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => TransactionGuard(
-      isProcessing: _saving,
-      child: Scaffold(
-          appBar: AppBar(title: const Text('Arrival check')),
-          body: ListView(padding: const EdgeInsets.all(20), children: [
-            Text('Did ${_name(widget.job)} arrive?',
-                style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 12),
-            const Text(
-                'Your booked window has ended and the job is not marked complete. Let us know what happened.'),
-            const SizedBox(height: 24),
-            OutlinedButton(
-                onPressed: _saving ? null : () => _answer('confirm_arrival'),
-                child: const Text('Yes, they came')),
-            const SizedBox(height: 12),
-            OutlinedButton(
-                onPressed:
-                    _saving ? null : () => _answer('arrival_rescheduled'),
-                child: const Text('We rescheduled')),
-            const SizedBox(height: 12),
-            OutlinedButton(
-                onPressed: _saving
-                    ? null
-                    : () async {
-                        final reported = await Navigator.push<bool>(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    NoShowConfirmScreen(job: widget.job)));
-                        if (reported == true && context.mounted)
-                          Navigator.pop(context, true);
-                      },
-                child: const Text("No, they didn't")),
-            const SizedBox(height: 24),
-            const Text(
-                'You can close this and answer later. An unanswered check stays open for review; it does not report anyone.'),
-            if (_saving)
-              const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator())),
-          ])));
-}
 
 class NoShowConfirmScreen extends StatefulWidget {
   const NoShowConfirmScreen({super.key, required this.job});
@@ -233,7 +163,7 @@ class _NoShowConfirmScreenState extends State<NoShowConfirmScreen> {
                       const SizedBox(height: TwSpace.s28),
                       Text(
                         "Report that $pro didn't arrive?",
-                        style: TwType.h1(context),
+                        style: TwType.h1Sm(),
                       ),
                       const SizedBox(height: TwSpace.s28),
                       Text('What happens next', style: TwType.h2()),
@@ -310,37 +240,22 @@ class RecoveryScreen extends StatelessWidget {
   final Map<String, dynamic> job;
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Reported')),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
-        Text('Thanks — we’ve got it',
-            style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 12),
-        const Text('We’ll review your report and follow up.'),
-        const SizedBox(height: 28),
+      backgroundColor: AppTheme.pageBackground,
+      appBar: TwAppBar(title: 'Reported'),
+      body: TwPage(
+        top: TwSpace.s20,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('Thanks — we’ve got it', style: TwType.h1Sm()),
+        const SizedBox(height: TwSpace.s12),
+        Text('We’ll review your report and follow up.', style: TwType.body()),
+        const SizedBox(height: TwSpace.s28),
         Text(
-            'Still need ${job['serviceCategory'] ?? job['serviceName'] ?? 'this service'} done?'),
-        const SizedBox(height: 16),
-        ElevatedButton(
-            onPressed: () async {
-              final address = job['address'];
-              final zip = address is Map
-                  ? address['zip']
-                  : job['zip'] ?? job['address_zip'];
-              if (zip != null)
-                await ServiceLocation.save(zip: '$zip', locationName: '');
-              if (!context.mounted) return;
-              await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => BrowseScreen(
-                          initialCategory:
-                              '${job['serviceCategory'] ?? job['serviceName'] ?? 'All'}',
-                          showAppBar: true)));
-              if (context.mounted) Navigator.pop(context, true);
-            },
-            child: const Text('Find another pro')),
-        TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Not now')),
-      ]));
+            'Still need ${job['serviceCategory'] ?? job['serviceName'] ?? 'this service'} done?',
+            style: TwType.h3()),
+        const SizedBox(height: TwSpace.s16),
+        TwPrimaryButton(
+            label: 'Back to Bookings',
+            onPressed: () => Navigator.pop(context, true)),
+      ])));
 }
+

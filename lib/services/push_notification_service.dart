@@ -98,7 +98,7 @@ class PushNotificationService {
               !preferences.hasPushEnabled) {
             return;
           }
-          unawaited(_registerToken(userId, token, preferences));
+          unawaited(_registerToken(token));
         },
       );
       _initialized = true;
@@ -134,7 +134,7 @@ class PushNotificationService {
           : null,
     );
     if (token == null || token.isEmpty) return false;
-    await _registerToken(userId, token, preferences);
+    await _registerToken(token);
     return true;
   }
 
@@ -151,19 +151,19 @@ class PushNotificationService {
           : null,
     );
     if (token == null || token.isEmpty) return;
-    await _registerToken(userId, token, preferences);
+    await _registerToken(token);
   }
 
-  Future<void> _registerToken(
-    String userId,
-    String token,
-    NotificationPreferences preferences,
-  ) {
+  Future<void> _registerToken(String token) {
+    final platform = kIsWeb
+        ? 'web'
+        : switch (defaultTargetPlatform) {
+            TargetPlatform.iOS => 'ios',
+            _ => 'android',
+          };
     return HomeownerService.instance.registerPushDevice(
-      userId: userId,
       token: token,
-      platform: kIsWeb ? 'web' : defaultTargetPlatform.name,
-      preferences: preferences.toJson(),
+      platform: platform,
     );
   }
 
@@ -225,3 +225,4 @@ class PushNotificationService {
     _preferences = null;
   }
 }
+

@@ -182,10 +182,8 @@ class _RewardTabState extends State<RewardTab> {
     );
   }
 
-  static const _bodyStyle =
-      TextStyle(color: AppTheme.body, fontSize: 15, height: 22 / 15);
-  static const _metaStyle =
-      TextStyle(color: AppTheme.textSecondary, fontSize: 13);
+  static TextStyle get _bodyStyle => TwType.bodySm();
+  static TextStyle get _metaStyle => TwType.caption();
 
   Widget _unavailable(String message) => Padding(
         padding: const EdgeInsets.only(top: TwSpace.s12),
@@ -287,18 +285,18 @@ class _RewardTabState extends State<RewardTab> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.only(bottom: TwSpace.s16),
+                      padding: const EdgeInsets.only(bottom: TwSpace.s8),
                       child: Semantics(
                         header: true,
-                        child: Text('Rewards', style: TwType.h2()),
+                        child: Text('Rewards', style: TwType.h1(context)),
                       ),
                     ),
                     if (_error != null)
-                      const Padding(
-                          padding: EdgeInsets.only(bottom: 16),
+                      Padding(
+                          padding: EdgeInsets.only(bottom: TwSpace.s16),
                           child: Text(
                               'Could not update credits. Showing saved information.',
-                              style: TextStyle(color: AppTheme.amber))),
+                              style: TwType.bodySm(color: AppTheme.amber))),
                     _balanceCard(d),
                     if (receipts.isNotEmpty) ...[
                       _heading('Upload your paid receipt'),
@@ -383,7 +381,8 @@ class _RewardTabState extends State<RewardTab> {
     final showBreakdown =
         reserved != null || locked != null || ledgerBalance != null;
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
+      padding: const EdgeInsets.fromLTRB(
+          TwSpace.s20, TwSpace.s20, TwSpace.s20, TwSpace.s12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -394,12 +393,9 @@ class _RewardTabState extends State<RewardTab> {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text('Available service credits',
-                    style: TextStyle(
-                        color: AppTheme.navy,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600)),
+                    style: TwType.title()),
               ),
               Container(
                 width: 36,
@@ -416,15 +412,10 @@ class _RewardTabState extends State<RewardTab> {
               _money(d['availableBalance'] ??
                   d['balance'] ??
                   d['availableCredits']),
-              style: AppTheme.headingStyle.copyWith(
-                  color: AppTheme.purple,
-                  fontSize: 36,
-                  height: 42 / 36,
-                  letterSpacing: -0.5)),
+              style: TwType.display(context).copyWith(color: AppTheme.purple)),
           const SizedBox(height: 6),
-          const Text('Tell us how much to apply when you book',
-              style: TextStyle(
-                  color: AppTheme.body, fontSize: 15, height: 22 / 15)),
+          Text('Tell us how much to apply when you book',
+              style: TwType.bodySm()),
           if (showBreakdown) ...[
             const SizedBox(height: 12),
             const Divider(height: 1, color: AppTheme.cardBorder),
@@ -446,9 +437,7 @@ class _RewardTabState extends State<RewardTab> {
             const SizedBox(height: 12),
             const Divider(height: 1, color: AppTheme.cardBorder),
             const SizedBox(height: 12),
-            Text(expiryLine,
-                style: const TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 14)),
+            Text(expiryLine, style: TwType.meta()),
           ],
         ],
       ),
@@ -480,7 +469,8 @@ class _RewardTabState extends State<RewardTab> {
       if (completed.isNotEmpty) 'Completed $completed',
     ].whereType<String>().join(' · ');
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      padding: const EdgeInsets.fromLTRB(
+          TwSpace.s16, TwSpace.s16, TwSpace.s16, TwSpace.s8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -502,15 +492,9 @@ class _RewardTabState extends State<RewardTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(
-                        color: AppTheme.navy,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600)),
+                Text(title, style: TwType.title()),
                 const SizedBox(height: 2),
-                Text(detail,
-                    style: const TextStyle(
-                        color: AppTheme.body, fontSize: 14, height: 20 / 14)),
+                Text(detail, style: TwType.bodySm()),
                 const SizedBox(height: 2),
                 Row(
                   children: [
@@ -521,11 +505,9 @@ class _RewardTabState extends State<RewardTab> {
                           color: AppTheme.amber, shape: BoxShape.circle),
                     ),
                     const SizedBox(width: 6),
-                    const Text('Receipt needed',
-                        style: TextStyle(
-                            color: AppTheme.amber,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600)),
+                    Text('Receipt needed',
+                        style: TwType.caption(color: AppTheme.amber)
+                            .copyWith(fontWeight: FontWeight.w600)),
                   ],
                 ),
                 TextButton(
@@ -536,9 +518,7 @@ class _RewardTabState extends State<RewardTab> {
                     alignment: Alignment.centerLeft,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('Upload receipt',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  child: Text('Upload receipt', style: TwType.link()),
                 ),
               ],
             ),
@@ -623,7 +603,8 @@ class _RewardTabState extends State<RewardTab> {
               'Counted spend and band progress are unavailable right now.'),
         if (spend != null)
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            padding: const EdgeInsets.fromLTRB(
+                TwSpace.s16, TwSpace.s16, TwSpace.s16, TwSpace.s12),
             decoration: BoxDecoration(
               color: AppTheme.subtle,
               borderRadius: BorderRadius.circular(AppTheme.radius),
@@ -748,7 +729,7 @@ class _RewardTabState extends State<RewardTab> {
             ? 'Not reached'
             : null;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: TwSpace.s12),
       decoration: BoxDecoration(
         border: last
             ? null
@@ -769,7 +750,7 @@ class _RewardTabState extends State<RewardTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('${_money(b['floor'])} – ${_money(b['ceiling'])}',
-                    style: const TextStyle(color: AppTheme.navy, fontSize: 15)),
+                    style: TwType.body(color: AppTheme.navy)),
                 if (sub != null) ...[
                   const SizedBox(height: 2),
                   Text(sub, style: _metaStyle),
@@ -788,11 +769,9 @@ class _RewardTabState extends State<RewardTab> {
                       color: AppTheme.purple, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 6),
-                const Text('Your band',
-                    style: TextStyle(
-                        color: AppTheme.purple,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
+                Text('Your band',
+                    style: TwType.caption(color: AppTheme.purple)
+                        .copyWith(fontWeight: FontWeight.w600)),
               ],
             ),
         ],
@@ -803,7 +782,7 @@ class _RewardTabState extends State<RewardTab> {
   Widget _milestoneRow(Map<String, dynamic> m, {required bool last}) {
     final reached = m['reachedAt'] != null;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 9),
+      padding: const EdgeInsets.symmetric(vertical: TwSpace.s8),
       decoration: BoxDecoration(
         border: last
             ? null
@@ -825,11 +804,10 @@ class _RewardTabState extends State<RewardTab> {
                 Text.rich(
                   TextSpan(children: [
                     TextSpan(
-                        text: _money(m['amount']),
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                        text: _money(m['amount']), style: TwType.label()),
                     TextSpan(text: ' at ${_money(m['threshold'])} counted'),
                   ]),
-                  style: const TextStyle(color: AppTheme.navy, fontSize: 15),
+                  style: TwType.body(color: AppTheme.navy),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -907,7 +885,7 @@ class _RewardTabState extends State<RewardTab> {
     return InkWell(
       onTap: linked && !_opening ? () => _open(row['workOrderId']) : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: TwSpace.s16),
         decoration: BoxDecoration(
           border: last
               ? null
@@ -921,25 +899,15 @@ class _RewardTabState extends State<RewardTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(labels[type] ?? 'Credit activity',
-                      style: const TextStyle(
-                          color: AppTheme.navy,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600)),
+                      style: TwType.title()),
                   if (job.isNotEmpty) ...[
                     const SizedBox(height: 2),
-                    Text(job,
-                        style: const TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 14,
-                            height: 20 / 14)),
+                    Text(job, style: TwType.meta()),
                   ],
                   if (basis.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(basis,
-                        style: TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 14,
-                            height: 20 / 14,
+                        style: TwType.meta().copyWith(
                             decoration: type == 'expired'
                                 ? TextDecoration.lineThrough
                                 : null)),
@@ -947,8 +915,7 @@ class _RewardTabState extends State<RewardTab> {
                   if (row['expiresAt'] != null && type != 'expired') ...[
                     const SizedBox(height: 2),
                     Text('Expires ${_date(row['expiresAt'])}',
-                        style: const TextStyle(
-                            color: AppTheme.textSecondary, fontSize: 14)),
+                        style: TwType.meta()),
                   ],
                 ],
               ),
@@ -972,3 +939,4 @@ class _RewardTabState extends State<RewardTab> {
     );
   }
 }
+

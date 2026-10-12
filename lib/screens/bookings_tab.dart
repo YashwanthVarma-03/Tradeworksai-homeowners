@@ -1,5 +1,4 @@
 import '../widgets/loading_skeleton.dart';
-import '../widgets/review_annotations.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -464,7 +463,11 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       context,
       MaterialPageRoute(
         builder: (_) => LeaveReviewScreen(
-          job: job,
+          job: {
+            ...job,
+            ...?localReview,
+            if (localReview != null) 'review': localReview,
+          },
           jobId: jobId,
           initialRating: initialRating,
           hasExistingReview: _jobHasReview(job),
@@ -548,6 +551,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text('Bookings', style: TwType.h1(context)),
+          const SizedBox(height: TwSpace.s8),
           TwUnderlineTabs(
             labels: const ['Upcoming', 'History'],
             index: _activeSegment,
@@ -756,13 +761,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             icon: Icons.location_on_outlined,
             label: addressStr,
           ),
-          if (WorkOrderStatus.proOnSite(job)) ...[
-            const SizedBox(height: TwSpace.s8),
-            _buildInfoLine(
-              icon: Icons.check_circle_outline_rounded,
-              label: '$proName has arrived',
-            ),
-          ],
           if (isAlert) ...[
             const SizedBox(height: 14),
             primary
@@ -972,7 +970,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     final address = _jobAddress(job);
     final reviewed = _jobHasReview(job);
     final reviewRating = _jobRating(job);
-    final reviewText = _jobReviewText(job);
 
     return TwCard(
       onTap: () {
@@ -1012,7 +1009,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             job,
             reviewed: reviewed,
             reviewRating: reviewRating,
-            reviewText: reviewText,
             isCancelled: isCancelled,
             primary: primary,
           ),
@@ -1049,31 +1045,20 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Upload your receipt',
-                  style: TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TwType.title(),
                 ),
                 const SizedBox(height: 2),
                 Text.rich(
                   TextSpan(
-                    style: const TextStyle(
-                      color: AppTheme.body,
-                      fontSize: 14,
-                      height: 1.43,
-                    ),
+                    style: TwType.bodySm(),
                     children: [
                       if (earn != null && earn > 0) ...[
                         const TextSpan(text: 'Earn '),
                         TextSpan(
                           text: formatUsd(earn),
-                          style: const TextStyle(
-                            color: AppTheme.purple,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: TwType.label(color: AppTheme.purple),
                         ),
                         const TextSpan(text: ' in credits on this job.'),
                       ] else
@@ -1103,7 +1088,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     Map<String, dynamic> job, {
     required bool reviewed,
     required int reviewRating,
-    required String reviewText,
     required bool isCancelled,
     bool primary = false,
   }) {
@@ -1163,12 +1147,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
               ),
             ],
           ),
-          ReviewAnnotations(
-              businessName: _jobProName(job),
-              review: _localReviews[_resolveWorkOrderId(job)] ??
-                  HomeownerService.instance
-                      .cachedReviewForWorkOrder(_resolveWorkOrderId(job)) ??
-                  const {}),
           TextButton(
               onPressed: () => _leaveReviewDialog(job),
               style: TextButton.styleFrom(
@@ -1176,15 +1154,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
                 padding: EdgeInsets.zero,
               ),
               child: Text('Edit your review', style: TwType.link())),
-          if (reviewText.isNotEmpty) ...[
-            const SizedBox(height: TwSpace.s4),
-            Text(
-              '“$reviewText”',
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: TwType.meta(color: AppTheme.body),
-            ),
-          ],
         ],
       );
     }
@@ -1429,3 +1398,4 @@ class _BookingSectionLabel extends StatelessWidget {
     );
   }
 }
+

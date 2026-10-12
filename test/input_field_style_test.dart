@@ -46,10 +46,10 @@ void main() {
 
     final field =
         tester.widget<TextField>(find.byKey(const ValueKey('form-field')));
-    expect(tester.getSize(find.byKey(const ValueKey('form-field'))).height, 48);
-    expect(tester.getSize(find.byKey(const ValueKey('icon-field'))).height, 48);
+    expect(tester.getSize(find.byKey(const ValueKey('form-field'))).height, 52);
+    expect(tester.getSize(find.byKey(const ValueKey('icon-field'))).height, 52);
     expect(field.decoration!.contentPadding,
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 12));
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 14));
     expect((field.decoration!.enabledBorder as OutlineInputBorder).borderSide,
         const BorderSide(color: AppTheme.cardBorder));
     expect((field.decoration!.focusedBorder as OutlineInputBorder).borderSide,
@@ -83,6 +83,7 @@ void main() {
           controller: controller,
           focusNode: focus,
           hint: 'Search a service',
+          borderColor: AppTheme.blue,
           onSubmit: () {},
           onPhotoTap: () {},
           onVoiceTap: () {},
@@ -106,11 +107,11 @@ void main() {
         .map((decoration) => decoration.border)
         .whereType<Border>()
         .first;
-    expect(outline.top.color, AppTheme.border);
-    expect(outline.top.width, 1);
+    expect(outline.top.color, AppTheme.blue);
+    expect(outline.top.width, 1.5);
   });
 
-  testWidgets('ZIP field uses the white 48 pixel dialog treatment',
+  testWidgets('ZIP field uses the white 52 pixel dialog treatment',
       (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 640);
@@ -132,6 +133,7 @@ void main() {
     expect(field.decoration!.fillColor, AppTheme.white);
     expect((field.decoration!.enabledBorder as OutlineInputBorder).borderSide,
         const BorderSide(color: AppTheme.border));
-    expect(tester.getSize(find.byType(TextField)).height, 48);
+    expect(tester.getSize(find.byType(TextField)).height, 52);
   });
 }
+

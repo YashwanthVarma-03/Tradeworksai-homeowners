@@ -73,8 +73,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   final _creditAmountController = TextEditingController();
   final _accessCodeController = TextEditingController();
   final _picker = ImagePicker();
-  final Set<String> _selectedDetailChips = <String>{};
-  late final String _bookingTransactionId = TransactionId.create('booking');
+  late final String _bookingTransactionId = TransactionId.uuid();
   late final String _creditRequestId = TransactionId.uuid();
 
   final List<XFile> _selectedPhotos = [];
@@ -596,49 +595,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   int get _currentStepNumber => _pageIndex + 1;
 
-  List<String> get _searchPhotoUrls {
-    final urls = <String>[];
-
-    void addUrl(dynamic raw) {
-      final value = _string(raw);
-      if (value == null || !value.startsWith('http') || urls.contains(value)) {
-        return;
-      }
-      urls.add(value);
-    }
-
-    void collect(dynamic source) {
-      final items = _readList(source) ?? const [];
-      for (final item in items) {
-        if (item is Map) {
-          final map = Map<String, dynamic>.from(item);
-          addUrl(
-            map['url'] ??
-                map['imageUrl'] ??
-                map['image_url'] ??
-                map['photoUrl'] ??
-                map['photo_url'] ??
-                map['thumbnailUrl'] ??
-                map['thumbnail_url'] ??
-                map['signedUrl'] ??
-                map['signed_url'],
-          );
-        } else {
-          addUrl(item);
-        }
-      }
-    }
-
-    collect(_mergedPro['photos']);
-    collect(_mergedPro['media']);
-    collect(_mergedPro['projectPhotos']);
-    collect(_mergedPro['project_photos']);
-    collect(_mergedPro['gallery']);
-    collect(_mergedPro['portfolio']);
-
-    return urls.take(3).toList();
-  }
-
   Future<void> _loadProfileAndAvailability() async {
     try {
       final slug = _profileSlug();
@@ -795,7 +751,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     if (contractorId == null || contractorId.isEmpty) {
       if (mounted) {
         setState(() {
-          _slotsError = 'This contractor is missing booking details right now.';
+          _slotsError = 'This pro is missing booking details right now.';
         });
       }
       return;
@@ -1158,7 +1114,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     if (!AuthService.instance.isAuthenticated) {
       AppNotification.showInfo(
         context,
-        'Please log in from the contractor profile to start a booking.',
+        'Please log in from the pro profile to start a booking.',
       );
       setState(() => _exitRequested = true);
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1174,7 +1130,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           _string(widget.pro['contractor_id']);
       if (contractorId == null || contractorId.isEmpty) {
         throw Exception(
-            'This contractor is missing booking details right now.');
+            'This pro is missing booking details right now.');
       }
       final service = _selectedService;
       final selectedPricing = _selectedPricingChoice;
@@ -1250,6 +1206,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         _uploadedBookingPhotos.clear();
       }
       final bookingData = {
+        'contractor_service_id': service.serviceId,
         'requester_name': AuthService.instance.userName ?? 'Homeowner',
         'requester_email': AuthService.instance.userEmail ?? '',
         'service_category': service.title,
@@ -1813,7 +1770,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       width: double.infinity,
       child: TwCard(
         child: Text(
-          'No bookable service was returned by the backend for this contractor.',
+          'No bookable service was returned by the backend for this pro.',
           style: TwType.bodySm(color: AppTheme.ink),
         ),
       ),
@@ -1875,10 +1832,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   }
 
   Widget _buildDetailsStep() {
-    final backendChips = _detailChipsForTrade(_proTrade);
-    final chips = backendChips;
-    final searchPhotos = _searchPhotoUrls;
-
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 24),
       child: Column(
@@ -1904,40 +1857,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             ),
           ),
           const SizedBox(height: TwSpace.s20),
-          if (searchPhotos.isNotEmpty) ...[
-            const TwFieldLabel('Photos from your search'),
-            const SizedBox(height: 2),
-            SizedBox(
-              height: 72,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: searchPhotos.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, index) {
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(AppTheme.radius),
-                    child: Image.network(
-                      searchPhotos[index],
-                      width: 72,
-                      height: 72,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 72,
-                        height: 72,
-                        color: AppTheme.subtle,
-                        child: const Icon(
-                          Icons.image_outlined,
-                          color: AppTheme.textSecondary,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: TwSpace.s16),
-          ],
           InkWell(
             onTap: _pickPhotos,
             borderRadius: BorderRadius.circular(AppTheme.radius),
@@ -2020,31 +1939,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       ),
                     ),
                   ],
-                );
-              }).toList(),
-            ),
-          ],
-          if (chips.isNotEmpty) ...[
-            const SizedBox(height: TwSpace.s20),
-            const TwFieldLabel('Common issues'),
-            const SizedBox(height: 2),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: chips.map((label) {
-                final selected = _selectedDetailChips.contains(label);
-                return TwPill(
-                  label: label,
-                  selected: selected,
-                  onTap: () {
-                    setState(() {
-                      if (selected) {
-                        _selectedDetailChips.remove(label);
-                      } else {
-                        _selectedDetailChips.add(label);
-                      }
-                    });
-                  },
                 );
               }).toList(),
             ),
@@ -2153,7 +2047,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           Text(_slotsError!, style: TwType.bodySm(color: AppTheme.error))
         else if (_selectedAvailability?['paused'] == true)
           Text(
-            'This pro has paused new bookings. Try another contractor.',
+            'This pro has paused new bookings. Try another pro.',
             style: TwType.bodySm(color: AppTheme.textSecondary),
           )
         else if (_selectedUrgency.urgencySlug.toLowerCase() == 'emergency' &&
@@ -2683,22 +2577,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   String _formatArrivalWindow(DateTime start, DateTime end) =>
       formatWindow(start, end);
-
-  List<String> _detailChipsForTrade(String trade) {
-    final raw = _readList(
-          _contractorProfile?['detail_chips'] ??
-              _contractorProfile?['detailChips'] ??
-              _contractorProfile?['issue_tags'] ??
-              _contractorProfile?['issueTags'] ??
-              _selectedService.detailChips,
-        ) ??
-        const [];
-    return raw
-        .map((item) => _string(item))
-        .whereType<String>()
-        .where((item) => item.isNotEmpty)
-        .toList();
-  }
 
   List<dynamic> _backendItemsFor(List<String> keys) {
     final aliases = keys.map(_normalizedKey).toSet();
@@ -3806,3 +3684,4 @@ class _UrgencyDateParts {
 
   int get weekday => DateTime.utc(year, month, day).weekday - 1;
 }
+

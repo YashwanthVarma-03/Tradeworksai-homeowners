@@ -1183,7 +1183,7 @@ class TwFieldLabel extends StatelessWidget {
 }
 
 /// Input decoration (§4 Inputs): `subtle` fill, 1px hairline, radius 12,
-/// 16px horizontal and 12px vertical padding for the mockups' 48px fields.
+/// 16px horizontal and 14px vertical padding for 52px fields.
 /// Focus: 1.5px blue, white fill. Error:
 /// 1.5px red + red caption.
 class TwInputs {
@@ -1216,7 +1216,7 @@ class TwInputs {
       prefixIconConstraints: prefix == null
           ? null
           : prefixConstraints ??
-              const BoxConstraints(minWidth: 44, minHeight: 44),
+              const BoxConstraints(minWidth: 44, minHeight: 52),
       errorText: errorText,
       errorStyle: TwType.caption(color: AppTheme.red),
       errorMaxLines: 3,
@@ -1229,7 +1229,7 @@ class TwInputs {
                 : AppTheme.subtle,
           ),
       contentPadding: EdgeInsets.symmetric(
-          horizontal: 16, vertical: prefix == null ? 12 : 0),
+          horizontal: 16, vertical: prefix == null ? 14 : 0),
       floatingLabelBehavior: FloatingLabelBehavior.never,
       border: _border(restBorder, 1),
       enabledBorder: _border(restBorder, 1),
@@ -1494,3 +1494,4 @@ class TwEmptyState extends StatelessWidget {
     );
   }
 }
+

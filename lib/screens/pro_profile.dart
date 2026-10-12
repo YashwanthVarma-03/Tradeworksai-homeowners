@@ -356,25 +356,7 @@ class _FigmaProfileSurface extends StatelessWidget {
     final stack = TwLayout.stackRows(context);
     final Widget? capsule = nextSlot.isEmpty
         ? null
-        : Container(
-            width: 112,
-            padding: const EdgeInsets.symmetric(
-                horizontal: TwSpace.s8, vertical: TwSpace.s4),
-            decoration: BoxDecoration(
-              color: AppTheme.greenTint,
-              borderRadius: BorderRadius.circular(AppTheme.radius),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.calendar_today_outlined,
-                  size: 14, color: AppTheme.green),
-              const SizedBox(width: TwSpace.s4),
-              Expanded(
-                child: Text('Next:\n$nextSlot',
-                    style: TwType.caption(color: AppTheme.green)
-                        .copyWith(fontWeight: FontWeight.w600, height: 1.05)),
-              ),
-            ]),
-          );
+        : AvailabilityCapsule(label: 'Next: $nextSlot');
     // B02b: "$89.00" in display type, "diagnostic" after it in value type.
     final Widget amount = price.isEmpty
         ? const SizedBox.shrink()
@@ -435,18 +417,14 @@ class _FigmaProfileSurface extends StatelessWidget {
             children: [
               Text('Your project request', style: TwType.h3()),
               if (service.isNotEmpty)
-                Text(
-                    [service, requestZip]
-                        .where((s) => s.isNotEmpty)
-                        .join(' · '),
-                    style: TwType.meta()),
+                Text(service, style: TwType.meta()),
             ],
           ),
           const SizedBox(height: TwSpace.s12),
           _bookButton(),
           const SizedBox(height: TwSpace.s12),
           Text(
-              "Books directly on ${_shortBusinessName(businessName)}'s calendar",
+              "Books a 2-hour window on ${_shortBusinessName(businessName)}'s calendar",
               textAlign: TextAlign.center,
               style: TwType.caption()),
           const SizedBox(height: TwSpace.s12),
@@ -2380,7 +2358,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         context,
         MaterialPageRoute(
           builder: (context) => Scaffold(
-            appBar: AppBar(title: const Text('Recent work')),
+            appBar: TwAppBar(title: 'Recent work'),
             body: Center(
               child: ConstrainedBox(
                 constraints:
@@ -2411,14 +2389,14 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     if (!AuthService.instance.isAuthenticated) {
       AppNotification.showInfo(
         context,
-        'Please sign in to message this contractor.',
+        'Please sign in to message this pro.',
       );
       return;
     }
     if (messageUserId == null) {
       AppNotification.showInfo(
         context,
-        'Chat is coming soon for this contractor.',
+        'Chat is coming soon for this pro.',
       );
       return;
     }
@@ -2516,7 +2494,9 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       reviews: _visibleReviews(),
       loading: _isLoading,
       bookActionLoading: _isStartingBooking,
-      bookActionLabel: 'Book appointment',
+      bookActionLabel: AuthService.instance.isAuthenticated
+          ? 'Book appointment'
+          : 'Log in to book',
       onBack: () => Navigator.pop(context),
       onBook: _openBooking,
       onMessage: () => _openMessage(
@@ -2527,3 +2507,4 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     );
   }
 }
+

@@ -14,15 +14,21 @@ void main() {
   var rejectCap = false;
   final api = MockClient((request) async {
     final body = jsonDecode(request.body) as Map<String, dynamic>;
-    if (request.url.path.contains('booking-commit')) {
+    if (request.url.path.contains('booking-commit') ||
+        request.url.path.contains('work-orders-action')) {
       requests.add(body);
-      if (rejectCap) {
+      if (rejectCap && body['action'] == 'approve_cap') {
         return http.Response(
             jsonEncode({
               'success': true,
               'ok': false,
               'reason': 'slot_unavailable',
             }),
+            200);
+      }
+      if (body['action'] == 'hold') {
+        return http.Response(
+            jsonEncode({'success': true, 'ok': true, 'holdId': 123}),
             200);
       }
     }
@@ -92,23 +98,26 @@ void main() {
       await HomeownerService.instance.respondToCap(
           workOrderId: 101,
           accept: true,
+          expectedCap: 460,
           contractorId: 'contractor-7',
           startsAt: '2026-12-01T10:00:00Z',
           endsAt: '2026-12-01T11:00:00Z');
       await HomeownerService.instance.syncInBackground();
     }, () => api);
-    expect(requests.single, containsPair('action', 'quote_accept'));
+    expect(requests.single, containsPair('action', 'approve_cap'));
+    expect(requests.single, containsPair('expectedCap', '460.00'));
     expect(requests.single, containsPair('startsAt', '2026-12-01T10:00:00Z'));
-    expect(requests.single, containsPair('requesterUserId', 'test-homeowner'));
-    expect(requests.single, containsPair('contractorId', 'contractor-7'));
   });
   test('declining retains the server action and explicit reason', () async {
     await http.runWithClient(() async {
       await HomeownerService.instance.respondToCap(
-          workOrderId: 102, accept: false, reason: 'homeowner_declined_cap');
+          workOrderId: 102,
+          accept: false,
+          expectedCap: 460,
+          reason: 'homeowner_declined_cap');
       await HomeownerService.instance.syncInBackground();
     }, () => api);
-    expect(requests.single, containsPair('action', 'quote_decline'));
+    expect(requests.single, containsPair('action', 'decline_cap'));
     expect(requests.single, containsPair('reason', 'homeowner_declined_cap'));
   });
   test('a rejected cap is not treated as successful approval', () async {
@@ -118,6 +127,7 @@ void main() {
           HomeownerService.instance.respondToCap(
               workOrderId: 103,
               accept: true,
+              expectedCap: 460,
               contractorId: 'contractor-7',
               startsAt: '2026-12-01T10:00:00Z',
               endsAt: '2026-12-01T11:00:00Z'),
@@ -147,6 +157,31 @@ void main() {
     expect(requests.single, containsPair('action', 'quote_request'));
     expect(requests.single.containsKey('startsAt'), isFalse);
     expect(requests.single.containsKey('endsAt'), isFalse);
+  });
+  test('a priced booking holds its window before committing', () async {
+    await http.runWithClient(() async {
+      await HomeownerService.instance.commitBooking(
+        contractorId: 'contractor-7',
+        action: 'commit',
+        urgency: 'standard',
+        startsAt: '2026-12-01T10:00:00Z',
+        endsAt: '2026-12-01T12:00:00Z',
+        transactionId: '123e4567-e89b-42d3-a456-426614174000',
+        booking: {
+          'contractor_service_id': 'service-9',
+          'address_zip': '33578',
+          'work_order_type': 'rate_card',
+        },
+      );
+      await HomeownerService.instance.syncInBackground();
+    }, () => api);
+    expect(requests, hasLength(2));
+    expect(requests.first, containsPair('action', 'hold'));
+    expect(requests.first, containsPair('contractorServiceId', 'service-9'));
+    expect(requests.last, containsPair('action', 'commit'));
+    expect(requests.last, containsPair('holdId', 123));
+    expect(requests.last,
+        containsPair('idempotencyKey', '123e4567-e89b-42d3-a456-426614174000'));
   });
   test('messaging resolves the contractor user ID before the profile ID', () {
     expect(
@@ -180,10 +215,15 @@ void main() {
           rating: 2,
           text: 'The visit was late.',
           tags: [],
-          hasExistingReview: true);
+          hasExistingReview: true,
+          reviewId: 555,
+          expectedUpdatedAt: '2026-09-25T12:00:00Z');
       await HomeownerService.instance.syncInBackground();
     }, () => client);
-    expect(calls.single['action'], 'update_review');
+    expect(calls.single['action'], 'edit_review');
+    expect(calls.single['reviewId'], 555);
+    expect(calls.single['expectedUpdatedAt'], '2026-09-25T12:00:00Z');
+    expect(calls.single['requestId'], matches(RegExp(r'^[0-9a-f-]{36}$')));
     expect(calls.single['tags'], isEmpty);
     expect(calls.single['rating'], 2);
     expect(HomeownerService.instance.cachedReviewForWorkOrder(555)!['editedAt'],
@@ -263,7 +303,11 @@ void main() {
   test('deleting a review clears its cached metadata only after server success',
       () async {
     await http.runWithClient(() async {
-      await HomeownerService.instance.deleteReview(555);
+      await HomeownerService.instance.deleteReview(
+        555,
+        reviewId: 555,
+        expectedUpdatedAt: '2026-09-26T12:00:00Z',
+      );
       await HomeownerService.instance.syncInBackground();
     },
         () => MockClient((request) async => http.Response(
@@ -280,7 +324,7 @@ void main() {
     final syncBefore = HomeownerService.instance.syncVersion.value;
     await http.runWithClient(() async {
       final document = await HomeownerService.instance
-          .uploadWorkOrderReceipt(workOrderId: 101, file: {
+          .uploadWorkOrderReceipt(workOrderId: 101, paidAmount: 90, file: {
         'fileName': 'receipt.pdf',
         'mimeType': 'application/pdf',
         'fileBase64': base64Encode(bytes)
@@ -312,7 +356,7 @@ void main() {
                     }),
                     201);
               }
-              expect(body, {'documentId': 80});
+              expect(body, {'documentId': 80, 'paidAmount': '90.00'});
               return http.Response(
                   jsonEncode({
                     'success': true,
@@ -333,7 +377,7 @@ void main() {
     await http.runWithClient(() async {
       await expectLater(
           HomeownerService.instance
-              .uploadWorkOrderReceipt(workOrderId: 101, file: {
+              .uploadWorkOrderReceipt(workOrderId: 101, paidAmount: 90, file: {
             'fileName': 'receipt.pdf',
             'mimeType': 'application/pdf',
             'fileBase64': base64Encode([1])
@@ -617,3 +661,4 @@ void main() {
     expect(AuthService.instance.isAuthenticated, true);
   });
 }
+

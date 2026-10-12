@@ -345,7 +345,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
       'Last serviced: ${_servicedLabel(system['lastServicedAt'])}',
     ].where((part) => part.isNotEmpty).join('\n');
     return Container(
-      padding: const EdgeInsets.only(top: TwSpace.s12, bottom: 10),
+      padding: const EdgeInsets.only(top: TwSpace.s12, bottom: TwSpace.s12),
       decoration: BoxDecoration(
         border: last
             ? null
@@ -755,3 +755,4 @@ String _servicedLabel(dynamic raw) {
   final date = DateTime.tryParse(text);
   return date == null ? text : DateFormat('MMM d, yyyy').format(date.toLocal());
 }
+
