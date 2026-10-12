@@ -211,8 +211,9 @@ class _RewardTabState extends State<RewardTab> {
         completeProgram = false;
         break;
       }
-      bandCredits += (ceiling - floor) * rate / 100;
-      topRate = topRate == null || rate > topRate ? rate : topRate;
+      final percent = _ratePercent(rate)!;
+      bandCredits += (ceiling - floor) * percent / 100;
+      topRate = topRate == null || percent > topRate ? percent : topRate;
       previousCeiling = ceiling;
     }
     for (final milestone in milestones) {
@@ -253,13 +254,14 @@ class _RewardTabState extends State<RewardTab> {
           (_number(a['floor']) ?? 0).compareTo(_number(b['floor']) ?? 0));
     final milestones = _rows(d['milestones'] ?? program['milestones']);
     final receipts = _rows(d['pendingReceipts'])
-        .where((r) => (_number(r['paidAmount'] ?? r['amount']) ?? 0) > 0)
+        .where((r) =>
+            (_number(r['customerPaidAmount'] ??
+                    r['paidAmount'] ??
+                    r['amount']) ??
+                0) >
+            0)
         .toList();
-    // A receipt-pending job lives in "Upload your paid receipt"; the ledger
-    // shows only credits that exist (F01).
-    final ledger = _rows(d['ledger'])
-        .where((r) => r['creditStatus'] != 'locked' && r['type'] != 'locked')
-        .toList();
+    final ledger = _rows(d['ledger']);
     ledger.sort((a, b) {
       final order = (a['type'] == 'expired' || a['expired'] == true ? 1 : 0)
           .compareTo(b['type'] == 'expired' || b['expired'] == true ? 1 : 0);
@@ -314,7 +316,9 @@ class _RewardTabState extends State<RewardTab> {
                     if (spend != null ||
                         earned != null ||
                         d['programPeriodStart'] != null ||
-                        d['programPeriodEnd'] != null)
+                        d['programPeriodEnd'] != null ||
+                        d['periodStart'] != null ||
+                        d['periodEnd'] != null)
                       _yearSection(d, bands, spend, earned),
                     _heading('Earning bands', bottom: 4),
                     const Text(
@@ -361,12 +365,12 @@ class _RewardTabState extends State<RewardTab> {
 
   Widget _balanceCard(Map<String, dynamic> d) {
     // The earliest-expiring credit: the backend's own pick, else the first
-    // of `expiringSoon` by date.
+    // expiring credit returned by the rewards API.
     Map<String, dynamic>? earliest = d['earliestExpiry'] is Map
         ? Map<String, dynamic>.from(d['earliestExpiry'] as Map)
         : null;
     if (earliest == null) {
-      final soon = _rows(d['expiringSoon'])
+      final soon = _rows(d['expiringCredits'] ?? d['expiringSoon'])
         ..sort((a, b) =>
             '${a['expiresAt'] ?? ''}'.compareTo('${b['expiresAt'] ?? ''}'));
       earliest = soon.isEmpty ? null : soon.first;
@@ -376,6 +380,11 @@ class _RewardTabState extends State<RewardTab> {
             _date(earliest['expiresAt']).isEmpty
         ? null
         : 'Earliest expiry: ${_money(earliest['amount'])} on ${_date(earliest['expiresAt'])}';
+    final reserved = _number(d['reservedBalance']);
+    final locked = _number(d['lockedBalance']);
+    final ledgerBalance = _number(d['ledgerBalance']);
+    final showBreakdown =
+        reserved != null || locked != null || ledgerBalance != null;
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
       decoration: BoxDecoration(
@@ -406,7 +415,10 @@ class _RewardTabState extends State<RewardTab> {
             ],
           ),
           const SizedBox(height: 6),
-          Text(_money(d['balance'] ?? d['availableCredits']),
+          Text(
+              _money(d['availableBalance'] ??
+                  d['balance'] ??
+                  d['availableCredits']),
               style: AppTheme.headingStyle.copyWith(
                   color: AppTheme.purple,
                   fontSize: 36,
@@ -416,6 +428,23 @@ class _RewardTabState extends State<RewardTab> {
           const Text('Tell us how much to apply when you book',
               style: TextStyle(
                   color: AppTheme.body, fontSize: 15, height: 22 / 15)),
+          if (showBreakdown) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: AppTheme.cardBorder),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 24,
+              runSpacing: 12,
+              children: [
+                if (ledgerBalance != null)
+                  _balanceMetric('Ledger total', ledgerBalance),
+                if (reserved != null)
+                  _balanceMetric('Reserved', reserved),
+                if (locked != null)
+                  _balanceMetric('Locked', locked),
+              ],
+            ),
+          ],
           if (expiryLine != null) ...[
             const SizedBox(height: 12),
             const Divider(height: 1, color: AppTheme.cardBorder),
@@ -429,13 +458,25 @@ class _RewardTabState extends State<RewardTab> {
     );
   }
 
+  Widget _balanceMetric(String label, double amount) => SizedBox(
+        width: 120,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: TwType.meta()),
+            const SizedBox(height: 2),
+            Text(formatUsd(amount), style: TwType.value()),
+          ],
+        ),
+      );
+
   Widget _receiptRow(Map<String, dynamic> r) {
     final title = [_service(r) ?? 'Completed service', _woLabel(r)]
         .whereType<String>()
         .join(' · ');
     final completed = _day(r['completedAt'] ?? r['completed_at']);
     final detail = [
-      '${_money(r['paidAmount'] ?? r['amount'])} paid',
+      '${_money(r['customerPaidAmount'] ?? r['paidAmount'] ?? r['amount'])} paid',
       _pro(r),
       if (completed.isNotEmpty) 'Completed $completed',
     ].whereType<String>().join(' · ');
@@ -518,12 +559,19 @@ class _RewardTabState extends State<RewardTab> {
         if (spend >= floor && (ceiling == null || spend < ceiling)) return i;
       }
     }
-    final rate = _number(d['currentBandRate']);
-    return bands.indexWhere((b) => _number(b['rate']) == rate);
+    final rate = _ratePercent(
+        d['currentMarginalRate'] ?? d['rate'] ?? d['currentBandRate']);
+    return bands.indexWhere((b) => _ratePercent(b['rate']) == rate);
+  }
+
+  double? _ratePercent(dynamic v) {
+    final n = _number(v);
+    if (n == null) return null;
+    return n.abs() <= 1 ? n * 100 : n;
   }
 
   String _rate(dynamic v) {
-    final n = _number(v);
+    final n = _ratePercent(v);
     if (n == null) return '';
     return '${n % 1 == 0 ? n.toStringAsFixed(0) : n.toString()}%';
   }
@@ -532,9 +580,12 @@ class _RewardTabState extends State<RewardTab> {
       double? spend, double? earned) {
     // Anniversary year (decisions §7). `resetDate` is the next anniversary;
     // `programPeriodEnd` is the last day of this year.
-    final periodEnd = _parse(d['programPeriodEnd'] ?? d['programPeriodEnds']);
-    final resets = _parse(d['resetDate'] ?? d['nextAnniversary']) ?? periodEnd;
-    final yearStart = _parse(d['programPeriodStart'] ?? d['anniversaryDate']);
+    final periodEnd = _parse(
+        d['periodEnd'] ?? d['programPeriodEnd'] ?? d['programPeriodEnds']);
+    final resets =
+        _parse(d['resetDate'] ?? d['nextAnniversary']) ?? periodEnd;
+    final yearStart = _parse(
+        d['periodStart'] ?? d['programPeriodStart'] ?? d['anniversaryDate']);
     // The API's period end is exclusive and is also the reset date.
     final yearEnd = periodEnd?.subtract(const Duration(days: 1)) ??
         resets?.subtract(const Duration(days: 1));
@@ -542,16 +593,22 @@ class _RewardTabState extends State<RewardTab> {
     final next =
         current >= 0 && current + 1 < bands.length ? bands[current + 1] : null;
     final nextFloor = next == null ? null : _number(next['floor']);
-    final progressTarget =
-        nextFloor ?? (current >= 0 ? _number(bands[current]['ceiling']) : null);
+    final progressTarget = nextFloor ??
+        (current >= 0
+            ? _number(bands[current]['ceiling'])
+            : _number(d['annualQualifyingSpendCap']));
     final rate = current >= 0
         ? _rate(bands[current]['rate'])
-        : _rate(d['currentBandRate']);
+        : _rate(
+            d['currentMarginalRate'] ?? d['rate'] ?? d['currentBandRate']);
+    final tier = _text(d['tier']);
     final bandLine = rate.isEmpty
-        ? null
-        : current >= 0
-            ? 'Band ${current + 1} · $rate on new spend'
-            : '$rate on new spend';
+        ? tier
+        : tier != null
+            ? '$tier · $rate on new spend'
+            : current >= 0
+                ? 'Band ${current + 1} · $rate on new spend'
+                : '$rate on new spend';
     final toNext = spend != null && nextFloor != null && nextFloor > spend
         ? '${formatUsd(nextFloor - spend)} to the ${_rate(next!['rate'])} band'
         : null;
@@ -789,13 +846,18 @@ class _RewardTabState extends State<RewardTab> {
 
   Widget _ledgerRow(Map<String, dynamic> row, {required bool last}) {
     final rawType = '${row['type'] ?? ''}';
-    final type = row['expired'] == true
+    final creditStatus =
+        '${row['creditStatus'] ?? ''}'.trim().toLowerCase();
+    final type = row['expired'] == true || creditStatus == 'expired'
         ? 'expired'
-        : switch (rawType) {
-            'band_earn' => 'earned',
-            'milestone_bonus' => 'milestone',
-            'issue' => 'grant',
-            'redeem' || 'redemption' => 'applied',
+        : switch ((rawType, creditStatus)) {
+            ('service_credit', 'locked') => 'locked',
+            ('service_credit', 'reserved') => 'reserved',
+            ('service_credit', _) => 'earned',
+            ('band_earn', _) => 'earned',
+            ('milestone_bonus', _) => 'milestone',
+            ('issue', _) => 'grant',
+            ('redeem', _) || ('redemption', _) => 'applied',
             _ => rawType,
           };
     const labels = {
@@ -804,10 +866,13 @@ class _RewardTabState extends State<RewardTab> {
       'applied': 'Applied',
       'milestone': 'Milestone',
       'grant': 'Grant',
+      'locked': 'Locked',
+      'reserved': 'Reserved',
       'expired': 'Expired'
     };
     final linked =
-        const ['earned', 'earns_nothing', 'applied'].contains(type) &&
+        const ['earned', 'earns_nothing', 'applied', 'locked', 'reserved']
+                .contains(type) &&
             int.tryParse('${row['workOrderId']}') != null;
     final when = _date(row['occurredAt'] ?? row['createdAt']);
     // Line 1 names the job: "WO-24144 · HVAC tune-up · Hutchins Plumbing Co."
@@ -817,14 +882,15 @@ class _RewardTabState extends State<RewardTab> {
     final note = _text(row['note'] ?? row['description'] ?? row['reason']);
     final basis = [
       if (type == 'applied') 'Applied at booking',
-      if (_number(row['paidAmount']) != null)
-        '${_money(row['paidAmount'])} paid',
-      if (_number(row['rate']) != null) _rate(row['rate']),
+      if (_number(row['customerPaidAmount'] ?? row['paidAmount']) != null)
+        '${_money(row['customerPaidAmount'] ?? row['paidAmount'])} paid',
+      if (_number(row['rateSnapshot'] ?? row['rate']) != null)
+        _rate(row['rateSnapshot'] ?? row['rate']),
       if (job.isEmpty && note != null) note,
       if (when.isNotEmpty) when,
     ].join(' · ');
     final amount = _number(row['amount']);
-    final credit = type == 'earned' || type == 'milestone' || type == 'grant';
+    final credit = const ['earned', 'milestone', 'grant'].contains(type);
     final amountText = amount == null
         ? '—'
         : type == 'applied' || amount < 0
@@ -832,9 +898,11 @@ class _RewardTabState extends State<RewardTab> {
             : '+${formatUsd(amount)}';
     final amountColor = type == 'expired'
         ? AppTheme.textSecondary
-        : credit
-            ? AppTheme.purple
-            : AppTheme.navy;
+        : type == 'locked' || type == 'reserved'
+            ? AppTheme.amber
+            : credit
+                ? AppTheme.purple
+                : AppTheme.navy;
     return InkWell(
       onTap: linked && !_opening ? () => _open(row['workOrderId']) : null,
       child: Container(
