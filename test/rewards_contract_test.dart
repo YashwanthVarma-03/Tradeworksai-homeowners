@@ -240,18 +240,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(r'$1,302.00'), findsOneWidget);
     expect(find.text('Ledger total'), findsOneWidget);
+    expect(find.text(r'$1,357.00'), findsOneWidget);
     expect(find.text('Reserved'), findsOneWidget);
+    expect(find.text(r'$40.00'), findsOneWidget);
     expect(find.text('Locked'), findsOneWidget);
+    expect(find.text(r'$15.00'), findsOneWidget);
     expect(find.text('Bronze · 2% on new spend'), findsOneWidget);
     expect(find.text('Mar 10, 2026 – Mar 9, 2027'), findsOneWidget);
     expect(find.text('Earliest expiry: $20.00 on Nov 1, 2026'),
         findsOneWidget);
 
     await tester.scrollUntilVisible(
-      find.text('Earned'),
+      find.text('Service credits ledger'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    expect(find.text('Earned'), findsOneWidget);
     expect(find.text(r'$90.00 paid · 2% · Oct 1, 2026'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
