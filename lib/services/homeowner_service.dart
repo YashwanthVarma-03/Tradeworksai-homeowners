@@ -25,8 +25,7 @@ class HomeownerService {
       'homeowner-review-action-v2-supabase';
   static const String _profilePath = 'homeowner/profile';
   static const String _legacyProfilePath = 'homeowner-profile-v2-supabase';
-  static const String _rewardsPath = 'homeowner/rewards';
-  static const String _legacyRewardsPath = 'homeowner-rewards-v2-supabase';
+  static const String _rewardsPath = ApiConfig.rewardsUrl;
   static const String _verifyPath = 'homeowner/verify';
   static const String _legacyVerifyPath = 'homeowner-verify-v2-supabase';
   static const String _contractorProfilePath = 'public/contractor-profile-get';
@@ -796,7 +795,11 @@ class HomeownerService {
     String method = 'POST',
   }) async {
     final headers = await _jsonHeaders();
-    final uri = Uri.parse('${ApiConfig.baseUrl}$endpoint');
+    final uri = Uri.parse(
+      endpoint.startsWith('https://') || endpoint.startsWith('http://')
+          ? endpoint
+          : '${ApiConfig.baseUrl}$endpoint',
+    );
     switch (method) {
       case 'GET':
         return http.get(uri, headers: headers).timeout(_requestTimeout);
@@ -1691,11 +1694,7 @@ class HomeownerService {
       }
     }
 
-    final future = _post(
-      _rewardsPath,
-      {},
-      fallbackEndpoint: _legacyRewardsPath,
-    );
+    final future = _post(_rewardsPath, {});
     _rewardsInFlight = future;
     try {
       final resp = await future;
