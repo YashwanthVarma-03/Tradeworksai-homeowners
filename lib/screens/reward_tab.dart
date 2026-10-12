@@ -229,7 +229,7 @@ class _RewardTabState extends State<RewardTab> {
       completeProgram = false;
     }
     final overview = completeProgram && topRate != null
-        ? 'Earn up to ${_rate(topRate)} back — plus a growing bonus at every band you reach, up to ${NumberFormat.currency(symbol: '\$', decimalDigits: 0).format(bandCredits + milestoneCredits)} a year in service credits. '
+        ? 'Earn up to ${_formatRatePercent(topRate)} back — plus a growing bonus at every band you reach, up to ${NumberFormat.currency(symbol: '\$', decimalDigits: 0).format(bandCredits + milestoneCredits)} a year in service credits. '
         : 'Earn service credits on qualifying customer-paid spend and at milestones. ';
     return '$overview'
         'There are no codes, and nothing is applied without you asking. '
@@ -253,14 +253,11 @@ class _RewardTabState extends State<RewardTab> {
       ..sort((a, b) =>
           (_number(a['floor']) ?? 0).compareTo(_number(b['floor']) ?? 0));
     final milestones = _rows(d['milestones'] ?? program['milestones']);
-    final receipts = _rows(d['pendingReceipts'])
-        .where((r) =>
-            (_number(r['customerPaidAmount'] ??
-                    r['paidAmount'] ??
-                    r['amount']) ??
-                0) >
-            0)
-        .toList();
+    final receipts = _rows(d['pendingReceipts']).where((r) {
+      final paid =
+          _number(r['customerPaidAmount'] ?? r['paidAmount'] ?? r['amount']);
+      return paid == null || paid > 0;
+    }).toList();
     final ledger = _rows(d['ledger']);
     ledger.sort((a, b) {
       final order = (a['type'] == 'expired' || a['expired'] == true ? 1 : 0)
@@ -475,8 +472,10 @@ class _RewardTabState extends State<RewardTab> {
         .whereType<String>()
         .join(' · ');
     final completed = _day(r['completedAt'] ?? r['completed_at']);
+    final paid =
+        _number(r['customerPaidAmount'] ?? r['paidAmount'] ?? r['amount']);
     final detail = [
-      '${_money(r['customerPaidAmount'] ?? r['paidAmount'] ?? r['amount'])} paid',
+      if (paid != null) '${_money(paid)} paid',
       _pro(r),
       if (completed.isNotEmpty) 'Completed $completed',
     ].whereType<String>().join(' · ');
@@ -570,10 +569,12 @@ class _RewardTabState extends State<RewardTab> {
     return n.abs() <= 1 ? n * 100 : n;
   }
 
+  String _formatRatePercent(double n) =>
+      '${n % 1 == 0 ? n.toStringAsFixed(0) : n.toString()}%';
+
   String _rate(dynamic v) {
     final n = _ratePercent(v);
-    if (n == null) return '';
-    return '${n % 1 == 0 ? n.toStringAsFixed(0) : n.toString()}%';
+    return n == null ? '' : _formatRatePercent(n);
   }
 
   Widget _yearSection(Map<String, dynamic> d, List<Map<String, dynamic>> bands,
