@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/app_error_utils.dart';
+import '../utils/transaction_id.dart';
 import 'api_config.dart';
 import 'auth_service.dart';
 
@@ -25,8 +26,7 @@ class HomeownerService {
       'homeowner-review-action-v2-supabase';
   static const String _profilePath = 'homeowner/profile';
   static const String _legacyProfilePath = 'homeowner-profile-v2-supabase';
-  static const String _rewardsPath = 'homeowner/rewards';
-  static const String _legacyRewardsPath = 'homeowner-rewards-v2-supabase';
+  static const String _rewardsPath = ApiConfig.rewardsUrl;
   static const String _verifyPath = 'homeowner/verify';
   static const String _legacyVerifyPath = 'homeowner-verify-v2-supabase';
   static const String _contractorProfilePath = 'public/contractor-profile-get';
@@ -796,7 +796,11 @@ class HomeownerService {
     String method = 'POST',
   }) async {
     final headers = await _jsonHeaders();
-    final uri = Uri.parse('${ApiConfig.baseUrl}$endpoint');
+    final uri = Uri.parse(
+      endpoint.startsWith('https://') || endpoint.startsWith('http://')
+          ? endpoint
+          : '${ApiConfig.baseUrl}$endpoint',
+    );
     switch (method) {
       case 'GET':
         return http.get(uri, headers: headers).timeout(_requestTimeout);
@@ -1096,11 +1100,11 @@ class HomeownerService {
     return result;
   }
 
-  // H3: homeowner approves or declines the cap.
-  // Keep quote_accept/quote_decline: the backend still expects these wire values.
+  // Cap approval books the repair window in the same call.
   Future<Map<String, dynamic>> respondToCap({
     required int workOrderId,
     required bool accept,
+    required double expectedCap,
     String? startsAt,
     String? endsAt,
     String? contractorId,
@@ -1111,27 +1115,23 @@ class HomeownerService {
     final Map<String, dynamic> body;
     if (accept) {
       body = {
-        'action': 'quote_accept',
+        'action': 'approve_cap',
         'workOrderId': workOrderId,
+        'expectedCap': expectedCap.toStringAsFixed(2),
         'startsAt': startsAt,
         'endsAt': endsAt,
-        'requesterUserId': uid,
-        'requester_user_id': uid,
-        'contractorId': contractorId,
       };
     } else {
       body = {
-        'action': 'quote_decline',
+        'action': 'decline_cap',
         'workOrderId': workOrderId,
-        'requesterUserId': uid,
-        'requester_user_id': uid,
         'reason': reason,
       };
     }
     final result = await _post(
-      _bookingCommitPath,
+      _workOrdersActionPath,
       body,
-      fallbackEndpoint: _legacyBookingCommitPath,
+      fallbackEndpoint: _legacyWorkOrdersActionPath,
     );
     await _invalidateWorkOrderCache();
     unawaited(syncInBackground());
@@ -1145,21 +1145,30 @@ class HomeownerService {
     String? displayName,
     List<String> tags = const [],
     bool hasExistingReview = false,
+    int? reviewId,
+    String? expectedUpdatedAt,
   }) async {
     if (_userId == null) throw Exception('User is not authenticated');
     if (!rating.isFinite || rating < 1 || rating > 5) {
       throw Exception('Please choose a star rating.');
     }
+    if (hasExistingReview &&
+        (reviewId == null ||
+            expectedUpdatedAt == null ||
+            expectedUpdatedAt.trim().isEmpty)) {
+      throw Exception('This review changed. Refresh and try again.');
+    }
     final ratingInt = rating.round();
 
     final body = {
-      'action': hasExistingReview ? 'update_review' : 'submit_review',
+      'action': hasExistingReview ? 'edit_review' : 'submit_review',
+      'requestId': TransactionId.uuid(),
       'workOrderId': workOrderId,
-      'requesterUserId': _userId,
-      'requester_user_id': _userId,
       'rating': ratingInt,
       'text': text,
       'tags': tags,
+      if (hasExistingReview) 'reviewId': reviewId,
+      if (hasExistingReview) 'expectedUpdatedAt': expectedUpdatedAt,
       if (displayName != null) 'displayName': displayName,
     };
     final result = await _post(
@@ -1180,6 +1189,15 @@ class HomeownerService {
       'displayName': displayName,
       'reviewed': true,
       'reviewId': result['reviewId'],
+      'updatedAt': result['updatedAt'] ??
+          result['updated_at'] ??
+          result['editedAt'] ??
+          (result['review'] is Map
+              ? result['review']['updatedAt'] ??
+                  result['review']['updated_at'] ??
+                  result['review']['editedAt'] ??
+                  result['review']['edited_at']
+              : null),
       'published': result['published'],
     });
     await _invalidateWorkOrderCache();
@@ -1192,15 +1210,20 @@ class HomeownerService {
     return result;
   }
 
-  Future<void> deleteReview(int workOrderId) async {
+  Future<void> deleteReview(
+    int workOrderId, {
+    required int reviewId,
+    required String expectedUpdatedAt,
+  }) async {
     if (_userId == null) throw Exception('User is not authenticated');
     await _post(
         _reviewActionPath,
         {
-          'action': 'deleteReview',
+          'action': 'delete_review',
+          'requestId': TransactionId.uuid(),
           'workOrderId': workOrderId,
-          'requesterUserId': _userId,
-          'requester_user_id': _userId,
+          'reviewId': reviewId,
+          'expectedUpdatedAt': expectedUpdatedAt,
         },
         fallbackEndpoint: _legacyReviewActionPath);
     _reviewsByWorkOrder.remove(workOrderId);
@@ -1424,6 +1447,10 @@ class HomeownerService {
       'reviewDate':
           source['reviewDate'] ?? source['review_date'] ?? source['created_at'],
       'reviewId': source['reviewId'] ?? source['review_id'] ?? source['id'],
+      'updatedAt': source['updatedAt'] ??
+          source['updated_at'] ??
+          source['editedAt'] ??
+          source['edited_at'],
       if (source.containsKey('is_active'))
         'published': source['is_active'] == true,
       'detailsAvailable': rating > 0 ||
@@ -1691,11 +1718,7 @@ class HomeownerService {
       }
     }
 
-    final future = _post(
-      _rewardsPath,
-      {},
-      fallbackEndpoint: _legacyRewardsPath,
-    );
+    final future = _post(_rewardsPath, {});
     _rewardsInFlight = future;
     try {
       final resp = await future;
@@ -1818,50 +1841,21 @@ class HomeownerService {
     });
   }
 
-  /// Persists the categories a homeowner has explicitly opted into. The
-  /// notification worker uses these flags before sending an FCM payload.
-  Future<void> updateNotificationSettings(
-    Map<String, bool> notificationSettings,
-  ) async {
-    final uid = _userId;
-    if (uid == null) throw Exception('User is not authenticated');
-
-    await _post(
-      _profilePath,
-      {
-        'action': 'update_notification_settings',
-        'userId': uid,
-        'notificationSettings': notificationSettings,
-        'notification_settings': notificationSettings,
-      },
-      fallbackEndpoint: _legacyProfilePath,
-    );
-    await _invalidateProfileCache();
-    unawaited(syncInBackground());
-  }
-
   /// Registers the active FCM/Web Push token for the signed-in homeowner.
   /// The API must scope this record to the authenticated user, expire stale
   /// tokens, and never accept a token for a different account.
   Future<void> registerPushDevice({
-    required String userId,
     required String token,
     required String platform,
-    required Map<String, bool> preferences,
   }) async {
     if (token.trim().isEmpty || _userId == null) return;
     await _post(
-      _profilePath,
+      'homeowner/push-tokens',
       {
-        'action': 'register_push_device',
-        'userId': userId,
-        'deviceToken': token,
-        'device_token': token,
+        'provider': 'fcm',
+        'token': token,
         'platform': platform,
-        'notificationSettings': preferences,
-        'notification_settings': preferences,
       },
-      fallbackEndpoint: _legacyProfilePath,
     );
   }
 
@@ -1878,6 +1872,7 @@ class HomeownerService {
       'zip': address['zip'] ?? '',
       'label': address['label'] ?? 'Address',
       'isDefault': address['isDefault'] == 'true',
+      'makeDefault': address['isDefault'] == 'true',
       if (address['unit'] != null) 'unit': address['unit'],
     };
 
@@ -1908,6 +1903,7 @@ class HomeownerService {
       'zip': address['zip'] ?? '',
       'label': address['label'] ?? 'Address',
       'isDefault': address['isDefault'] == 'true',
+      'makeDefault': address['isDefault'] == 'true',
       if (address['unit'] != null) 'unit': address['unit'],
     };
 
@@ -2039,10 +2035,42 @@ class HomeownerService {
         0;
     final creditRequestId = bookingPayload.remove('credit_request_id');
     final intakeToken = bookingPayload.remove('intake_session_token');
+    final contractorServiceId = bookingPayload.remove('contractor_service_id');
     if (creditAmount > 0 && (action != 'commit' || creditRequestId == null)) {
       throw Exception(
           'Credits require a confirmed booking and a request identifier.');
     }
+    int? holdId;
+    if (action == 'commit') {
+      if (contractorServiceId == null) {
+        throw Exception('A service is required to book this appointment.');
+      }
+      final hold = await _post(
+        _bookingCommitPath,
+        {
+          'action': 'hold',
+          'contractorId': contractorId,
+          'contractorServiceId': contractorServiceId,
+          'urgency': urgency,
+          'propertyZip': booking['address_zip'],
+          if (startsAt != null) 'startsAt': startsAt,
+          if (endsAt != null) 'endsAt': endsAt,
+          if (bookingPayload['property_tz'] != null)
+            'propertyTz': bookingPayload['property_tz'],
+        },
+        fallbackEndpoint: _legacyBookingCommitPath,
+      );
+      holdId = int.tryParse('${hold['holdId'] ?? hold['hold_id']}');
+      if (holdId == null) {
+        throw Exception('That time is no longer available. Pick another window.');
+      }
+      startsAt ??= hold['startsAt']?.toString();
+      endsAt ??= hold['endsAt']?.toString();
+    }
+    final idempotencyKey = transactionId != null &&
+            RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(transactionId)
+        ? transactionId
+        : TransactionId.uuid();
     final body = {
       if (creditAmount > 0) ...{
         'applyServiceCredit': true,
@@ -2051,12 +2079,15 @@ class HomeownerService {
       },
       if (intakeToken != null) 'intakeSessionToken': intakeToken,
       'contractorId': contractorId,
+      if (contractorServiceId != null)
+        'contractorServiceId': contractorServiceId,
+      if (holdId != null) 'holdId': holdId,
       'action': action,
       'urgency': urgency,
       'booking': bookingPayload,
       if (startsAt != null) 'startsAt': startsAt,
       if (endsAt != null) 'endsAt': endsAt,
-      if (transactionId != null) 'idempotencyKey': transactionId,
+      'idempotencyKey': idempotencyKey,
       if (action == 'commit' && booking['address_zip'] != null)
         'propertyZip': booking['address_zip'],
     };
@@ -2470,6 +2501,7 @@ class HomeownerService {
     required Map<String, dynamic> metadata,
     required String Function(int) completePath,
     bool receipt = false,
+    double? paidAmount,
   }) async {
     final uid = _userId;
     if (uid == null) throw Exception('Please sign in to upload a document.');
@@ -2506,8 +2538,12 @@ class HomeownerService {
     }
     if (_userId != uid)
       throw Exception('Your account changed. Please try again.');
-    final completed =
-        await _post(completePath(id), receipt ? {'documentId': id} : {});
+    final completed = await _post(
+      completePath(id),
+      receipt
+          ? {'documentId': id, 'paidAmount': paidAmount?.toStringAsFixed(2)}
+          : {},
+    );
     if (completed['document'] is! Map ||
         '${completed['document']['id']}' != '$id') {
       throw Exception(
@@ -2519,6 +2555,7 @@ class HomeownerService {
   Future<Map<String, dynamic>> uploadWorkOrderReceipt({
     required int workOrderId,
     required Map<String, dynamic> file,
+    required double paidAmount,
   }) async {
     final document = await _uploadPrivateDocument(
       reservePath: 'homeowner/work-orders/$workOrderId/receipt/upload-url',
@@ -2527,6 +2564,7 @@ class HomeownerService {
       completePath: (_) =>
           'homeowner/work-orders/$workOrderId/receipt/complete',
       receipt: true,
+      paidAmount: paidAmount,
     );
     await _invalidateWorkOrderCache();
     notifyLocalDataChanged();
@@ -2650,8 +2688,12 @@ class HomeownerService {
     if (raw.contains('out_of_coverage') || raw.contains('invalid_zip')) {
       return 'This contractor is not currently serving the selected ZIP code.';
     }
-    if (raw.contains('slot_unavailable') || raw.contains('conflict')) {
-      return 'The selected time slot is no longer available. Please choose another time.';
+    if (raw.contains('slot_unavailable') ||
+        raw.contains('slot_taken') ||
+        raw.contains('hold_window_mismatch') ||
+        raw.contains('urgency_window_unavailable') ||
+        raw.contains('conflict')) {
+      return 'That time is no longer available. Pick another window.';
     }
     if (raw.contains('contractor_unavailable')) {
       return 'The selected contractor is currently unavailable. Please choose another pro or time.';
@@ -2672,3 +2714,4 @@ class _RecentRequestFailure {
     required this.message,
   });
 }
+

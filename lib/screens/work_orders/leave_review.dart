@@ -95,6 +95,9 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
                 (tag) => tag != 'Price stayed within the cap' || _isCapApproval)
             .toList(),
         hasExistingReview: widget.hasExistingReview,
+        reviewId: widget.hasExistingReview ? _reviewId : null,
+        expectedUpdatedAt:
+            widget.hasExistingReview ? _reviewUpdatedAt : null,
       );
 
       if (mounted) {
@@ -168,7 +171,16 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     if (confirmed != true || !mounted) return;
     setState(() => _isSubmitting = true);
     try {
-      await HomeownerService.instance.deleteReview(widget.jobId);
+      final reviewId = _reviewId;
+      final expectedUpdatedAt = _reviewUpdatedAt;
+      if (reviewId == null || expectedUpdatedAt == null) {
+        throw Exception('This review changed. Refresh and try again.');
+      }
+      await HomeownerService.instance.deleteReview(
+        widget.jobId,
+        reviewId: reviewId,
+        expectedUpdatedAt: expectedUpdatedAt,
+      );
       if (mounted) Navigator.pop(context, {'deleted': true});
     } catch (e) {
       if (mounted) {
@@ -177,6 +189,15 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
       }
     }
   }
+
+  int? get _reviewId => int.tryParse(
+      '${widget.job['reviewId'] ?? widget.job['review_id'] ?? widget.job['review']?['id']}');
+
+  String? get _reviewUpdatedAt => (widget.job['updatedAt'] ??
+          widget.job['updated_at'] ??
+          widget.job['review']?['updatedAt'] ??
+          widget.job['review']?['updated_at'])
+      ?.toString();
 
   @override
   Widget build(BuildContext context) {
@@ -408,3 +429,4 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     );
   }
 }
+

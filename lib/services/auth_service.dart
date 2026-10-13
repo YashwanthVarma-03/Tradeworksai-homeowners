@@ -5,9 +5,12 @@ import 'package:crypto/crypto.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'api_config.dart';
 import 'stream_service.dart';
 
 /// Signals that Supabase created the account but requires email confirmation
@@ -30,6 +33,7 @@ class AuthService extends ChangeNotifier {
   SharedPreferences? _prefs;
   StreamSubscription<AuthState>? _authSubscription;
   bool _isDiscardingInvalidSession = false;
+  GoogleSignIn? _googleSignIn;
 
   bool _isAuthenticated = false;
   String? _userId;
@@ -177,12 +181,52 @@ class AuthService extends ChangeNotifier {
 
   Future<void> signInWithGoogleInteractive({bool rememberMe = true}) async {
     await setRememberLoginPreference(rememberMe: rememberMe);
-    // This matches the website's auth flow. Supabase owns the Google exchange
-    // and establishes the app session after the browser redirects back.
+
+    final googleWebClientId = ApiConfig.googleWebClientId.trim();
+    final canUseNativeAndroidSignIn = !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        googleWebClientId.isNotEmpty;
+
+    if (canUseNativeAndroidSignIn) {
+      try {
+        _googleSignIn ??= GoogleSignIn(
+          serverClientId: googleWebClientId,
+          scopes: const ['email', 'profile'],
+        );
+        final account = await _googleSignIn!.signIn();
+        if (account == null) {
+          throw Exception('Google sign-in was cancelled.');
+        }
+
+        final googleAuth = await account.authentication;
+        final idToken = googleAuth.idToken;
+        if (idToken == null || idToken.isEmpty) {
+          throw Exception(
+              'Google did not return an ID token. Check the app OAuth client configuration.');
+        }
+
+        final response = await _client.auth.signInWithIdToken(
+          provider: OAuthProvider.google,
+          idToken: idToken,
+          accessToken: googleAuth.accessToken,
+        );
+        await _syncFromSession(response.session);
+        return;
+      } on PlatformException catch (error) {
+        if (error.code == 'sign_in_canceled') rethrow;
+        // A package/signing-certificate mismatch should not strand the user.
+        // Continue with the in-app hosted flow below.
+      }
+    }
+
+    // Web uses the normal hosted flow. Mobile fallback stays inside an
+    // app-owned Custom Tab and returns through the registered deep link.
     final launched = await _client.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: kIsWeb ? Uri.base.origin : _nativeGoogleCallbackUrl,
-      authScreenLaunchMode: LaunchMode.externalApplication,
+      authScreenLaunchMode:
+          kIsWeb ? LaunchMode.platformDefault : LaunchMode.inAppBrowserView,
+      queryParams: const {'prompt': 'select_account'},
     );
     if (!launched) {
       throw Exception('Unable to open Google sign-in. Please try again.');
@@ -318,6 +362,9 @@ class AuthService extends ChangeNotifier {
     await _clearSession(notify: false);
     try {
       await _client.auth.signOut();
+    } catch (_) {}
+    try {
+      await _googleSignIn?.signOut();
     } catch (_) {}
     await StreamService.instance.disconnect();
     notifyListeners();

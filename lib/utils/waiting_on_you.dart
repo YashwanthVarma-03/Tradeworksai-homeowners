@@ -4,7 +4,7 @@ import 'work_order_status.dart';
 
 /// What the homeowner owes, in the order Home shows it (A03 puts a pro's
 /// reschedule proposal first; A01 the cap, then the receipt).
-enum WaitingKind { reschedule, cap, estimate, receipt }
+enum WaitingKind { reschedule, cap, estimate, dispute, receipt }
 
 class WaitingItem {
   const WaitingItem({
@@ -133,6 +133,18 @@ class WaitingOnYou {
     String joined(List<String> parts) =>
         parts.where((p) => p.isNotEmpty).join(' · ');
 
+    if ((job['status']?.toString().trim().toLowerCase() ?? '') == 'disputed') {
+      return WaitingItem(
+        kind: WaitingKind.dispute,
+        job: job,
+        title: 'Amounts don\'t match',
+        activityTitle: 'Amounts don\'t match for $service',
+        detail: joined([pro, wo]),
+        action: 'Review details',
+        since: _date(job['updatedAt'] ?? job['updated_at']),
+      );
+    }
+
     // 1. The pro asked to move a Booked visit (Sep 30). Needs backend G-28;
     //    nothing renders until `reschedule_proposal` is on the payload.
     final proposal = rescheduleProposal(job);
@@ -226,3 +238,4 @@ class WaitingOnYou {
     return null;
   }
 }
+

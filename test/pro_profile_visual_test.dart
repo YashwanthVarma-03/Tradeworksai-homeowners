@@ -195,7 +195,8 @@ void main() {
       ));
       await tester.pumpAndSettle();
       expect(find.text('Hutchins Plumbing Co.'), findsWidgets);
-      expect(find.text('AC repair · 33578'), findsOneWidget);
+      expect(find.text('AC repair'), findsOneWidget);
+      expect(find.text('AC repair · 33578'), findsNothing);
       expect(find.text('Team of 3 · 11 years in business'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await expectLater(find.byType(Scaffold).first,
@@ -229,3 +230,4 @@ void main() {
     }, () => client);
   });
 }
+

@@ -182,4 +182,82 @@ void main() {
         findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('current rewards API contract maps every homeowner balance',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: RewardTab(
+                onBookTap: () {},
+                loadRewards: ({bool forceRefresh = false}) async => {
+                      'success': true,
+                      'balance': 1,
+                      'ledgerBalance': 1357,
+                      'reservedBalance': 40,
+                      'availableBalance': 1302,
+                      'lockedBalance': 15,
+                      'earnedThisPeriod': 24,
+                      'periodStart': '2026-03-10T00:00:00+00:00',
+                      'periodEnd': '2027-03-10T00:00:00+00:00',
+                      'periodSpend': 500,
+                      'tier': 'Bronze',
+                      'rate': 0.02,
+                      'currentMarginalRate': 0.02,
+                      'annualQualifyingSpendCap': 5000,
+                      'bands': [],
+                      'milestones': [],
+                      'pendingReceipts': [
+                        {
+                          'workOrderId': 858,
+                          'woNumber': 'WO-858',
+                          'serviceName': 'HVAC Repair',
+                          'customerPaidAmount': 90,
+                        }
+                      ],
+                      'expiringCredits': [
+                        {
+                          'amount': 20,
+                          'expiresAt': '2026-11-01T00:00:00+00:00',
+                        }
+                      ],
+                      'ledger': [
+                        {
+                          'id': 123,
+                          'type': 'service_credit',
+                          'amount': 10,
+                          'createdAt': '2026-10-01T10:00:00+00:00',
+                          'expiresAt': '2027-10-01T10:00:00+00:00',
+                          'expired': false,
+                          'creditStatus': 'available',
+                          'workOrderId': 858,
+                          'customerPaidAmount': 90,
+                          'rateSnapshot': 0.02,
+                          'woNumber': 'WO-858',
+                          'serviceName': 'HVAC Repair',
+                        }
+                      ],
+                    }))));
+
+    await tester.pumpAndSettle();
+    expect(find.text(r'$1,302.00'), findsOneWidget);
+    expect(find.text('Ledger total'), findsOneWidget);
+    expect(find.text(r'$1,357.00'), findsOneWidget);
+    expect(find.text('Reserved'), findsOneWidget);
+    expect(find.text(r'$40.00'), findsOneWidget);
+    expect(find.text('Locked'), findsOneWidget);
+    expect(find.text(r'$15.00'), findsOneWidget);
+    expect(find.text('Bronze · 2% on new spend'), findsOneWidget);
+    expect(find.text('Mar 10, 2026 – Mar 9, 2027'), findsOneWidget);
+    expect(find.text(r'Earliest expiry: $20.00 on Nov 1, 2026'),
+        findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Service credits ledger'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Earned'), findsOneWidget);
+    expect(find.text(r'$90.00 paid · 2% · Oct 1, 2026'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
 }

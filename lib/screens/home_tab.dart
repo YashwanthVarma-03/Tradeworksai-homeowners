@@ -1009,6 +1009,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         WaitingKind.reschedule => Icons.calendar_today_outlined,
         WaitingKind.cap => Icons.description_outlined,
         WaitingKind.estimate => Icons.description_outlined,
+        WaitingKind.dispute => Icons.warning_amber_rounded,
         WaitingKind.receipt => Icons.receipt_long_outlined,
       };
 
@@ -1108,29 +1109,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       ),
     );
   }
-
-  Widget _buildProArrivalRow(Map<String, dynamic> job) => AlertRow(
-        icon: Icons.check_circle_outline_rounded,
-        iconColor: AppTheme.blue,
-        tint: AppTheme.blueTint,
-        title: '${jobProName(job, 'Your pro')} has arrived',
-        body: '${jobServiceName(job)} · ${workOrderLabel(job)}',
-        footer: TextButton(
-          style: _linkStyle,
-          onPressed: () async {
-            await Navigator.push<void>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => WorkOrderDetailScreen(job: job),
-              ),
-            );
-            if (mounted) {
-              await _fetchHomeData(showLoading: false, forceRefresh: true);
-            }
-          },
-          child: const Text('View work order'),
-        ),
-      );
 
   /// Each item opens its own work order; a cap opens the cap screen, a
   /// receipt opens the work order at Job money.
@@ -1280,16 +1258,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             .map((raw) => Map<String, dynamic>.from(raw))
             .where((job) => ArrivalCheckState.pending(job))
             .toList();
-    final arrivedJobs = widget.isGuest
-        ? const <Map<String, dynamic>>[]
-        : _activeJobs
-            .whereType<Map>()
-            .map((raw) => Map<String, dynamic>.from(raw))
-            .where(WorkOrderStatus.proOnSite)
-            .toList();
-
     final alerts = <Widget>[
-      for (final job in arrivedJobs) _buildProArrivalRow(job),
       for (final job in noShowJobs) _buildNoShowRow(job),
       if (waiting.isNotEmpty) _buildWaitingStrip(waiting),
     ];
@@ -1333,3 +1302,4 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 }
+

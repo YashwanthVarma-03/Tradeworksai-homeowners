@@ -7,6 +7,11 @@ class ApiConfig {
     'TRADEWORKS_GOOGLE_WEB_CLIENT_ID',
     defaultValue: '',
   );
+  static const String rewardsUrl = String.fromEnvironment(
+    'TRADEWORKS_REWARDS_API_URL',
+    defaultValue:
+        'https://tradeworks-api-7mobhz4bsq-ue.a.run.app/homeowner/rewards',
+  );
   static const String _defaultHostedBaseUrl =
       'https://tradeworks-api-71668222585.us-east1.run.app/';
 

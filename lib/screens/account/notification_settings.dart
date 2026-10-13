@@ -1,7 +1,7 @@
 import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../services/homeowner_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/notification_preferences.dart';
 import '../../services/push_notification_service.dart';
@@ -82,7 +82,10 @@ class _NotificationSettingsScreenState
           );
         }
       }
-      await HomeownerService.instance.updateNotificationSettings(next.toJson());
+      final store = await SharedPreferences.getInstance();
+      for (final entry in next.toJson().entries) {
+        await store.setBool('notification_${entry.key}', entry.value);
+      }
       await PushNotificationService.instance.updatePreferences(
         userId: userId,
         preferences: next,
@@ -129,32 +132,15 @@ class _NotificationSettingsScreenState
   Future<void> _loadSettings() async {
     setState(() => _isLoading = true);
     try {
-      final resp = await HomeownerService.instance.fetchProfile();
-      final profile = _asMap(resp['profile']);
-      final prefs = _asMap(profile['notificationSettings'] ??
-          profile['notification_settings'] ??
-          resp['notificationSettings'] ??
-          resp['notification_settings']);
+      final store = await SharedPreferences.getInstance();
       if (!mounted) return;
       setState(() {
-        _pushStatus = _boolOf(prefs['pushStatus'] ??
-            prefs['push_status'] ??
-            prefs['workOrderStatusPush']);
-        _pushMessages = _boolOf(prefs['pushMessages'] ??
-            prefs['push_messages'] ??
-            prefs['messagesPush']);
-        _pushCredits = _boolOf(prefs['pushCredits'] ??
-            prefs['push_credits'] ??
-            prefs['rewardsPush']);
-        _pushPromos = _boolOf(prefs['pushPromos'] ??
-            prefs['push_promos'] ??
-            profile['marketingConsent']);
-        _emailReceipts = _boolOf(prefs['emailReceipts'] ??
-            prefs['email_receipts'] ??
-            prefs['bookingReceiptsEmail']);
-        _emailPromos = _boolOf(prefs['emailPromos'] ??
-            prefs['email_promos'] ??
-            profile['marketingConsent']);
+        _pushStatus = store.getBool('notification_pushStatus') ?? false;
+        _pushMessages = store.getBool('notification_pushMessages') ?? false;
+        _pushCredits = store.getBool('notification_pushCredits') ?? false;
+        _pushPromos = store.getBool('notification_pushPromos') ?? false;
+        _emailReceipts = store.getBool('notification_emailReceipts') ?? false;
+        _emailPromos = store.getBool('notification_emailPromos') ?? false;
         _isLoading = false;
       });
     } catch (e) {
@@ -388,19 +374,5 @@ class _NotificationSettingsScreenState
     );
   }
 
-  bool _boolOf(dynamic value) {
-    if (value is bool) return value;
-    if (value is num) return value != 0;
-    if (value is String) {
-      final normalized = value.trim().toLowerCase();
-      return normalized == 'true' || normalized == '1' || normalized == 'yes';
-    }
-    return false;
-  }
-
-  Map<String, dynamic> _asMap(dynamic value) {
-    if (value is Map<String, dynamic>) return value;
-    if (value is Map) return Map<String, dynamic>.from(value);
-    return const {};
-  }
 }
+

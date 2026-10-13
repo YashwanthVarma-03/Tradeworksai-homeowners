@@ -1925,7 +1925,6 @@ class _SearchTabState extends State<SearchTab> {
       'selectedService': (_committedQuery?.trim().isNotEmpty ?? false)
           ? _committedQuery!.trim()
           : null,
-      'requestZip': _selectedZip,
       'summary': pro.summary,
       'services': pro.services,
       'photoUrl': pro.photoUrl,
@@ -1990,7 +1989,6 @@ class _SearchTabState extends State<SearchTab> {
             MaterialPageRoute(
                 builder: (_) => ProProfileScreen(pro: {
                       ...pro,
-                      'requestZip': _selectedZip,
                       if ((_committedQuery?.trim().isNotEmpty ?? false))
                         'selectedService': _committedQuery!.trim()
                     }, initialDescription: _bookingDescription)));
@@ -2000,16 +1998,16 @@ class _SearchTabState extends State<SearchTab> {
   Future<void> _openCompareMessage(Map<String, dynamic> pro) async {
     if (!AuthService.instance.isAuthenticated) {
       AppNotification.showInfo(
-          context, 'Please sign in to message this contractor.');
+          context, 'Please sign in to message this pro.');
       return;
     }
     final recipientId = StreamService.instance.resolveMessagingUserId(pro);
     if (recipientId == null) {
       AppNotification.showInfo(
-          context, 'Chat is not available for this contractor yet.');
+          context, 'Chat is not available for this pro yet.');
       return;
     }
-    final name = (pro['business_name'] ?? pro['businessName'] ?? 'Contractor')
+    final name = (pro['business_name'] ?? pro['businessName'] ?? 'Pro')
         .toString()
         .trim();
     await Navigator.push<void>(
@@ -2017,7 +2015,7 @@ class _SearchTabState extends State<SearchTab> {
       MaterialPageRoute(
         builder: (_) => ChatScreen(
           contractorId: recipientId,
-          contractorName: name.isEmpty ? 'Contractor' : name,
+          contractorName: name.isEmpty ? 'Pro' : name,
         ),
       ),
     );
@@ -2138,7 +2136,7 @@ class _SearchTabState extends State<SearchTab> {
   Widget _buildBrowseDefault(List<_BrowsePro> visiblePros) {
     return _proList(
       pros: visiblePros,
-      emptyMessage: 'No live contractors were returned for $_selectedZip.',
+      emptyMessage: 'No live pros were returned for $_selectedZip.',
       header: [
         _buildSearchInputPill(),
         const SizedBox(height: 8),
@@ -2366,7 +2364,7 @@ class _SearchTabState extends State<SearchTab> {
   Widget _buildResults(List<_BrowsePro> matches) {
     return _proList(
       pros: matches,
-      emptyMessage: 'No live contractors matched this search.',
+      emptyMessage: 'No live pros matched this search.',
       header: [
         _buildSearchInputPill(),
         const SizedBox(height: TwSpace.s20),
@@ -2664,7 +2662,8 @@ class _SearchTabState extends State<SearchTab> {
       controller: _searchController,
       focusNode: _searchFocusNode,
       hint: 'Search a service or pro',
-      borderColor: AppTheme.border,
+      borderColor:
+          _searchFocusNode.hasFocus ? AppTheme.blue : AppTheme.border,
       onTap: focusSearchField,
       // Keep suggestions mounted while dismissing the keyboard so the same
       // pointer gesture can still activate a Recent, Popular, or type-ahead
@@ -3273,7 +3272,7 @@ class _BrowsePro {
     final categoryText = category.trim();
     if (tradeText.isNotEmpty && tradeText != categoryText) return tradeText;
     if (categoryText.isNotEmpty) return '$categoryText pro';
-    return 'View contractor details';
+    return 'View pro details';
   }
 }
 
@@ -3414,3 +3413,4 @@ class _AllServiceListRow extends StatelessWidget {
     );
   }
 }
+

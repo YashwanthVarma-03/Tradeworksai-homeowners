@@ -130,8 +130,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   String _formatDateTime(dynamic dateTimeStr) {
     if (dateTimeStr == null) return 'TBD';
     try {
-      final dt = DateTime.parse(dateTimeStr.toString());
-      return DateFormat('MMM d, yyyy • h:mm a').format(dt);
+      final dt = DateTime.parse(dateTimeStr.toString()).toLocal();
+      return DateFormat('EEE, MMM d · h:mm a').format(dt);
     } catch (e) {
       return dateTimeStr.toString();
     }
@@ -286,18 +286,6 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                 Text(woId, style: TwType.meta()),
                 const SizedBox(height: 10),
                 _statusChip(),
-                if (WorkOrderStatus.proOnSite(_job))
-                  Padding(
-                    padding: const EdgeInsets.only(top: TwSpace.s12),
-                    child: AlertRow(
-                      icon: Icons.check_circle_outline_rounded,
-                      iconColor: AppTheme.blue,
-                      tint: AppTheme.blueTint,
-                      title: '$displayPro has arrived',
-                      body:
-                          'Your pro marked their arrival for this work order.',
-                    ),
-                  ),
                 // No-show (Oct 1): only while still Booked after the visit
                 // window (ArrivalCheckState.pending); opens the report directly.
                 if (ArrivalCheckState.pending(_job))
@@ -411,17 +399,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   Widget _buildTimeline(String currentStatus, String dateStr) {
     final resolved = WorkOrderStatus.fromJob(_job);
     if (resolved.isTerminalWithoutProgress) return const SizedBox.shrink();
-    final timeline = _job['timeline'];
-    final arrivedAt = timeline is Map
-        ? _readString(timeline['arrivedAt'] ?? timeline['arrived_at'])
-        : null;
     final steps = <_TimelineStep>[
       _TimelineStep('Booked', _timelineBookedText(dateStr)),
-      _TimelineStep(
-          'En route',
-          arrivedAt == null
-              ? null
-              : 'Arrived on site · ${_formatDateTime(arrivedAt)}'),
+      const _TimelineStep('En route', null),
       const _TimelineStep('In progress', null),
       const _TimelineStep('Completed', null),
     ];
@@ -816,28 +796,19 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: AppTheme.navy,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TwType.title(),
                 ),
                 if (scope != null) ...[
                   const SizedBox(height: 4),
                   Text(
                     scope,
-                    style: const TextStyle(
-                        color: AppTheme.body, fontSize: 14, height: 1.43),
+                    style: TwType.bodySm(),
                   ),
                 ],
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'You approve a not-to-exceed cap before work begins. The final price may be lower — never higher.',
-                  style: TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 14,
-                    height: 1.43,
-                  ),
+                  style: TwType.meta(),
                 ),
               ],
             ),
@@ -870,22 +841,14 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Upload your receipt',
-                      style: TextStyle(
-                        color: AppTheme.navy,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: TwType.title(),
                     ),
                     const SizedBox(height: 4),
                     Text.rich(
                       TextSpan(
-                        style: const TextStyle(
-                          color: AppTheme.body,
-                          fontSize: 14,
-                          height: 1.43,
-                        ),
+                        style: TwType.bodySm(),
                         children: [
                           const TextSpan(
                               text:
@@ -893,10 +856,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                           if (earn != null && earn > 0) ...[
                             TextSpan(
                               text: formatUsd(earn),
-                              style: const TextStyle(
-                                color: AppTheme.purple,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: TwType.label(color: AppTheme.purple),
                             ),
                             const TextSpan(text: ' in credits.'),
                           ] else
@@ -1142,9 +1102,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
             foregroundColor: AppTheme.red,
             minimumSize: const Size(44, 44),
           ),
-          child: const Text(
+          child: Text(
             'Cancel booking',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            style: TwType.button(color: AppTheme.red),
           ),
         ),
       ],
@@ -1221,7 +1181,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     if (messagingUserId == null || messagingUserId.isEmpty) {
       AppNotification.showInfo(
         context,
-        'Messaging is not available for this contractor yet.',
+        'Messaging is not available for this pro yet.',
       );
       return;
     }
@@ -1231,7 +1191,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       MaterialPageRoute(
         builder: (_) => ChatScreen(
           contractorId: messagingUserId!,
-          contractorName: _proName().isEmpty ? 'Contractor' : _proName(),
+          contractorName: _proName().isEmpty ? 'Pro' : _proName(),
           jobReference:
               '${_serviceName()} · ${_job['woNumber'] ?? _workOrderId()}',
         ),
@@ -1265,7 +1225,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => LeaveReviewScreen(
-          job: _job,
+          job: {..._job, ...?_review, if (_review != null) 'review': _review},
           jobId: woId,
           initialRating: (_review?['rating'] as num?)?.toDouble() ?? 0,
           hasExistingReview: _review != null,
@@ -1332,12 +1292,17 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
 
   Future<void> _uploadReceipt() async {
     if (_uploadingReceipt) return;
+    final paidAmount = await _requestReceiptAmount();
+    if (paidAmount == null || !mounted) return;
     setState(() => _uploadingReceipt = true);
     try {
       final file = await DocumentUpload.pick();
       if (file == null) return;
       final document = await HomeownerService.instance.uploadWorkOrderReceipt(
-          workOrderId: int.parse(_workOrderId()), file: file);
+        workOrderId: int.parse(_workOrderId()),
+        file: file,
+        paidAmount: paidAmount,
+      );
       final documentId = int.tryParse('${document['id']}');
       if (documentId == null) {
         throw Exception('The uploaded receipt was not confirmed.');
@@ -1355,6 +1320,84 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     } finally {
       if (mounted) setState(() => _uploadingReceipt = false);
     }
+  }
+
+  Future<double?> _requestReceiptAmount() {
+    final invoice = _firstAmount(const [
+      'invoiceAmount',
+      'invoice_amount',
+      'finalAmount',
+      'final_amount',
+      'amount',
+    ]);
+    final credits = _firstAmount(const [
+          'creditsApplied',
+          'credits_applied',
+          'serviceCreditsApplied',
+          'service_credits_applied',
+        ]) ??
+        0;
+    final existing = _firstAmount(const ['paidAmount', 'paid_amount']);
+    final suggested = existing ??
+        (invoice == null ? null : (invoice - credits).clamp(0, invoice));
+    final controller = TextEditingController(
+      text: suggested == null ? '' : suggested.toStringAsFixed(2),
+    );
+    String? error;
+    return TwSheet.show<double>(
+      context,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            TwLayout.gutter(context),
+            TwSpace.s12,
+            TwLayout.gutter(context),
+            TwSpace.s20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Upload your receipt', style: TwType.h2()),
+              const SizedBox(height: TwSpace.s16),
+              const TwFieldLabel('Amount you paid'),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: TwInputs.decoration(
+                  hint: '0.00',
+                  prefix: const Padding(
+                    padding: EdgeInsets.only(left: 14, right: 8),
+                    child: Text('\$'),
+                  ),
+                  errorText: error,
+                ),
+              ),
+              const SizedBox(height: TwSpace.s8),
+              Text(
+                'The amount on your receipt. Your credits are released once it matches the pro\'s invoice.',
+                style: TwType.bodySm(),
+              ),
+              const SizedBox(height: TwSpace.s20),
+              TwPrimaryButton(
+                label: 'Choose receipt',
+                onPressed: () {
+                  final value = double.tryParse(
+                      controller.text.trim().replaceAll(',', ''));
+                  if (value == null || !value.isFinite || value <= 0) {
+                    setSheetState(() => error = 'Enter the amount you paid.');
+                    return;
+                  }
+                  Navigator.pop(sheetContext, value);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(controller.dispose);
   }
 
   void _showReceiptModal(BuildContext context) {
@@ -1417,3 +1460,4 @@ class _TimelineStep {
 
   const _TimelineStep(this.title, this.caption);
 }
+

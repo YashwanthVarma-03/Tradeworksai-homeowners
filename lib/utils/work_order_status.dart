@@ -85,18 +85,10 @@ class StatusChipStyle {
 class WorkOrderStatus {
   final WorkOrderState state;
 
-  /// True when the homeowner has something to do — approve a cap, answer an
-  /// arrival prompt. Renders as its own amber chip beside the state chip.
+  /// True when the homeowner has something to do, such as approving a cap.
   final bool waitingOnYou;
 
   const WorkOrderStatus(this.state, {this.waitingOnYou = false});
-
-  /// The contractor's recorded on-site event. It is displayed separately
-  /// from the four homeowner progress states.
-  static bool proOnSite(Map<String, dynamic> job) {
-    final raw = job['status']?.toString().trim().toLowerCase();
-    return raw == 'arrived' || raw == 'on_site' || raw == 'on site';
-  }
 
   /// Reads a raw backend status onto the four states.
   ///
@@ -128,11 +120,14 @@ class WorkOrderStatus {
         _ => WorkOrderState.cancelled,
       });
     }
-    if (status == 'completed' || status == 'complete') {
-      return const WorkOrderStatus(WorkOrderState.completed);
+    if (status == 'completed' || status == 'complete' || status == 'disputed') {
+      return WorkOrderStatus(WorkOrderState.completed,
+          waitingOnYou: status == 'disputed' || waiting);
     }
     // 'wrapping_up' was never a state. A pro wrapping up is still working.
-    if (status == 'in_progress' || status == 'wrapping_up') {
+    if (status == 'in_progress' ||
+        status == 'pending_completion' ||
+        status == 'wrapping_up') {
       return WorkOrderStatus(WorkOrderState.inProgress, waitingOnYou: waiting);
     }
     // 'arrived' was never a state either. A pro who has arrived is en route
@@ -479,3 +474,4 @@ class StatusMark extends StatelessWidget {
     );
   }
 }
+

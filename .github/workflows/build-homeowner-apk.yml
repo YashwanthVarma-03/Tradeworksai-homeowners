@@ -1,0 +1,51 @@
+# Release build for the homeowner app.
+name: Build homeowner APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.29.3"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        continue-on-error: true
+        run: flutter analyze lib test --no-fatal-warnings --no-fatal-infos
+
+      - name: Test
+        continue-on-error: true
+        run: flutter test
+
+      - name: Build release APK
+        run: flutter build apk --release --dart-define=TRADEWORKS_GOOGLE_WEB_CLIENT_ID=${{ secrets.TRADEWORKS_GOOGLE_WEB_CLIENT_ID }}
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: homeowner-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
