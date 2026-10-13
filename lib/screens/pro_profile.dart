@@ -603,12 +603,13 @@ class _FigmaProfileSurface extends StatelessWidget {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(child: Text(s.name, style: TwType.bodySm(color: _ink))),
           const SizedBox(width: TwSpace.s12),
-          Flexible(
+          Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (s.amount.isNotEmpty)
                   Text.rich(
+                    key: ValueKey('service-price-${s.name}'),
                     TextSpan(
                       text: s.amount,
                       style: TwType.value(),
