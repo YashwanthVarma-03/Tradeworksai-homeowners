@@ -5,9 +5,11 @@ import 'package:crypto/crypto.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'api_config.dart';
 import 'stream_service.dart';
 
 /// Signals that Supabase created the account but requires email confirmation
@@ -30,6 +32,7 @@ class AuthService extends ChangeNotifier {
   SharedPreferences? _prefs;
   StreamSubscription<AuthState>? _authSubscription;
   bool _isDiscardingInvalidSession = false;
+  GoogleSignIn? _googleSignIn;
 
   bool _isAuthenticated = false;
   String? _userId;
@@ -177,9 +180,40 @@ class AuthService extends ChangeNotifier {
 
   Future<void> signInWithGoogleInteractive({bool rememberMe = true}) async {
     await setRememberLoginPreference(rememberMe: rememberMe);
-    // Keep mobile Google authentication in the app-owned Custom Tab. The
-    // registered callback below returns directly to MainActivity, where
-    // supabase_flutter completes the PKCE exchange and emits signedIn.
+
+    final googleWebClientId = ApiConfig.googleWebClientId.trim();
+    final canUseNativeAndroidSignIn = !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        googleWebClientId.isNotEmpty;
+
+    if (canUseNativeAndroidSignIn) {
+      _googleSignIn ??= GoogleSignIn(
+        serverClientId: googleWebClientId,
+        scopes: const ['email', 'profile'],
+      );
+      final account = await _googleSignIn!.signIn();
+      if (account == null) {
+        throw Exception('Google sign-in was cancelled.');
+      }
+
+      final googleAuth = await account.authentication;
+      final idToken = googleAuth.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw Exception(
+            'Google did not return an ID token. Check the app OAuth client configuration.');
+      }
+
+      final response = await _client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: googleAuth.accessToken,
+      );
+      await _syncFromSession(response.session);
+      return;
+    }
+
+    // Web uses the normal hosted flow. Mobile fallback stays inside an
+    // app-owned Custom Tab and returns through the registered deep link.
     final launched = await _client.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: kIsWeb ? Uri.base.origin : _nativeGoogleCallbackUrl,
@@ -321,6 +355,9 @@ class AuthService extends ChangeNotifier {
     await _clearSession(notify: false);
     try {
       await _client.auth.signOut();
+    } catch (_) {}
+    try {
+      await _googleSignIn?.signOut();
     } catch (_) {}
     await StreamService.instance.disconnect();
     notifyListeners();
