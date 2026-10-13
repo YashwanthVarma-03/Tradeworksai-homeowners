@@ -247,7 +247,7 @@ void main() {
     expect(find.text(r'$15.00'), findsOneWidget);
     expect(find.text('Bronze · 2% on new spend'), findsOneWidget);
     expect(find.text('Mar 10, 2026 – Mar 9, 2027'), findsOneWidget);
-    expect(find.text('Earliest expiry: $20.00 on Nov 1, 2026'),
+    expect(find.text(r'Earliest expiry: $20.00 on Nov 1, 2026'),
         findsOneWidget);
 
     await tester.scrollUntilVisible(

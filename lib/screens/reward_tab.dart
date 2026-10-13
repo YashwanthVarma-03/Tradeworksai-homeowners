@@ -300,7 +300,7 @@ class _RewardTabState extends State<RewardTab> {
                     _balanceCard(d),
                     if (receipts.isNotEmpty) ...[
                       _heading('Upload your paid receipt'),
-                      const Text(
+                      Text(
                           'Your customer-paid portion earns credits once the paid receipt is uploaded.',
                           style: _bodyStyle),
                       for (final r in receipts) ...[
@@ -316,7 +316,7 @@ class _RewardTabState extends State<RewardTab> {
                         d['periodEnd'] != null)
                       _yearSection(d, bands, spend, earned),
                     _heading('Earning bands', bottom: 4),
-                    const Text(
+                    Text(
                         'Each dollar earns at its band’s rate. Earlier earnings never change.',
                         style: _bodyStyle),
                     if (bands.isEmpty)
@@ -339,7 +339,7 @@ class _RewardTabState extends State<RewardTab> {
                           last: i == milestones.length - 1),
                     _heading('Service credits ledger', bottom: 0),
                     if (ledger.isEmpty)
-                      const Padding(
+                      Padding(
                           padding: EdgeInsets.only(top: 12),
                           child: Text('No credit activity to show yet.',
                               style: _bodyStyle)),

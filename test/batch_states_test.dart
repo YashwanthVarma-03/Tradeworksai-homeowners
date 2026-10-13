@@ -4,7 +4,6 @@ import 'package:homeowners_app/utils/work_order_status.dart';
 import 'package:homeowners_app/utils/arrival_check_state.dart';
 import 'package:homeowners_app/utils/session_pro_order.dart';
 import 'package:homeowners_app/screens/work_orders/leave_review.dart';
-import 'package:homeowners_app/screens/work_orders/work_order_detail.dart';
 import 'package:homeowners_app/ui/tw.dart';
 
 void main() {
