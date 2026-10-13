@@ -177,12 +177,15 @@ class AuthService extends ChangeNotifier {
 
   Future<void> signInWithGoogleInteractive({bool rememberMe = true}) async {
     await setRememberLoginPreference(rememberMe: rememberMe);
-    // This matches the website's auth flow. Supabase owns the Google exchange
-    // and establishes the app session after the browser redirects back.
+    // Keep mobile Google authentication in the app-owned Custom Tab. The
+    // registered callback below returns directly to MainActivity, where
+    // supabase_flutter completes the PKCE exchange and emits signedIn.
     final launched = await _client.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: kIsWeb ? Uri.base.origin : _nativeGoogleCallbackUrl,
-      authScreenLaunchMode: LaunchMode.externalApplication,
+      authScreenLaunchMode:
+          kIsWeb ? LaunchMode.platformDefault : LaunchMode.inAppBrowserView,
+      queryParams: const {'prompt': 'select_account'},
     );
     if (!launched) {
       throw Exception('Unable to open Google sign-in. Please try again.');
