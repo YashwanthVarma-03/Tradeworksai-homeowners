@@ -1,3 +1,4 @@
+# Release build for the homeowner app.
 name: Build homeowner APK
 
 on:
