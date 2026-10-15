@@ -3,21 +3,39 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 env_file="$project_root/.env.push"
+ios_plist="$project_root/ios/Runner/GoogleService-Info.plist"
 
-if [[ ! -f "$env_file" ]]; then
-  echo "Missing .env.push. Copy .env.push.example and add the Firebase values." >&2
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "An iOS release must be built on a Mac with Xcode and signing configured." >&2
   exit 1
 fi
 
-if [[ ! -s "$project_root/ios/Runner/GoogleService-Info.plist" ]]; then
-  echo "Missing ios/Runner/GoogleService-Info.plist. Add the iOS app from Firebase project tradeworksai-senthil-dev-env before building a release IPA." >&2
+if [[ ! -s "$ios_plist" ]]; then
+  echo "Missing ios/Runner/GoogleService-Info.plist. Run bash tool/configure-ios-push.sh first." >&2
   exit 1
 fi
 
-set -a
+if [[ -f "$env_file" ]]; then
+  set -a
 # shellcheck disable=SC1090
-source "$env_file"
-set +a
+  source "$env_file"
+  set +a
+fi
+
+# Always derive iOS Firebase values from the iOS plist. An Android .env.push
+# must never silently compile its Android Firebase app ID into the iPhone app.
+plist_value() { /usr/libexec/PlistBuddy -c "Print :$1" "$ios_plist"; }
+FIREBASE_API_KEY="$(plist_value API_KEY)"
+FIREBASE_APP_ID="$(plist_value GOOGLE_APP_ID)"
+FIREBASE_MESSAGING_SENDER_ID="$(plist_value GCM_SENDER_ID)"
+FIREBASE_PROJECT_ID="$(plist_value PROJECT_ID)"
+if [[ "$(plist_value BUNDLE_ID)" != "com.tradeworksai.homeownersapp" ||
+      "$FIREBASE_APP_ID" != 1:71668222585:ios:* ||
+      "$FIREBASE_MESSAGING_SENDER_ID" != "71668222585" ]]; then
+  echo "Firebase plist does not match the homeowner iOS app/project." >&2
+  exit 1
+fi
+TRADEWORKS_GOOGLE_IOS_CLIENT_ID="${TRADEWORKS_GOOGLE_IOS_CLIENT_ID:-$(plist_value CLIENT_ID 2>/dev/null || true)}"
 
 required=(
   FIREBASE_API_KEY

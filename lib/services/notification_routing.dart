@@ -43,14 +43,17 @@ class NotificationRouteData {
       _ => NotificationDestination.workOrder,
     };
     final id = candidate == NotificationDestination.chat
-        ? text(data['channel_id'] ?? data['channelId'] ?? data['id'])
-        : text(data['work_order_id'] ?? data['workOrderId'] ?? data['id']);
+        ? text(data['channel_id'] ?? data['channelId'])
+        : text(data['work_order_id'] ?? data['workOrderId']);
     final needsChannel = candidate == NotificationDestination.chat;
     final needsWorkOrder = candidate != NotificationDestination.chat &&
         candidate != NotificationDestination.rewards &&
         candidate != NotificationDestination.home;
-    final destination = (needsChannel && id.isEmpty) ||
-            (needsWorkOrder && int.tryParse(id) == null)
+    // `id` on an Activity row identifies the notification, not its work order.
+    final invalidChannel = id.isEmpty ||
+        (id.contains(':') && (id.startsWith(':') || id.endsWith(':')));
+    final destination = (needsChannel && invalidChannel) ||
+            (needsWorkOrder && (int.tryParse(id) ?? 0) <= 0)
         ? NotificationDestination.activity
         : candidate;
     final name = text(data['contractor_name'] ?? data['contractorName']);

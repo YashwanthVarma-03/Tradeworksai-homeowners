@@ -47,6 +47,7 @@ class _DashboardShellState extends State<DashboardShell>
     unawaited(ServiceLocation.clear());
     AppTabNavigation.requestedTab.addListener(_applyRequestedTab);
     NotificationNavigation.requestedRoute.addListener(_applyRequestedRoute);
+    AuthService.instance.addListener(_retryPendingNotificationRoute);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _applyRequestedRoute();
@@ -58,6 +59,7 @@ class _DashboardShellState extends State<DashboardShell>
     WidgetsBinding.instance.removeObserver(this);
     AppTabNavigation.requestedTab.removeListener(_applyRequestedTab);
     NotificationNavigation.requestedRoute.removeListener(_applyRequestedRoute);
+    AuthService.instance.removeListener(_retryPendingNotificationRoute);
     super.dispose();
   }
 
@@ -78,9 +80,18 @@ class _DashboardShellState extends State<DashboardShell>
     AppTabNavigation.requestedTab.value = null;
   }
 
+  void _retryPendingNotificationRoute() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _applyRequestedRoute();
+    });
+  }
+
   void _applyRequestedRoute() {
     final route = NotificationNavigation.requestedRoute.value;
-    if (route == null || !mounted || !AuthService.instance.isAuthenticated) {
+    if (route == null ||
+        !mounted ||
+        !AuthService.instance.isAuthenticated ||
+        ModalRoute.of(context)?.isCurrent == false) {
       return;
     }
     NotificationNavigation.requestedRoute.value = null;

@@ -1,13 +1,13 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
 import 'api_config.dart';
 import 'auth_service.dart';
+import 'fcm_token_provider.dart';
 import 'notification_preferences.dart';
 import 'push_notification_config.dart';
 import '../utils/app_error_utils.dart';
@@ -189,6 +189,7 @@ class StreamService extends ChangeNotifier {
             } catch (_) {}
           }
           _client = StreamChatClient(apiKey);
+          _registeredPushToken = null;
           _activeApiKey = apiKey;
           await _prefs?.setString(_cachedApiKeyPref, apiKey);
         }
@@ -210,6 +211,7 @@ class StreamService extends ChangeNotifier {
             ),
             token,
           );
+          _registeredPushToken = null;
         }
         await _syncPushDeviceFromCache();
         _lastError = null;
@@ -236,19 +238,28 @@ class StreamService extends ChangeNotifier {
     try {
       await _client?.disconnectUser(flushChatPersistence: false);
     } catch (_) {}
+    _registeredPushToken = null;
     _lastError = null;
     notifyListeners();
   }
 
   Future<void> _syncPushDeviceFromCache() async {
     if (!PushNotificationConfig.isConfigured) return;
+    final userId = AuthService.instance.userId;
+    final connectedClient = _client;
     try {
       final preferences = await NotificationPreferences.loadCached() ??
           const NotificationPreferences();
-      final token = await FirebaseMessaging.instance.getToken(
-        vapidKey: kIsWeb && PushNotificationConfig.vapidKey.isNotEmpty
-            ? PushNotificationConfig.vapidKey
-            : null,
+      final token = await FcmTokenProvider.current().getToken(
+        isCurrent: () =>
+            userId != null &&
+            AuthService.instance.userId == userId &&
+            identical(_client, connectedClient) &&
+            isReady &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.paused &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.detached,
       );
       if (token == null || token.isEmpty) return;
       await syncPushDevice(token, enabled: preferences.pushMessages);
@@ -263,6 +274,7 @@ class StreamService extends ChangeNotifier {
       return;
     }
     if (enabled) {
+      if (_registeredPushToken == token) return;
       await client.addDevice(token, PushProvider.firebase);
       _registeredPushToken = token;
       return;

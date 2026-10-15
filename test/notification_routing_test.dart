@@ -66,6 +66,32 @@ void main() {
     });
   });
 
+  test('never mistakes an Activity row ID for a work order or channel', () {
+    for (final type in ['cap', 'message', 'completed']) {
+      expect(
+          NotificationRouteData.fromData({'type': type, 'id': 1056})
+              .destination,
+          NotificationDestination.activity);
+    }
+  });
+
+  test('invalid positive IDs and incomplete channels fall back safely', () {
+    for (final id in ['0', '-2', 'not-an-id']) {
+      expect(
+          NotificationRouteData.fromData({
+            'type': 'cap',
+            'work_order_id': id,
+          }).destination,
+          NotificationDestination.activity);
+    }
+    expect(
+        NotificationRouteData.fromData(const {
+          'type': 'message',
+          'channel_id': 'messaging:',
+        }).destination,
+        NotificationDestination.activity);
+  });
+
   group('push registration contract', () {
     test('maps every supported platform value', () {
       expect(

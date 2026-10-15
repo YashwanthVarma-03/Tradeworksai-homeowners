@@ -40,6 +40,9 @@ void main() async {
   }
 
   runApp(const MyApp());
+  // Capture cold-start notification taps even if the user must sign in first.
+  // This initializes listeners only; permission is requested after sign-in.
+  unawaited(PushNotificationService.instance.initialize());
 }
 
 class MyApp extends StatelessWidget {

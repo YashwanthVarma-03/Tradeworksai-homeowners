@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
 import 'auth_service.dart';
+import 'fcm_token_provider.dart';
 import 'homeowner_service.dart';
 import 'notification_preferences.dart';
 import 'notification_routing.dart';
@@ -57,6 +58,9 @@ class PushNotificationService with WidgetsBindingObserver {
   Future<bool>? _activationInFlight;
   int _sessionGeneration = 0;
   bool _initialized = false;
+  Future<bool>? _initializationInFlight;
+  Future<void>? _resumeRegistrationInFlight;
+  Future<void> _registrationQueue = Future<void>.value();
   bool _initializationFailed = false;
   bool _logoutHookInstalled = false;
   bool _localInitialized = false;
@@ -150,9 +154,36 @@ class PushNotificationService with WidgetsBindingObserver {
       _activityFeedUnavailable = false;
       _startActivityChecks();
       unawaited(_checkActivity());
+      unawaited(_refreshRegistrationOnResume());
     } else {
       _activityTimer?.cancel();
       _activityTimer = null;
+    }
+  }
+
+  Future<void> _refreshRegistrationOnResume() async {
+    final userId = _activeUserId;
+    if (!isConfigured ||
+        userId == null ||
+        AuthService.instance.userId != userId ||
+        _activationInFlight != null ||
+        _resumeRegistrationInFlight != null) {
+      return;
+    }
+    // A single foreground retry, not a polling timer. Also picks up permission
+    // changes in iOS Settings and preferences changed on another device.
+    final future =
+        _activate(userId, promptForPermission: false).then<void>((_) {});
+    _resumeRegistrationInFlight = future;
+    try {
+      await future;
+    } catch (_) {
+      // An offline resume must not surface an unhandled asynchronous error.
+      // The next foreground transition can retry.
+    } finally {
+      if (identical(_resumeRegistrationInFlight, future)) {
+        _resumeRegistrationInFlight = null;
+      }
     }
   }
 
@@ -299,9 +330,9 @@ class PushNotificationService with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _startOpenAppAlerts() async {
+  Future<void> _startOpenAppAlerts({bool promptForPermission = true}) async {
     if (!supportsOpenAppAlerts || _preferences?.hasPushEnabled != true) return;
-    await requestOpenAppAlertPermission();
+    if (promptForPermission) await requestOpenAppAlertPermission();
     if (!_lifecycleObserverInstalled) {
       WidgetsBinding.instance.addObserver(this);
       _lifecycleObserverInstalled = true;
@@ -321,9 +352,20 @@ class PushNotificationService with WidgetsBindingObserver {
     }
   }
 
-  Future<bool> initialize() async {
-    if (!isAvailable || _initialized) return isAvailable;
+  Future<bool> initialize() {
+    if (!isConfigured) return Future.value(false);
+    if (_initialized) return Future.value(true);
+    if (_initializationInFlight != null) return _initializationInFlight!;
+    final future = _initialize();
+    _initializationInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_initializationInFlight, future)) {
+        _initializationInFlight = null;
+      }
+    });
+  }
 
+  Future<bool> _initialize() async {
     try {
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp(options: PushNotificationConfig.options);
@@ -331,6 +373,14 @@ class PushNotificationService with WidgetsBindingObserver {
       if (supportsOpenAppAlerts && !await _initializeLocalNotifications()) {
         return false;
       }
+      if (!_lifecycleObserverInstalled) {
+        WidgetsBinding.instance.addObserver(this);
+        _lifecycleObserverInstalled = true;
+      }
+      // A transient initialization failure can be retried on the next resume.
+      await _foregroundSubscription?.cancel();
+      await _openedSubscription?.cancel();
+      await _tokenRefreshSubscription?.cancel();
 
       // iOS foreground delivery is native. Do not also post a local
       // notification or the user will see duplicates.
@@ -385,6 +435,7 @@ class PushNotificationService with WidgetsBindingObserver {
         _logoutHookInstalled = true;
       }
       _initialized = true;
+      _initializationFailed = false;
       return true;
     } catch (error, stackTrace) {
       _initializationFailed = true;
@@ -416,7 +467,8 @@ class PushNotificationService with WidgetsBindingObserver {
     });
   }
 
-  Future<bool> _activate(String userId) async {
+  Future<bool> _activate(String userId,
+      {bool promptForPermission = true}) async {
     if (userId.isEmpty) return false;
     final generation = _sessionGeneration;
     if (_activeUserId != userId) {
@@ -438,11 +490,12 @@ class PushNotificationService with WidgetsBindingObserver {
       return false;
     }
     _preferences = preferences;
-    await _startOpenAppAlerts();
+    await _startOpenAppAlerts(promptForPermission: promptForPermission);
     if (generation != _sessionGeneration || _activeUserId != userId) {
       return false;
     }
     if (!preferences.hasPushEnabled) {
+      await unregisterActiveDevice(clearUser: false);
       _activatedUserId = userId;
       return true;
     }
@@ -454,6 +507,7 @@ class PushNotificationService with WidgetsBindingObserver {
       final activated = await requestPermissionAndRegister(
         userId: userId,
         preferences: preferences,
+        promptForPermission: promptForPermission,
       );
       if (generation != _sessionGeneration || _activeUserId != userId) {
         return false;
@@ -474,6 +528,7 @@ class PushNotificationService with WidgetsBindingObserver {
   Future<bool> requestPermissionAndRegister({
     required String userId,
     required NotificationPreferences preferences,
+    bool promptForPermission = true,
   }) async {
     _activeUserId = userId;
     _preferences = preferences;
@@ -484,20 +539,30 @@ class PushNotificationService with WidgetsBindingObserver {
     }
     if (!await initialize()) return false;
 
-    final settings = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    final generation = _sessionGeneration;
+    var settings = await FirebaseMessaging.instance.getNotificationSettings();
+    if (promptForPermission &&
+        settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+      settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    }
     final permitted =
         settings.authorizationStatus == AuthorizationStatus.authorized ||
             settings.authorizationStatus == AuthorizationStatus.provisional;
-    if (!permitted) return false;
+    if (!permitted ||
+        generation != _sessionGeneration ||
+        _activeUserId != userId) return false;
 
     final token = await _getFcmToken();
-    if (token == null || token.isEmpty) return false;
+    if (token == null ||
+        token.isEmpty ||
+        generation != _sessionGeneration ||
+        _activeUserId != userId) return false;
     await _registerToken(token, preferences);
-    return true;
+    return generation == _sessionGeneration && _activeUserId == userId;
   }
 
   Future<void> updatePreferences({
@@ -531,24 +596,48 @@ class PushNotificationService with WidgetsBindingObserver {
   }
 
   Future<String?> _getFcmToken() async {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      // APNs registration is asynchronous; asking FCM for a token before its
-      // APNs token exists can fail on a fresh install.
-      var apnsToken = await FirebaseMessaging.instance.getAPNSToken();
-      for (var attempt = 0; apnsToken == null && attempt < 20; attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
-        apnsToken = await FirebaseMessaging.instance.getAPNSToken();
-      }
-      if (apnsToken == null) return null;
-    }
-    return FirebaseMessaging.instance.getToken(
-      vapidKey: kIsWeb && PushNotificationConfig.vapidKey.isNotEmpty
-          ? PushNotificationConfig.vapidKey
-          : null,
+    final userId = _activeUserId;
+    final generation = _sessionGeneration;
+    return FcmTokenProvider.current().getToken(
+      isCurrent: () =>
+          userId != null &&
+          _activeUserId == userId &&
+          _sessionGeneration == generation &&
+          AuthService.instance.userId == userId &&
+          WidgetsBinding.instance.lifecycleState != AppLifecycleState.paused &&
+          WidgetsBinding.instance.lifecycleState != AppLifecycleState.detached,
     );
   }
 
   Future<void> _registerToken(
+    String token,
+    NotificationPreferences preferences,
+  ) {
+    final userId = _activeUserId;
+    final generation = _sessionGeneration;
+    final future = _registrationQueue.then((_) async {
+      if (token.trim().isEmpty ||
+          userId == null ||
+          userId != _activeUserId ||
+          userId != AuthService.instance.userId ||
+          generation != _sessionGeneration ||
+          _preferences?.hasPushEnabled != true) return;
+      final settings =
+          await FirebaseMessaging.instance.getNotificationSettings();
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        return;
+      }
+      if (generation != _sessionGeneration || userId != _activeUserId) return;
+      await _registerTokenNow(token, _preferences ?? preferences);
+    });
+    // Rotation, initial registration, and resume cannot overwrite each other's
+    // saved token ID. Keep the queue usable after a transient HTTP failure.
+    _registrationQueue = future.catchError((Object _) {});
+    return future;
+  }
+
+  Future<void> _registerTokenNow(
     String token,
     NotificationPreferences preferences,
   ) async {
@@ -568,6 +657,9 @@ class PushNotificationService with WidgetsBindingObserver {
     }
     final previousToken = store.getString(_tokenValueKey);
     final previousTokenId = store.getString(_tokenIdKey);
+    if (generation != _sessionGeneration ||
+        _activeUserId != userId ||
+        AuthService.instance.userId != userId) return;
     final tokenId = await HomeownerService.instance.registerPushDevice(
       token: token,
       platform: pushPlatformName(
@@ -632,6 +724,8 @@ class PushNotificationService with WidgetsBindingObserver {
       _activeUserId = null;
       _activatedUserId = null;
     }
+    // Finish/retire in-flight registration while the old JWT is still valid.
+    await _registrationQueue;
     if (clearUser && _chatListenerInstalled) {
       StreamService.instance.removeListener(_bindChatMessages);
       _chatListenerInstalled = false;
@@ -675,7 +769,8 @@ class PushNotificationService with WidgetsBindingObserver {
           exception: error,
           stack: stackTrace,
           library: 'push notifications',
-          context: ErrorDescription('while invalidating the signed-out FCM token'),
+          context:
+              ErrorDescription('while invalidating the signed-out FCM token'),
         ));
       }
     }
@@ -686,6 +781,8 @@ class PushNotificationService with WidgetsBindingObserver {
       _activeUserId = null;
       _activatedUserId = null;
       _preferences = null;
+      NotificationNavigation.requestedRoute.value = null;
+      if (_localInitialized) await _localNotifications.cancelAll();
     }
   }
 
