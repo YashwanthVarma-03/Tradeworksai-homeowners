@@ -1,7 +1,4 @@
 import '../widgets/loading_skeleton.dart';
-import '../utils/arrival_check_state.dart';
-import '../utils/work_order_status.dart';
-import 'work_orders/arrival_check.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -93,6 +90,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   bool _isLoading = true;
   bool _isRefreshing = false;
+  int _dataLoadGeneration = 0;
   String? _errorMessage;
   String? _manualZipOverride;
   String? _manualLocationName;
@@ -133,6 +131,33 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     }
     HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
     _restoreCachedHomeThenRefresh();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isGuest == widget.isGuest) return;
+
+    _dataLoadGeneration++;
+    _isRefreshing = false;
+    _errorMessage = null;
+
+    if (widget.isGuest) {
+      HomeownerService.instance.syncVersion
+          .removeListener(_refreshFromSharedSync);
+      _profile = const {};
+      _serverHomeDetails = const {};
+      _addresses = const [];
+      _activeJobs = const [];
+      _upcomingJobs = const [];
+      _quoteSourceJobs = const [];
+      _isLoading = false;
+      return;
+    }
+
+    _isLoading = true;
+    HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
+    unawaited(_restoreCachedHomeThenRefresh());
   }
 
   @override
@@ -177,17 +202,21 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   Future<void> _restoreCachedHomeThenRefresh() async {
     if (widget.isGuest) return;
-    final results = await Future.wait([
-      HomeownerService.instance.loadCachedWorkOrders(),
-      HomeownerService.instance.loadCachedProfile(),
-      _loadServerHomeDetails(),
-    ]);
-    if (!mounted) return;
+    final loadGeneration = _dataLoadGeneration;
+    try {
+      // Optional home-profile details require live API calls. They must not
+      // block the first real frame after sign-in or strand the home skeleton
+      // if that endpoint is unavailable.
+      final results = await Future.wait([
+        HomeownerService.instance.loadCachedWorkOrders(),
+        HomeownerService.instance.loadCachedProfile(),
+      ]);
+      if (!mounted || widget.isGuest || loadGeneration != _dataLoadGeneration) {
+        return;
+      }
 
-    final woData = results[0] as Map<String, dynamic>?;
-    final profileData = results[1] as Map<String, dynamic>?;
-    final serverHomeDetails = results[2] as Map<String, dynamic>;
-    if (woData != null || profileData != null) {
+      final woData = results[0];
+      final profileData = results[1];
       final tabs = woData?['tabs'];
       final profile = profileData?['profile'];
       final addresses = (profileData?['addresses'] as List?) ??
@@ -199,7 +228,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             : profile is Map
                 ? Map<String, dynamic>.from(profile)
                 : const {};
-        _serverHomeDetails = serverHomeDetails;
         _addresses = List<dynamic>.from(addresses);
         if (tabs is Map) {
           _activeJobs = List<dynamic>.from(tabs['active'] ?? const []);
@@ -210,6 +238,21 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         _isLoading = false;
         _errorMessage = null;
       });
+    } catch (_) {
+      if (!mounted || widget.isGuest || loadGeneration != _dataLoadGeneration) {
+        return;
+      }
+      // A malformed or unavailable cache is not a reason to keep a blocking
+      // skeleton visible. Render the normal shell and let the network refresh
+      // below provide either live content or a recoverable error state.
+      setState(() {
+        _isLoading = false;
+        _errorMessage = null;
+      });
+    }
+
+    if (!mounted || widget.isGuest || loadGeneration != _dataLoadGeneration) {
+      return;
     }
     await _fetchHomeData(showLoading: false, forceRefresh: true);
   }
@@ -228,6 +271,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       return;
     }
     if (!mounted || _isRefreshing) return;
+    final loadGeneration = _dataLoadGeneration;
     _isRefreshing = true;
 
     if (showLoading && !_hasHomeContent) {
@@ -254,7 +298,9 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           (profile is Map ? profile['addresses'] as List? : null) ??
           const [];
 
-      if (!mounted) return;
+      if (!mounted || widget.isGuest || loadGeneration != _dataLoadGeneration) {
+        return;
+      }
       setState(() {
         _profile = profile is Map<String, dynamic>
             ? Map<String, dynamic>.from(profile)
@@ -275,7 +321,9 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         _errorMessage = null;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || widget.isGuest || loadGeneration != _dataLoadGeneration) {
+        return;
+      }
       setState(() {
         // Retain the last known screen instead of replacing it with an error
         // during a transient offline or timeout event.
@@ -284,7 +332,9 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         _isLoading = false;
       });
     } finally {
-      _isRefreshing = false;
+      if (loadGeneration == _dataLoadGeneration) {
+        _isRefreshing = false;
+      }
     }
   }
 
@@ -1081,35 +1131,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 
-  /// A02: only while the job is still Booked after its window (Batch 19 B1).
-  /// No pop-up — this row and the work order's button are the only prompts.
-  Widget _buildNoShowRow(Map<String, dynamic> job) {
-    final start = jobVisitStart(job);
-    final line = [
-      '${jobServiceName(job)} with ${jobProName(job, 'your pro')}',
-      if (start != null)
-        visitPhrase(start, jobVisitEnd(job), relativeDay: true),
-      workOrderLabel(job),
-    ].where((part) => part.isNotEmpty).join(' · ');
-    return AlertRow(
-      icon: Icons.schedule_rounded,
-      title: 'Your visit window has passed',
-      body: '$line. Not started by your pro.',
-      footer: Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton(
-          style: _linkStyle,
-          onPressed: () async {
-            if (await openArrivalCheck(context, job) && mounted) {
-              await _fetchHomeData(showLoading: false, forceRefresh: true);
-            }
-          },
-          child: const Text('Report a no-show'),
-        ),
-      ),
-    );
-  }
-
   /// Each item opens its own work order; a cap opens the cap screen, a
   /// receipt opens the work order at Job money.
   Future<void> _openWaitingItem(WaitingItem item) async {
@@ -1251,15 +1272,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     if (_errorMessage != null) return _buildError();
 
     final waiting = widget.isGuest ? const <WaitingItem>[] : _waitingItems;
-    final noShowJobs = widget.isGuest
-        ? const <Map<String, dynamic>>[]
-        : _quoteSourceJobs
-            .whereType<Map>()
-            .map((raw) => Map<String, dynamic>.from(raw))
-            .where((job) => ArrivalCheckState.pending(job))
-            .toList();
     final alerts = <Widget>[
-      for (final job in noShowJobs) _buildNoShowRow(job),
       if (waiting.isNotEmpty) _buildWaitingStrip(waiting),
     ];
 
@@ -1302,4 +1315,3 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 }
-

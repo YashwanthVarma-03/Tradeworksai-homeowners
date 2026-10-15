@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'work_order_labels.dart';
 
 /// The only place in the app that decides what a work order's status is called
 /// and what colour it renders in.
@@ -27,6 +28,7 @@ enum WorkOrderState {
   cancelledByYou,
   cancelledByPro,
   cancelled,
+  cancelledByTradeWorks,
   noShowPro,
   noShowCustomer,
 }
@@ -88,14 +90,16 @@ class WorkOrderStatus {
   /// True when the homeowner has something to do, such as approving a cap.
   final bool waitingOnYou;
 
-  const WorkOrderStatus(this.state, {this.waitingOnYou = false});
+  const WorkOrderStatus(this.state, {this.waitingOnYou = false, this.proName});
+
+  final String? proName;
 
   /// Reads a raw backend status onto the four states.
   ///
   /// Unknown values fall back to [WorkOrderState.booked] rather than being
   /// shouted back at the homeowner as raw text.
   static WorkOrderStatus from(Object? rawStatus,
-      {Object? rawFlags, Object? cancelledBy}) {
+      {Object? rawFlags, Object? cancelledBy, Object? proName}) {
     final status = rawStatus?.toString().toLowerCase().trim() ?? '';
 
     final waiting = status.contains('quote') ||
@@ -113,12 +117,18 @@ class WorkOrderStatus {
       return const WorkOrderStatus(WorkOrderState.noShowCustomer);
     }
     if (status.contains('cancel') || status.contains('declined')) {
-      final actor = cancelledBy?.toString().toLowerCase();
-      return WorkOrderStatus(switch (actor) {
-        'homeowner' || 'customer' => WorkOrderState.cancelledByYou,
-        'pro' || 'contractor' || 'provider' => WorkOrderState.cancelledByPro,
-        _ => WorkOrderState.cancelled,
-      });
+      final actor = cancelledBy?.toString().trim().toLowerCase();
+      final name = proName?.toString().trim() ?? '';
+      return WorkOrderStatus(
+        switch (actor) {
+          'homeowner' || 'customer' => WorkOrderState.cancelledByYou,
+          'pro' || 'contractor' || 'provider' => WorkOrderState.cancelledByPro,
+          'platform' || 'tradeworks' || 'admin' || 'support' =>
+            WorkOrderState.cancelledByTradeWorks,
+          _ => WorkOrderState.cancelled,
+        },
+        proName: name.isEmpty || name.toLowerCase() == 'null' ? null : name,
+      );
     }
     if (status == 'completed' || status == 'complete' || status == 'disputed') {
       return WorkOrderStatus(WorkOrderState.completed,
@@ -148,10 +158,12 @@ class WorkOrderStatus {
       rawFlags: job,
       cancelledBy:
           job['cancelledBy'] ?? job['cancelled_by'] ?? job['canceled_by'],
+      proName: jobProName(job, ''),
     );
     if (base.waitingOnYou || base.isTerminalWithoutProgress) return base;
     if (capPending(job) || receiptPending(job)) {
-      return WorkOrderStatus(base.state, waitingOnYou: true);
+      return WorkOrderStatus(base.state,
+          waitingOnYou: true, proName: base.proName);
     }
     return base;
   }
@@ -234,9 +246,13 @@ class WorkOrderStatus {
       case WorkOrderState.cancelledByYou:
         return 'You cancelled';
       case WorkOrderState.cancelledByPro:
-        return 'Pro cancelled';
+        return proName == null
+            ? 'Cancelled by your pro'
+            : 'Cancelled by $proName';
       case WorkOrderState.cancelled:
         return 'Cancelled';
+      case WorkOrderState.cancelledByTradeWorks:
+        return 'Cancelled by TradeWorks';
       case WorkOrderState.noShowPro:
         return 'Pro didn\'t arrive';
       case WorkOrderState.noShowCustomer:
@@ -279,6 +295,7 @@ class WorkOrderStatus {
       case WorkOrderState.cancelledByYou:
       case WorkOrderState.cancelledByPro:
       case WorkOrderState.cancelled:
+      case WorkOrderState.cancelledByTradeWorks:
       case WorkOrderState.noShowPro:
       case WorkOrderState.noShowCustomer:
         return const StatusChipStyle(

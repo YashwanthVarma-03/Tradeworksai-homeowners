@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_app_badge/flutter_app_badge.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -57,6 +58,17 @@ class HomeownerService {
   /// been refreshed. Mounted tabs listen to this instead of independently
   /// polling or replacing their content with a loading state.
   final ValueNotifier<int> syncVersion = ValueNotifier<int>(0);
+
+  /// Server-authored unread count for the Activity feed.
+  final ValueNotifier<int> notificationUnreadCount = ValueNotifier<int>(0);
+
+  /// A message or push arrived while the app is open. Activity refreshes from
+  /// the server on this signal instead of polling in the background.
+  final ValueNotifier<int> notificationVersion = ValueNotifier<int>(0);
+
+  void notifyIncomingNotification() {
+    notificationVersion.value++;
+  }
 
   /// Emitted whenever public contractor catalog data (ratings, review counts,
   /// availability or profile details) must be reloaded by Browse.
@@ -876,6 +888,10 @@ class HomeownerService {
         response = await _postRaw(fallbackEndpoint, body);
       }
 
+      if (response.statusCode == 204 && response.body.isEmpty) {
+        _clearRecentFailure(endpoint);
+        return const {'success': true};
+      }
       if (response.body.isEmpty) {
         throw Exception(ApiConfig.emptyResponseMessage(endpoint));
       }
@@ -1024,19 +1040,31 @@ class HomeownerService {
     }
   }
 
-  /// Inbox › Activity feed (Oct 1, G-52). Off until the backend ships
-  /// `homeowner/notifications-list`; Activity derives its rows from the
-  /// work-order list meanwhile. Returns null whenever the feed is unavailable.
-  static const bool notificationsFeedEnabled = false;
+  /// Inbox › Activity feed (G-52).
+  /// The server feed is preferred; callers derive rows from work orders when
+  /// this route is unavailable or empty.
+  static const bool notificationsFeedEnabled = true;
   static const String _notificationsListPath = 'homeowner/notifications-list';
   static const String _notificationsReadPath = 'homeowner/notifications-read';
 
-  Future<List<Map<String, dynamic>>?> fetchNotifications() async {
+  Future<List<Map<String, dynamic>>?> fetchNotifications({
+    int? limit,
+    int? offset,
+  }) async {
     if (!notificationsFeedEnabled) return null;
     final uid = _userId;
     if (uid == null) return null;
     try {
-      final data = await _post(_notificationsListPath, {'userId': uid});
+      final data = await _post(_notificationsListPath, {
+        if (limit != null) 'limit': limit,
+        if (offset != null) 'offset': offset,
+      });
+      final unread = data['unreadCount'] ?? data['unread_count'];
+      if (unread != null) {
+        _setNotificationUnreadCount(
+          unread is int ? unread : int.tryParse('$unread') ?? 0,
+        );
+      }
       final rows = data['notifications'] ?? data['items'] ?? data['data'];
       if (rows is! List) return null;
       return rows
@@ -1051,9 +1079,28 @@ class HomeownerService {
   Future<void> markNotificationRead(String id) async {
     if (!notificationsFeedEnabled || id.isEmpty) return;
     try {
-      await _post(_notificationsReadPath, {'id': id});
+      await _post(_notificationsReadPath, {'id': int.tryParse(id) ?? id});
+      if (notificationUnreadCount.value > 0) {
+        _setNotificationUnreadCount(notificationUnreadCount.value - 1);
+      }
+      await fetchNotifications();
     } catch (_) {
       // A missed read mark only leaves the dot until the next refresh.
+    }
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    if (!notificationsFeedEnabled) return;
+    await _post(_notificationsReadPath, {'all': true});
+    _setNotificationUnreadCount(0);
+    await fetchNotifications();
+  }
+
+  void _setNotificationUnreadCount(int count) {
+    notificationUnreadCount.value = count < 0 ? 0 : count;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      unawaited(FlutterAppBadge.count(notificationUnreadCount.value)
+          .catchError((Object _) {}));
     }
   }
 
@@ -1109,6 +1156,8 @@ class HomeownerService {
     String? endsAt,
     String? contractorId,
     String? reason,
+    double creditAmount = 0,
+    String? creditRequestId,
   }) async {
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
@@ -1120,6 +1169,12 @@ class HomeownerService {
         'expectedCap': expectedCap.toStringAsFixed(2),
         'startsAt': startsAt,
         'endsAt': endsAt,
+        'contractorId': contractorId,
+        if (creditAmount > 0 && creditRequestId != null) ...{
+          'applyServiceCredit': true,
+          'serviceCreditAmount': creditAmount.toStringAsFixed(2),
+          'creditRequestId': creditRequestId,
+        },
       };
     } else {
       body = {
@@ -1132,6 +1187,47 @@ class HomeownerService {
       _workOrdersActionPath,
       body,
       fallbackEndpoint: _legacyWorkOrdersActionPath,
+    );
+    await _invalidateWorkOrderCache();
+    unawaited(syncInBackground());
+    return result;
+  }
+
+  /// Accepts or declines a Free-estimate job's estimate. Cap Approval jobs
+  /// use [respondToCap] instead.
+  Future<Map<String, dynamic>> respondToEstimate({
+    required int workOrderId,
+    required bool accept,
+    String? startsAt,
+    String? endsAt,
+    String? contractorId,
+    String? reason,
+    double creditAmount = 0,
+    String? creditRequestId,
+  }) async {
+    final uid = _userId;
+    if (uid == null) throw Exception('User is not authenticated');
+    final body = <String, dynamic>{
+      'action': accept ? 'quote_accept' : 'quote_decline',
+      'workOrderId': workOrderId,
+      'requesterUserId': uid,
+      'requester_user_id': uid,
+      if (accept) ...{
+        'startsAt': startsAt,
+        'endsAt': endsAt,
+        'contractorId': contractorId,
+        if (creditAmount > 0 && creditRequestId != null) ...{
+          'applyServiceCredit': true,
+          'serviceCreditAmount': creditAmount.toStringAsFixed(2),
+          'creditRequestId': creditRequestId,
+        },
+      } else
+        'reason': reason,
+    };
+    final result = await _post(
+      _bookingCommitPath,
+      body,
+      fallbackEndpoint: _legacyBookingCommitPath,
     );
     await _invalidateWorkOrderCache();
     unawaited(syncInBackground());
@@ -1844,18 +1940,39 @@ class HomeownerService {
   /// Registers the active FCM/Web Push token for the signed-in homeowner.
   /// The API must scope this record to the authenticated user, expire stale
   /// tokens, and never accept a token for a different account.
-  Future<void> registerPushDevice({
+  Future<String?> registerPushDevice({
     required String token,
     required String platform,
   }) async {
-    if (token.trim().isEmpty || _userId == null) return;
-    await _post(
+    if (token.trim().isEmpty || _userId == null) return null;
+    final data = await _post(
       'homeowner/push-tokens',
       {
         'provider': 'fcm',
         'token': token,
         'platform': platform,
       },
+    );
+    final record = data['push_token'] ?? data['pushToken'] ?? data['data'];
+    final id = record is Map
+        ? record['id'] ??
+            record['token_id'] ??
+            record['tokenId'] ??
+            record['pushTokenId']
+        : data['token_id'] ??
+            data['tokenId'] ??
+            data['pushTokenId'] ??
+            data['id'];
+    final value = id?.toString().trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  Future<void> removePushDevice(String tokenId) async {
+    if (tokenId.trim().isEmpty || _userId == null) return;
+    await _post(
+      'homeowner/push-tokens/${Uri.encodeComponent(tokenId)}',
+      const {},
+      method: 'DELETE',
     );
   }
 
@@ -2062,7 +2179,8 @@ class HomeownerService {
       );
       holdId = int.tryParse('${hold['holdId'] ?? hold['hold_id']}');
       if (holdId == null) {
-        throw Exception('That time is no longer available. Pick another window.');
+        throw Exception(
+            'That time is no longer available. Pick another window.');
       }
       startsAt ??= hold['startsAt']?.toString();
       endsAt ??= hold['endsAt']?.toString();
@@ -2585,6 +2703,15 @@ class HomeownerService {
   Future<Map<String, dynamic>> fetchAccount() =>
       _post('homeowner/account', {}, method: 'GET');
 
+  Future<void> updateNotificationPreferences(
+      Map<String, dynamic> preferences) async {
+    await _post(
+      'homeowner/account/notification-preferences',
+      {'preferences': preferences},
+      method: 'PATCH',
+    );
+  }
+
   Future<void> updateAccountDetails(Map<String, dynamic> details) async {
     await _post('homeowner/account/details', details, method: 'PATCH');
     await _invalidateProfileCache();
@@ -2714,4 +2841,3 @@ class _RecentRequestFailure {
     required this.message,
   });
 }
-

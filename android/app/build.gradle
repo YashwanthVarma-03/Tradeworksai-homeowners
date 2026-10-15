@@ -5,6 +5,41 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Debug builds can run without Firebase for local development, but a release
+// must not silently ship without background notification delivery.
+def firebaseConfigFile = file("google-services.json")
+def requestedReleaseTask = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains("release")
+}
+if (requestedReleaseTask && !firebaseConfigFile.isFile()) {
+    throw new GradleException("Missing android/app/google-services.json. Configure the TradeWorks Firebase project before building a release APK.")
+}
+if (requestedReleaseTask) {
+    def encodedDefines = (project.findProperty("dart-defines") ?: "").toString()
+    def decodedDefines = encodedDefines.split(",").findAll { it }.collect { encoded ->
+        try {
+            return new String(Base64.decoder.decode(encoded), "UTF-8")
+        } catch (IllegalArgumentException ignored) {
+            return ""
+        }
+    }
+    def requiredFirebaseDefines = [
+        "FIREBASE_API_KEY",
+        "FIREBASE_APP_ID",
+        "FIREBASE_MESSAGING_SENDER_ID",
+        "FIREBASE_PROJECT_ID",
+    ]
+    def missingDefines = requiredFirebaseDefines.findAll { name ->
+        !decodedDefines.any { define -> define.startsWith("${name}=") && define.length() > name.length() + 1 }
+    }
+    if (!missingDefines.isEmpty()) {
+        throw new GradleException("Missing Firebase release dart-defines: ${missingDefines.join(', ')}. Use the configured TradeWorks release build workflow.")
+    }
+}
+if (firebaseConfigFile.isFile()) {
+    apply plugin: "com.google.gms.google-services"
+}
+
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -32,7 +67,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace = "com.tradeworksai.homeowners_app"
+    namespace = "com.tradeworksai.homeownersapp"
     compileSdk = 36
     ndkVersion = "27.1.12297006"
 
@@ -48,7 +83,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.tradeworksai.homeowners_app"
+        applicationId = "com.tradeworksai.homeownersapp"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
         minSdk = flutter.minSdkVersion

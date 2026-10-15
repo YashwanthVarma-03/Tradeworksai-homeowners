@@ -28,7 +28,7 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Receives the Supabase/Google OAuth callback after browser sign-in. -->
+            <!-- Receives email confirmation and hosted Apple OAuth callbacks. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

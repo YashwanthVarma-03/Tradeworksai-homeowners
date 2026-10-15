@@ -12,6 +12,7 @@ import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
 import '../ui/tw.dart';
+import '../utils/credit_rules.dart';
 import '../utils/display_format.dart';
 import '../utils/transaction_id.dart';
 import '../widgets/app_notification.dart';
@@ -2413,23 +2414,30 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               ),
             ),
           ),
-          if (pricing.workOrderType != 'quote_request' &&
-              _availableServiceCredits != null &&
-              pricing.amount != null) ...[
+          if (_availableServiceCredits != null &&
+              (pricing.workOrderType == 'quote_request' ||
+                  pricing.amount != null)) ...[
             const SizedBox(height: TwSpace.s12),
-            _creditsCard(pricing.amount!),
+            _creditsCard(pricing),
           ],
         ],
       ),
     );
   }
 
-  /// Apply credits (C05): balance in purple, the settled instruction, the
-  /// amount, credits applied and what the homeowner pays the pro.
-  Widget _creditsCard(int price) {
+  /// Apply credit at booking under the Oct 12 limits for each job type.
+  Widget _creditsCard(_PricingChoice pricing) {
     final balance = _availableServiceCredits ?? 0;
+    final type = pricing.workOrderType;
+    final price = pricing.amount;
+    final freeVisit = type == 'quote_request';
+    final limit = _creditLimit(pricing);
     final applied = _appliedServiceCredits(price);
-    final amountDue = price - applied;
+    final amountDue = (price ?? 0) - applied;
+    final helper = CreditRules.bookingHelper(
+        workOrderType: type, price: price, balance: balance);
+    final typedTooMuch =
+        CreditRules.overLimit(_creditAmountController.text, limit);
     return _reviewPanel(Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2447,28 +2455,27 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
               ],
             ),
           ),
-          Switch(
-            value: _useServiceCredits,
-            onChanged: balance <= 0
-                ? null
-                : (value) => setState(() {
-                      _useServiceCredits = value;
-                      if (value &&
-                          _creditAmountController.text.trim().isEmpty) {
-                        _creditAmountController.text = [
-                          balance,
-                          price.toDouble()
-                        ].reduce((a, b) => a < b ? a : b).toStringAsFixed(2);
-                      }
-                    }),
-          ),
+          if (!freeVisit)
+            Switch(
+              value: _useServiceCredits,
+              onChanged: limit <= 0
+                  ? null
+                  : (value) => setState(() {
+                        _useServiceCredits = value;
+                        if (value &&
+                            _creditAmountController.text.trim().isEmpty) {
+                          _creditAmountController.text =
+                              limit.toStringAsFixed(2);
+                        }
+                      }),
+            ),
         ]),
         const SizedBox(height: TwSpace.s8),
         Text(
-          'Tell us how much to apply when you book.',
+          freeVisit ? helper : 'Choose how much credit to apply.',
           style: TwType.meta(color: AppTheme.body),
         ),
-        if (_useServiceCredits) ...[
+        if (!freeVisit && _useServiceCredits) ...[
           const SizedBox(height: TwSpace.s12),
           const TwFieldLabel('Amount to apply'),
           TextField(
@@ -2479,6 +2486,15 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             decoration:
                 TwInputs.decoration(hint: '0.00').copyWith(prefixText: '\$ '),
           ),
+          const SizedBox(height: 6),
+          Text(helper, style: TwType.caption()),
+          if (typedTooMuch) ...[
+            const SizedBox(height: 2),
+            Text(
+              'We’ll apply ${formatUsd(applied)}.',
+              style: TwType.caption(color: AppTheme.purple),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(children: [
             Expanded(
@@ -2499,7 +2515,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Expanded(
-                child: Text('You pay', style: TwType.title()),
+                child: Text(
+                    type == 'nte' ? 'You pay for the diagnostic' : 'You pay',
+                    style: TwType.title()),
               ),
               Text(
                 formatUsd(amountDue),
@@ -2526,19 +2544,22 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         child: TwCard(padding: padding, child: child),
       );
 
+  double _creditLimit(_PricingChoice pricing) => CreditRules.bookingLimit(
+        workOrderType: pricing.workOrderType,
+        price: pricing.amount,
+        balance: _availableServiceCredits ?? 0,
+      );
+
   double _appliedServiceCredits(int? price) {
+    final pricing = _selectedPricingChoice;
     if (!_useServiceCredits ||
         price == null ||
-        _availableServiceCredits == null) {
+        _availableServiceCredits == null ||
+        pricing.workOrderType == 'quote_request') {
       return 0;
     }
-    final entered = double.tryParse(_creditAmountController.text.trim());
-    if (entered == null || !entered.isFinite) return 0;
-    final requested = double.parse(entered.toStringAsFixed(2));
-    return requested.clamp(
-        0,
-        [price.toDouble(), _availableServiceCredits!, 10000.0]
-            .reduce((a, b) => a < b ? a : b));
+    return CreditRules.clampTyped(
+        _creditAmountController.text, _creditLimit(pricing));
   }
 
   Future<void> _openManageAddresses() async {

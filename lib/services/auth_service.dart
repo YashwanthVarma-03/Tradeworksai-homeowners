@@ -5,7 +5,6 @@ import 'package:crypto/crypto.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -19,12 +18,26 @@ class SignUpConfirmationRequired implements Exception {
   const SignUpConfirmationRequired();
 }
 
+/// The Google account picker was dismissed without selecting an account.
+class GoogleSignInCancelled implements Exception {
+  const GoogleSignInCancelled();
+}
+
 class AuthService extends ChangeNotifier {
   static final AuthService instance = AuthService._internal();
   static const String _rememberLoginKey = 'rememberLogin';
   static const String _rememberedLoginEmailKey = 'rememberedLoginEmail';
+  final List<FutureOr<void> Function()> _beforeLogoutHooks = [];
 
   AuthService._internal();
+
+  void addBeforeLogoutHook(FutureOr<void> Function() hook) {
+    if (!_beforeLogoutHooks.contains(hook)) _beforeLogoutHooks.add(hook);
+  }
+
+  void removeBeforeLogoutHook(FutureOr<void> Function() hook) {
+    _beforeLogoutHooks.remove(hook);
+  }
 
   bool isTesting = false;
   static const String _nativeGoogleCallbackUrl =
@@ -182,50 +195,59 @@ class AuthService extends ChangeNotifier {
   Future<void> signInWithGoogleInteractive({bool rememberMe = true}) async {
     await setRememberLoginPreference(rememberMe: rememberMe);
 
-    final googleWebClientId = ApiConfig.googleWebClientId.trim();
-    final canUseNativeAndroidSignIn = !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.android &&
-        googleWebClientId.isNotEmpty;
-
-    if (canUseNativeAndroidSignIn) {
-      try {
-        _googleSignIn ??= GoogleSignIn(
-          serverClientId: googleWebClientId,
-          scopes: const ['email', 'profile'],
-        );
-        final account = await _googleSignIn!.signIn();
-        if (account == null) {
-          throw Exception('Google sign-in was cancelled.');
-        }
-
-        final googleAuth = await account.authentication;
-        final idToken = googleAuth.idToken;
-        if (idToken == null || idToken.isEmpty) {
-          throw Exception(
-              'Google did not return an ID token. Check the app OAuth client configuration.');
-        }
-
-        final response = await _client.auth.signInWithIdToken(
-          provider: OAuthProvider.google,
-          idToken: idToken,
-          accessToken: googleAuth.accessToken,
-        );
-        await _syncFromSession(response.session);
-        return;
-      } on PlatformException catch (error) {
-        if (error.code == 'sign_in_canceled') rethrow;
-        // A package/signing-certificate mismatch should not strand the user.
-        // Continue with the in-app hosted flow below.
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      final webClientId = ApiConfig.googleWebClientId.trim();
+      if (webClientId.isEmpty) {
+        throw StateError('Google sign-in is not configured for this app build.');
       }
+      final iosClientId = ApiConfig.googleIosClientId.trim();
+      if (defaultTargetPlatform == TargetPlatform.iOS && iosClientId.isEmpty) {
+        throw StateError('Google sign-in is not configured for this iOS build.');
+      }
+
+      _googleSignIn ??= GoogleSignIn(
+        clientId: defaultTargetPlatform == TargetPlatform.iOS
+            ? iosClientId
+            : null,
+        serverClientId: webClientId,
+        scopes: const ['email', 'profile'],
+      );
+      final account = await _googleSignIn!.signIn();
+      if (account == null) {
+        throw const GoogleSignInCancelled();
+      }
+
+      final googleAuth = await account.authentication;
+      final idToken = googleAuth.idToken;
+      final accessToken = googleAuth.accessToken;
+      if (idToken == null || idToken.isEmpty ||
+          accessToken == null || accessToken.isEmpty) {
+        throw Exception('Google could not finish sign-in. Please try again.');
+      }
+
+      final response = await _client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: accessToken,
+      );
+      if (response.session == null) {
+        throw Exception('Google could not finish sign-in. Please try again.');
+      }
+      await _syncFromSession(response.session);
+      return;
     }
 
-    // Web uses the normal hosted flow. Mobile fallback stays inside an
-    // app-owned Custom Tab and returns through the registered deep link.
+    if (!kIsWeb) {
+      throw UnsupportedError('Google sign-in is unavailable on this platform.');
+    }
+
+    // Browser builds use the same Supabase OAuth flow as the website.
     final launched = await _client.auth.signInWithOAuth(
       OAuthProvider.google,
-      redirectTo: kIsWeb ? Uri.base.origin : _nativeGoogleCallbackUrl,
-      authScreenLaunchMode:
-          kIsWeb ? LaunchMode.platformDefault : LaunchMode.inAppBrowserView,
+      redirectTo: Uri.base.origin,
+      authScreenLaunchMode: LaunchMode.platformDefault,
       queryParams: const {'prompt': 'select_account'},
     );
     if (!launched) {
@@ -359,6 +381,15 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    for (final hook in List<FutureOr<void> Function()>.from(
+      _beforeLogoutHooks,
+    )) {
+      try {
+        await hook();
+      } catch (_) {
+        // Logout must still complete if a best-effort device cleanup fails.
+      }
+    }
     await _clearSession(notify: false);
     try {
       await _client.auth.signOut();

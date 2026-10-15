@@ -127,9 +127,11 @@ class _LoginPageState extends State<LoginPage> {
     try {
       await AuthService.instance
           .signInWithGoogleInteractive(rememberMe: _rememberMe);
-      // On mobile, the OAuth callback arrives after the external browser
-      // redirects to the app. Navigate only after Supabase creates a session.
+      // Native Google sign-in returns with a Supabase session immediately.
+      // Web OAuth completes later through the auth listener.
       _completeSocialOAuthIfReady();
+    } on GoogleSignInCancelled {
+      _socialOAuthPending = false;
     } catch (e) {
       _socialOAuthPending = false;
       if (mounted) _showError(e);

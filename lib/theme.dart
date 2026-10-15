@@ -364,7 +364,7 @@ class AppTheme {
         ),
       ),
       // §4 Dialogs: radius 20, inset 24, Outfit h3 title, bodySm content.
-      dialogTheme: const DialogThemeData(
+      dialogTheme: const DialogTheme(
         backgroundColor: white,
         surfaceTintColor: Colors.transparent,
         elevation: 0,

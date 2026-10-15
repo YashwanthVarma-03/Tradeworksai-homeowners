@@ -28,8 +28,7 @@ void main() {
       }
       if (body['action'] == 'hold') {
         return http.Response(
-            jsonEncode({'success': true, 'ok': true, 'holdId': 123}),
-            200);
+            jsonEncode({'success': true, 'ok': true, 'holdId': 123}), 200);
       }
     }
     return http.Response(
@@ -92,6 +91,94 @@ void main() {
     rejectCap = false;
   });
 
+  test('notification APIs use the documented methods and payloads', () async {
+    final calls = <http.Request>[];
+    var unreadCount = 1;
+    final client = MockClient((request) async {
+      calls.add(request);
+      expect(request.headers['authorization'], startsWith('Bearer '));
+      if (request.url.path.endsWith('/notifications-list')) {
+        return http.Response(
+            jsonEncode({
+              'notifications': [
+                {
+                  'id': 123,
+                  'type': 'cap',
+                  'title': 'Approve cap',
+                  'read_at': null
+                },
+              ],
+              'unreadCount': unreadCount,
+            }),
+            200);
+      }
+      if (request.url.path.endsWith('/notifications-read')) {
+        unreadCount = 0;
+        return http.Response(jsonEncode({'success': true}), 200);
+      }
+      if (request.url.path.endsWith('/push-tokens') &&
+          request.method == 'POST') {
+        return http.Response(jsonEncode({'tokenId': 456}), 200);
+      }
+      if (request.method == 'DELETE') {
+        return http.Response('', 204);
+      }
+      return http.Response(jsonEncode({'success': true}), 200);
+    });
+
+    await http.runWithClient(() async {
+      final service = HomeownerService.instance;
+      await service.fetchAccount();
+      await service.updateNotificationPreferences({
+        'push': {'status': false},
+      });
+      final feed = await service.fetchNotifications(limit: 20, offset: 40);
+      expect(feed?.single['id'], 123);
+      expect(service.notificationUnreadCount.value, 1);
+      await service.markNotificationRead('123');
+      expect(service.notificationUnreadCount.value, 0);
+      await service.markAllNotificationsRead();
+      expect(service.notificationUnreadCount.value, 0);
+      final tokenId = await service.registerPushDevice(
+        token: 'device-token',
+        platform: 'ios',
+      );
+      expect(tokenId, '456');
+      await service.removePushDevice(tokenId!);
+    }, () => client);
+
+    expect(calls.map((request) => request.method), [
+      'GET',
+      'PATCH',
+      'POST',
+      'POST',
+      'POST',
+      'POST',
+      'POST',
+      'POST',
+      'DELETE',
+    ]);
+    expect(calls[0].url.path, '/homeowner/account');
+    expect(calls[0].url.host, 'tradeworks-api-7mobhz4bsq-ue.a.run.app');
+    expect(calls[1].url.path, '/homeowner/account/notification-preferences');
+    expect(jsonDecode(calls[1].body), {
+      'preferences': {
+        'push': {'status': false},
+      },
+    });
+    expect(jsonDecode(calls[2].body), {'limit': 20, 'offset': 40});
+    expect(jsonDecode(calls[3].body), {'id': 123});
+    expect(calls[4].url.path, '/homeowner/notifications-list');
+    expect(jsonDecode(calls[5].body), {'all': true});
+    expect(calls[6].url.path, '/homeowner/notifications-list');
+    expect(jsonDecode(calls[7].body), {
+      'provider': 'fcm',
+      'token': 'device-token',
+      'platform': 'ios',
+    });
+    expect(calls[8].url.path, '/homeowner/push-tokens/456');
+  });
+
   test('cap acceptance retains the server action and chosen appointment',
       () async {
     await http.runWithClient(() async {
@@ -119,6 +206,44 @@ void main() {
     }, () => api);
     expect(requests.single, containsPair('action', 'decline_cap'));
     expect(requests.single, containsPair('reason', 'homeowner_declined_cap'));
+  });
+  test('cap approval sends the chosen credit once', () async {
+    await http.runWithClient(() async {
+      await HomeownerService.instance.respondToCap(
+        workOrderId: 101,
+        accept: true,
+        expectedCap: 460,
+        contractorId: 'contractor-7',
+        startsAt: '2026-12-01T10:00:00Z',
+        endsAt: '2026-12-01T12:00:00Z',
+        creditAmount: 20,
+        creditRequestId: '2337b617-b21d-4815-a2a6-a0e5a10bf784',
+      );
+    }, () => api);
+    final request =
+        requests.singleWhere((row) => row['action'] == 'approve_cap');
+    expect(request['serviceCreditAmount'], '20.00');
+    expect(request['applyServiceCredit'], true);
+    expect(request['creditRequestId'], '2337b617-b21d-4815-a2a6-a0e5a10bf784');
+  });
+
+  test('free estimate acceptance uses quote_accept with credit', () async {
+    await http.runWithClient(() async {
+      await HomeownerService.instance.respondToEstimate(
+        workOrderId: 202,
+        accept: true,
+        contractorId: 'contractor-7',
+        startsAt: '2026-12-02T10:00:00Z',
+        endsAt: '2026-12-02T12:00:00Z',
+        creditAmount: 15,
+        creditRequestId: '2337b617-b21d-4815-a2a6-a0e5a10bf785',
+      );
+    }, () => api);
+    final request =
+        requests.singleWhere((row) => row['action'] == 'quote_accept');
+    expect(request['serviceCreditAmount'], '15.00');
+    expect(request['applyServiceCredit'], true);
+    expect(request['contractorId'], 'contractor-7');
   });
   test('a rejected cap is not treated as successful approval', () async {
     rejectCap = true;
@@ -607,6 +732,7 @@ void main() {
           startsAt: '2026-12-01T10:00:00Z',
           endsAt: '2026-12-01T12:00:00Z',
           booking: {
+            'contractor_service_id': 77,
             'service_credits_applied': 25.50,
             'credit_request_id': '2337b617-b21d-4815-a2a6-a0e5a10bf784',
             'intake_session_token': 'signed-session',
@@ -614,14 +740,12 @@ void main() {
           });
       await HomeownerService.instance.syncInBackground();
     }, () => api);
-    expect(requests.single['applyServiceCredit'], true);
-    expect(requests.single['serviceCreditAmount'], '25.50');
-    expect(requests.single['creditRequestId'],
-        '2337b617-b21d-4815-a2a6-a0e5a10bf784');
-    expect(requests.single['intakeSessionToken'], 'signed-session');
-    expect(
-        (requests.single['booking'] as Map)
-            .containsKey('service_credits_applied'),
+    final commit = requests.singleWhere((row) => row['action'] == 'commit');
+    expect(commit['applyServiceCredit'], true);
+    expect(commit['serviceCreditAmount'], '25.50');
+    expect(commit['creditRequestId'], '2337b617-b21d-4815-a2a6-a0e5a10bf784');
+    expect(commit['intakeSessionToken'], 'signed-session');
+    expect((commit['booking'] as Map).containsKey('service_credits_applied'),
         false);
   });
   test('profile details cannot silently change the sign-in email', () async {
@@ -661,4 +785,3 @@ void main() {
     expect(AuthService.instance.isAuthenticated, true);
   });
 }
-

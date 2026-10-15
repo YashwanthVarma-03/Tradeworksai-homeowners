@@ -132,6 +132,8 @@ class RescheduleWorkOrderScreen extends StatefulWidget {
     required this.contractorId,
     this.selectSlotOnly = false,
     this.capAmount,
+    this.isEstimate = false,
+    this.creditApplied = 0,
   });
 
   final Map<String, dynamic> job;
@@ -144,6 +146,12 @@ class RescheduleWorkOrderScreen extends StatefulWidget {
 
   /// The cap being approved, for E01b's summary card. Null hides the line.
   final double? capAmount;
+
+  /// A Free-estimate job: the amount is an estimate being accepted.
+  final bool isEstimate;
+
+  /// Credit chosen on the cap or estimate screen; zero hides the row.
+  final double creditApplied;
 
   @override
   State<RescheduleWorkOrderScreen> createState() =>
@@ -421,7 +429,10 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
     final service = jobServiceName(_job);
     final meta = [
       workOrderLabel(_job),
-      if (cap != null) 'Cap ${formatUsd(cap)} not-to-exceed',
+      if (cap != null)
+        widget.isEstimate
+            ? 'Estimate ${formatUsd(cap)}'
+            : 'Cap ${formatUsd(cap)} not-to-exceed',
     ].where((part) => part.isNotEmpty).join(' · ');
     return [
       TwCard(
@@ -451,16 +462,47 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
               const Divider(height: 1, color: AppTheme.cardBorder),
               const SizedBox(height: TwSpace.s12),
               Text(
-                'You’re approving a cap of ${formatUsd(cap)}',
+                widget.isEstimate
+                    ? 'You’re accepting an estimate of ${formatUsd(cap)}'
+                    : 'You’re approving a cap of ${formatUsd(cap)}',
                 style: TwType.label(),
               ),
+              if (widget.creditApplied > 0) ...[
+                const SizedBox(height: TwSpace.s8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('Credit applied',
+                          style: TwType.bodySm(color: AppTheme.purple)),
+                    ),
+                    Text('−${formatUsd(widget.creditApplied)}',
+                        style: TwType.label(color: AppTheme.purple)),
+                  ],
+                ),
+                const SizedBox(height: TwSpace.s4),
+                Row(
+                  children: [
+                    Expanded(
+                      child:
+                          Text('You pay the pro up to', style: TwType.title()),
+                    ),
+                    Text(
+                      formatUsd(cap - widget.creditApplied < 0
+                          ? 0
+                          : cap - widget.creditApplied),
+                      style: TwType.title(),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ],
         ),
       ),
       const SizedBox(height: TwSpace.s20),
       Text(
-        'Pick a 2-hour window for the repair. It’s booked on $_pro’s calendar.',
+        'Pick a 2-hour window for the ${widget.isEstimate ? 'work' : 'repair'}. '
+        'It’s booked on $_pro’s calendar.',
         style: TwType.bodySm(),
       ),
       const SizedBox(height: TwSpace.s20),
@@ -556,7 +598,9 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
       children: [
         TwPrimaryButton(
           label: widget.selectSlotOnly
-              ? 'Approve cap and book'
+              ? (widget.isEstimate
+                  ? 'Accept estimate and book'
+                  : 'Approve cap and book')
               : 'Send proposal',
           onPressed: _selectedSlot == null || _isSubmitting ? null : _submit,
           loading: _isSubmitting,

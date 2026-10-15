@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -8,6 +9,7 @@ import 'screens/dashboard_shell.dart';
 import 'services/auth_service.dart';
 import 'services/supabase_config.dart';
 import 'services/push_notification_service.dart';
+import 'services/push_notification_config.dart';
 import 'theme.dart';
 
 void main() async {
@@ -25,6 +27,16 @@ void main() async {
     debug: false,
   );
   await AuthService.instance.loadSession();
+  if (kReleaseMode && !PushNotificationConfig.isConfigured) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: StateError(
+          'Push notifications are disabled: Firebase dart-defines are missing.',
+        ),
+        library: 'push notifications',
+      ),
+    );
+  }
 
   runApp(const MyApp());
 }
@@ -38,9 +50,12 @@ class MyApp extends StatelessWidget {
       animation: AuthService.instance,
       builder: (context, _) {
         if (AuthService.instance.isAuthenticated) {
-          // This sets up foreground handling but deliberately does not show a
-          // system permission prompt. Consent is requested from Settings.
-          unawaited(PushNotificationService.instance.initialize());
+          final userId = AuthService.instance.userId;
+          if (userId != null) {
+            unawaited(
+              PushNotificationService.instance.activateForSignedInUser(userId),
+            );
+          }
         }
         return MaterialApp(
           title: 'Tradeworks One',

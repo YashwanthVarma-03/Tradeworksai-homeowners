@@ -31,6 +31,16 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Configure Firebase for release push
+        env:
+          FIREBASE_ANDROID_CONFIG_BASE64: ${{ secrets.FIREBASE_ANDROID_CONFIG_BASE64 }}
+        run: |
+          if [ -z "$FIREBASE_ANDROID_CONFIG_BASE64" ]; then
+            echo "Missing FIREBASE_ANDROID_CONFIG_BASE64 repository secret for tradeworksai-senthil-dev-env." >&2
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_ANDROID_CONFIG_BASE64" | base64 --decode > android/app/google-services.json
+
       - name: Analyze
         continue-on-error: true
         run: flutter analyze lib test --no-fatal-warnings --no-fatal-infos
@@ -40,7 +50,26 @@ jobs:
         run: flutter test
 
       - name: Build release APK
-        run: flutter build apk --release --dart-define=TRADEWORKS_GOOGLE_WEB_CLIENT_ID=${{ secrets.TRADEWORKS_GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          config=android/app/google-services.json
+          project_id="$(jq -er '.project_info.project_id' "$config")"
+          if [ "$project_id" != "tradeworksai-senthil-dev-env" ]; then
+            echo "Android Firebase config belongs to $project_id, not tradeworksai-senthil-dev-env." >&2
+            exit 1
+          fi
+          client="$(jq -c '.client[] | select(.client_info.android_client_info.package_name == "com.tradeworksai.homeownersapp")' "$config")"
+          if [ -z "$client" ]; then
+            echo "Firebase Android app com.tradeworksai.homeownersapp is missing from google-services.json." >&2
+            exit 1
+          fi
+          api_key="$(jq -er '.api_key[0].current_key' <<< "$client")"
+          app_id="$(jq -er '.client_info.mobilesdk_app_id' <<< "$client")"
+          sender_id="$(jq -er '.project_info.project_number' "$config")"
+          flutter build apk --release \
+            --dart-define="FIREBASE_API_KEY=$api_key" \
+            --dart-define="FIREBASE_APP_ID=$app_id" \
+            --dart-define="FIREBASE_MESSAGING_SENDER_ID=$sender_id" \
+            --dart-define="FIREBASE_PROJECT_ID=$project_id"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

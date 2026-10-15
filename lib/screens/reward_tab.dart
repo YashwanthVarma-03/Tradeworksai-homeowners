@@ -231,6 +231,8 @@ class _RewardTabState extends State<RewardTab> {
         : 'Earn service credits on qualifying customer-paid spend and at milestones. ';
     return '$overview'
         'There are no codes, and nothing is applied without you asking. '
+        'You choose how much credit to apply when you book: up to the full price on an upfront-price job, the diagnostic fee on a job where you approve the cap (and more when you approve it), and nothing on a free estimate visit until you accept the estimate. '
+        'Credit left over after the final invoice, or on a cancelled job, goes back to your balance. '
         'Credits lower what you pay, so they also lower what this job earns and what it adds toward your band. '
         'Credits are used soonest-expiring first, with milestones before band credits.';
   }
@@ -414,7 +416,7 @@ class _RewardTabState extends State<RewardTab> {
                   d['availableCredits']),
               style: TwType.display(context).copyWith(color: AppTheme.purple)),
           const SizedBox(height: 6),
-          Text('Tell us how much to apply when you book',
+          Text('Choose how much credit to apply when you book',
               style: TwType.bodySm()),
           if (showBreakdown) ...[
             const SizedBox(height: 12),
@@ -837,12 +839,14 @@ class _RewardTabState extends State<RewardTab> {
             ('milestone_bonus', _) => 'milestone',
             ('issue', _) => 'grant',
             ('redeem', _) || ('redemption', _) => 'applied',
+            ('returned', _) || ('credit_returned', _) => 'returned',
             _ => rawType,
           };
     const labels = {
       'earned': 'Earned',
       'earns_nothing': 'Fully covered by credits · No credits earned',
       'applied': 'Applied',
+      'returned': 'Credit returned',
       'milestone': 'Milestone',
       'grant': 'Grant',
       'locked': 'Locked',
@@ -850,7 +854,14 @@ class _RewardTabState extends State<RewardTab> {
       'expired': 'Expired'
     };
     final linked =
-        const ['earned', 'earns_nothing', 'applied', 'locked', 'reserved']
+        const [
+          'earned',
+          'earns_nothing',
+          'applied',
+          'returned',
+          'locked',
+          'reserved'
+        ]
                 .contains(type) &&
             int.tryParse('${row['workOrderId']}') != null;
     final when = _date(row['occurredAt'] ?? row['createdAt']);
@@ -860,7 +871,8 @@ class _RewardTabState extends State<RewardTab> {
         .join(' · ');
     final note = _text(row['note'] ?? row['description'] ?? row['reason']);
     final basis = [
-      if (type == 'applied') 'Applied at booking',
+      if (type == 'applied') 'Applied to this job',
+      if (type == 'returned') 'Back in your balance',
       if (_number(row['customerPaidAmount'] ?? row['paidAmount']) != null)
         '${_money(row['customerPaidAmount'] ?? row['paidAmount'])} paid',
       if (_number(row['rateSnapshot'] ?? row['rate']) != null)
@@ -869,7 +881,8 @@ class _RewardTabState extends State<RewardTab> {
       if (when.isNotEmpty) when,
     ].join(' · ');
     final amount = _number(row['amount']);
-    final credit = const ['earned', 'milestone', 'grant'].contains(type);
+    final credit =
+        const ['earned', 'milestone', 'grant', 'returned'].contains(type);
     final amountText = amount == null
         ? '—'
         : type == 'applied' || amount < 0

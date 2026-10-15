@@ -134,6 +134,8 @@ class _SignupPageState extends State<SignupPage> {
     try {
       await AuthService.instance.signInWithGoogleInteractive();
       _completeSocialOAuthIfReady();
+    } on GoogleSignInCancelled {
+      _socialOAuthPending = false;
     } catch (e) {
       _socialOAuthPending = false;
       if (mounted) _error(e);

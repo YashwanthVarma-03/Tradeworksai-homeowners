@@ -103,11 +103,12 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
             widget.workOrder?['service_credits_applied'],
       );
 
-  /// Only an Upfront-price booking knows its total when it's booked.
+  /// What is due now: the upfront price or Cap Approval diagnostic, less
+  /// applied credit. Free-estimate visits have nothing due at booking.
   double? get _youPay {
     final type = _text(widget.workOrder?['work_order_type'],
         _text(widget.workOrder?['workOrderType'], 'rate_card'));
-    if (type != 'rate_card') return null;
+    if (type == 'quote_request') return null;
     final amount = readAmount(_price);
     if (amount == null) return null;
     final due = amount - (_creditsApplied ?? 0);

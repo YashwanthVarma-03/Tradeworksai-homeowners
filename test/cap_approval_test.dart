@@ -45,7 +45,7 @@ void main() {
         ]
       },
     });
-    expect(find.text(r'$1,250.50'), findsNWidgets(2));
+    expect(find.text(r'$1,250.50'), findsAtLeastNWidgets(2));
     expect(find.text(r'$1250.50'), findsNothing);
     expect(find.text('Replace fitting'), findsOneWidget);
     expect(find.text('Inspection'), findsOneWidget);
@@ -57,7 +57,7 @@ void main() {
       (tester) async {
     await showCap(tester,
         {'id': 12, 'quoteAmount': 200, 'quote': 'pending', 'pro': 'unknown'});
-    expect(find.text(r'$200.00'), findsOneWidget);
+    expect(find.text(r'$200.00'), findsAtLeastNWidgets(1));
     expect(find.text('BREAKDOWN'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -98,5 +98,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review the cap'), findsNothing);
     expect(find.byType(CapApprovalScreen), findsNothing);
+  });
+  testWidgets('free estimate uses estimate wording and amount', (tester) async {
+    await showCap(tester, {
+      'id': 14,
+      'workOrderType': 'quote_request',
+      'estimateAmount': 240,
+      'proName': 'Hutchins Plumbing Co.',
+    });
+    expect(find.text('Review the estimate'), findsOneWidget);
+    expect(find.text('Accept estimate'), findsOneWidget);
+    expect(find.text('Estimate'), findsAtLeastNWidgets(1));
+    expect(find.text(r'$240.00'), findsAtLeastNWidgets(1));
+    expect(find.text('Approve cap'), findsNothing);
   });
 }

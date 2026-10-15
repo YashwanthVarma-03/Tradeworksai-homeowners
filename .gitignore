@@ -35,6 +35,8 @@ website_full_ref/
 .pub-cache/
 .pub/
 /build/
+/test/failures/
+/reports/
 
 # Symbolication related
 app.*.symbols
@@ -57,3 +59,8 @@ scratch/
 test_api.dart
 .gradle/
 **/android/.gradle/
+
+# Private push build configuration. Commit only the example template.
+.env.push
+android/app/google-services.json
+.firebase-config/

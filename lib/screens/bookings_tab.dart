@@ -2,6 +2,7 @@ import '../widgets/loading_skeleton.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../utils/credit_rules.dart';
 import '../utils/display_format.dart';
 import '../utils/work_order_status.dart';
 import '../theme.dart';
@@ -368,7 +369,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
         actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
         title: Text('Cancel Booking', style: TwType.h3()),
         content: Text(
-          'Are you sure you want to cancel this booking? Cancel is free before work begins, with no homeowner fees.',
+          'Are you sure you want to cancel this booking? Cancel is free before work begins, with no homeowner fees. Any credits applied go back to your balance.',
           style: TwType.bodySm(),
         ),
         actions: [
@@ -765,11 +766,19 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
             const SizedBox(height: 14),
             primary
                 ? _buildPrimaryAction(
-                    label: 'Review the cap',
+                    label:
+                        '${job['workOrderType'] ?? job['work_order_type']}' ==
+                                'quote_request'
+                            ? 'Review the estimate'
+                            : 'Review the cap',
                     onPressed: () => _openCapApproval(job),
                   )
                 : _buildOutlineAction(
-                    label: 'Review the cap',
+                    label:
+                        '${job['workOrderType'] ?? job['work_order_type']}' ==
+                                'quote_request'
+                            ? 'Review the estimate'
+                            : 'Review the cap',
                     onPressed: () => _openCapApproval(job),
                   ),
           ] else if (isLive) ...[
@@ -1302,7 +1311,12 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     required bool isCancelled,
   }) {
     final start = _parseDateTime(job['scheduledStart']?.toString());
-    if (isCancelled) return '${_monthDayLabel(start)} · Cancelled by you';
+    if (isCancelled) {
+      final returned = CreditRules.returnedOnCancel(job);
+      return returned > 0
+          ? '${_monthDayLabel(start)} · Credits returned: ${formatUsd(returned)}'
+          : _monthDayLabel(start);
+    }
     final amount = _paidAmount(job);
     return amount == null
         ? '${_monthDayLabel(start)} · Paid'

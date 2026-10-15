@@ -172,7 +172,7 @@ class _SupportPageState extends State<SupportPage> {
       'cat': 'Rewards',
       'q': 'How do I use my service credits?',
       'a':
-          'Your credits show on your account and on any booking. When you book, our team applies the credits you want to use — there are no codes, and nothing is applied without you asking. Credits come off what you pay your pro.'
+          'Your credits show on your account and on any booking. You choose how much credit to apply when you book, and it comes off what you pay your pro right away — there are no codes. On a job where you approve the cap, credit covers the diagnostic at booking and you can apply more when you approve the cap. On a free estimate visit, you apply credit when you accept the estimate. Credit left over after the final invoice, or on a cancelled job, goes back to your balance.'
     },
     {
       'cat': 'Profile & home profile',

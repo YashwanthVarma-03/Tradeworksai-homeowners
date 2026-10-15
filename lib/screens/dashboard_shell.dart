@@ -20,7 +20,10 @@ import 'signup_page.dart';
 import 'support_page.dart';
 import '../services/auth_service.dart';
 import '../services/homeowner_service.dart';
+import '../services/notification_routing.dart';
 import '../services/service_location.dart';
+import '../utils/notification_route_launcher.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/main_bottom_navigation.dart';
 
 class DashboardShell extends StatefulWidget {
@@ -35,7 +38,6 @@ class _DashboardShellState extends State<DashboardShell>
   int _currentIndex = 0;
   int _bookingsInitialSegment = 0;
   Key _bookingsTabKey = UniqueKey();
-  Timer? _backgroundSyncTimer;
 
   @override
   void initState() {
@@ -44,19 +46,18 @@ class _DashboardShellState extends State<DashboardShell>
     // new shell (app launch, login, or logout) must never inherit it.
     unawaited(ServiceLocation.clear());
     AppTabNavigation.requestedTab.addListener(_applyRequestedTab);
+    NotificationNavigation.requestedRoute.addListener(_applyRequestedRoute);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (AuthService.instance.isAuthenticated) {
-        _startBackgroundSync();
-      }
+      _applyRequestedRoute();
     });
   }
 
   @override
   void dispose() {
-    _backgroundSyncTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     AppTabNavigation.requestedTab.removeListener(_applyRequestedTab);
+    NotificationNavigation.requestedRoute.removeListener(_applyRequestedRoute);
     super.dispose();
   }
 
@@ -65,24 +66,9 @@ class _DashboardShellState extends State<DashboardShell>
     if (state == AppLifecycleState.resumed) {
       if (AuthService.instance.isAuthenticated) {
         unawaited(HomeownerService.instance.syncInBackground());
-        _startBackgroundSync();
+        unawaited(HomeownerService.instance.fetchNotifications());
       }
-      return;
     }
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
-      _backgroundSyncTimer?.cancel();
-      _backgroundSyncTimer = null;
-    }
-  }
-
-  void _startBackgroundSync() {
-    if (!AuthService.instance.isAuthenticated) return;
-    _backgroundSyncTimer?.cancel();
-    _backgroundSyncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(HomeownerService.instance.syncInBackground());
-    });
   }
 
   void _applyRequestedTab() {
@@ -90,6 +76,49 @@ class _DashboardShellState extends State<DashboardShell>
     if (index == null || !mounted || index < 0 || index > 4) return;
     _selectTab(index);
     AppTabNavigation.requestedTab.value = null;
+  }
+
+  void _applyRequestedRoute() {
+    final route = NotificationNavigation.requestedRoute.value;
+    if (route == null || !mounted || !AuthService.instance.isAuthenticated) {
+      return;
+    }
+    NotificationNavigation.requestedRoute.value = null;
+    if (route.destination == NotificationDestination.rewards) {
+      _selectTab(3);
+      return;
+    }
+    if (route.destination == NotificationDestination.home) {
+      _selectTab(0);
+      return;
+    }
+    if (route.destination == NotificationDestination.activity) {
+      _openActivity();
+      return;
+    }
+    unawaited(_openRequestedRoute(route));
+  }
+
+  void _openActivity() {
+    if (!mounted) return;
+    unawaited(Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const InboxScreen(initialTab: 1)),
+    ));
+  }
+
+  Future<void> _openRequestedRoute(NotificationRouteData route) async {
+    try {
+      if (!await openNotificationRoute(context, route)) _openActivity();
+    } catch (error) {
+      if (!mounted) return;
+      AppNotification.showError(
+        context,
+        error,
+        fallback: 'This item is unavailable. Your activity is still here.',
+      );
+      _openActivity();
+    }
   }
 
   void _selectTab(int index) {

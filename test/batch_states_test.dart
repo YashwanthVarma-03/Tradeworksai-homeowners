@@ -24,11 +24,18 @@ void main() {
     expect(
         WorkOrderStatus.fromJob(
             {'status': 'cancelled', 'cancelledBy': 'platform'}).label,
-        'Cancelled');
+        'Cancelled by TradeWorks');
     expect(
         WorkOrderStatus.fromJob(
             {'status': 'cancelled', 'cancelledBy': 'homeowner'}).label,
         'You cancelled');
+    expect(
+        WorkOrderStatus.fromJob({
+          'status': 'cancelled',
+          'cancelledBy': 'contractor',
+          'proName': 'Hutchins Plumbing Co.'
+        }).label,
+        'Cancelled by Hutchins Plumbing Co.');
     expect(WorkOrderStatus.from('customer_no_show').isTerminalWithoutProgress,
         isTrue);
   });

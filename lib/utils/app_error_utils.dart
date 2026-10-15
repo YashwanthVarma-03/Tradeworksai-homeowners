@@ -70,6 +70,10 @@ class AppErrorUtils {
       return 'This booking can no longer be rescheduled.';
     }
 
+    if (lowerRaw.contains('credit_rule')) {
+      return 'That much credit can\'t be applied to this job. Choose a smaller amount.';
+    }
+
     if (lowerRaw.contains('booking_cap')) {
       return 'You have reached the maximum number of open bookings. Complete or cancel an existing booking before creating a new one.';
     }

@@ -6,20 +6,25 @@ import 'package:intl/intl.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
 import '../services/homeowner_service.dart';
+import '../services/notification_routing.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
+import '../utils/credit_rules.dart';
+import '../utils/display_format.dart';
+import '../utils/notification_route_launcher.dart';
 import '../utils/waiting_on_you.dart';
 import '../utils/work_order_labels.dart' as labels;
 import '../utils/work_order_status.dart';
 import '../widgets/loading_skeleton.dart';
 import '../widgets/offline_state.dart';
+import '../widgets/main_bottom_navigation.dart';
 import 'chat_screen.dart';
-import 'work_orders/work_order_detail.dart';
 
 /// Inbox (settled Oct 1, G-52): two tabs — Messages (one thread per pro) and
 /// Activity (notifications and alerts, each opening its work order).
 class InboxScreen extends StatelessWidget {
-  const InboxScreen({super.key});
+  const InboxScreen({super.key, this.initialTab = 0});
+  final int initialTab;
   @override
   Widget build(BuildContext context) => Scaffold(
         backgroundColor: AppTheme.pageBackground,
@@ -27,12 +32,13 @@ class InboxScreen extends StatelessWidget {
           title: 'Inbox',
           onBack: () => Navigator.maybePop(context),
         ),
-        body: const InboxTab(),
+        body: InboxTab(initialTab: initialTab),
       );
 }
 
 class InboxTab extends StatefulWidget {
-  const InboxTab({super.key});
+  const InboxTab({super.key, this.initialTab = 0});
+  final int initialTab;
   @override
   State<InboxTab> createState() => _InboxTabState();
 }
@@ -153,6 +159,7 @@ class _InboxTabState extends State<InboxTab> {
         constraints: BoxConstraints(maxWidth: TwLayout.maxContent + gutter * 2),
         child: DefaultTabController(
           length: 2,
+          initialIndex: widget.initialTab,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -316,11 +323,10 @@ class _UnreadDot extends StatelessWidget {
       );
 }
 
-/// One Activity row (A08b). Read from the notifications feed when the backend
-/// has one ([HomeownerService.fetchNotifications]); until then derived from
-/// the work-order list, so the tab works today.
+/// One Activity row (A08b). Read from the notifications feed when it has rows;
+/// otherwise derived from the work-order list so the tab remains useful.
 ///
-/// Feed row (Needs backend): `{id, type, title, work_order_id, wo_number,
+/// Feed row: `{id, type, title, work_order_id, wo_number,
 /// pro_name, waiting_on_you, created_at, read_at}` where `type` is one of
 /// reminder · cap · estimate · reschedule · receipt · status · completed ·
 /// credit.
@@ -335,7 +341,9 @@ class ActivityItem {
     this.proName = '',
     this.waitingOnYou = false,
     this.unread = false,
+    this.targetId = '',
     this.job,
+    this.body = '',
   });
 
   final String id;
@@ -347,9 +355,13 @@ class ActivityItem {
   final String proName;
   final bool waitingOnYou;
   final bool unread;
+  final String targetId;
 
   /// Present on derived rows, so the tap needs no lookup.
   final Map<String, dynamic>? job;
+
+  /// Supporting notification copy. Empty hides the line.
+  final String body;
 
   factory ActivityItem.fromApi(Map<String, dynamic> row) {
     String text(dynamic v) {
@@ -374,6 +386,11 @@ class ActivityItem {
       waitingOnYou:
           row['waiting_on_you'] == true || row['waitingOnYou'] == true,
       unread: text(row['read_at'] ?? row['readAt']).isEmpty,
+      targetId: text(row['channel_id'] ??
+          row['channelId'] ??
+          row['work_order_id'] ??
+          row['workOrderId']),
+      body: text(row['body']),
     );
   }
 }
@@ -387,18 +404,21 @@ class InboxActivityView extends StatefulWidget {
 class _InboxActivityViewState extends State<InboxActivityView> {
   List<ActivityItem> _items = const [];
   bool _loading = true;
+  bool _markingAllRead = false;
   Object? _error;
 
   @override
   void initState() {
     super.initState();
     HomeownerService.instance.syncVersion.addListener(_sync);
+    HomeownerService.instance.notificationVersion.addListener(_sync);
     _load();
   }
 
   @override
   void dispose() {
     HomeownerService.instance.syncVersion.removeListener(_sync);
+    HomeownerService.instance.notificationVersion.removeListener(_sync);
     super.dispose();
   }
 
@@ -432,6 +452,23 @@ class _InboxActivityViewState extends State<InboxActivityView> {
     }
   }
 
+  Future<void> _markAllRead() async {
+    if (_markingAllRead) return;
+    setState(() => _markingAllRead = true);
+    try {
+      await HomeownerService.instance.markAllNotificationsRead();
+      await _load(refresh: true);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not mark activity as read.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _markingAllRead = false);
+    }
+  }
+
   /// Until the feed exists: what is waiting on the homeowner (A2), a
   /// reminder for a visit in the next 48 hours, and the status steps the pro
   /// has tapped. Never a message attributed to a pro.
@@ -454,7 +491,7 @@ class _InboxActivityViewState extends State<InboxActivityView> {
       final service = labels.jobServiceName(job);
       final pro = labels.jobProName(job, '');
       ActivityItem item(String type, String title, DateTime date,
-              {bool waiting = false}) =>
+              {bool waiting = false, String body = ''}) =>
           ActivityItem(
             id: '$wo:$type:${date.toIso8601String()}',
             type: type,
@@ -465,6 +502,7 @@ class _InboxActivityViewState extends State<InboxActivityView> {
             proName: pro,
             waitingOnYou: waiting,
             job: job,
+            body: body,
           );
 
       final waiting = WaitingOnYou.itemFor(job);
@@ -512,6 +550,34 @@ class _InboxActivityViewState extends State<InboxActivityView> {
         final date = DateTime.tryParse('${step.$3}');
         if (date != null) items.add(item(step.$1, step.$2, date.toLocal()));
       }
+
+      final cancelledAt = DateTime.tryParse(
+          '${timeline['cancelledAt'] ?? timeline['cancelled_at'] ?? job['cancelledAt'] ?? job['cancelled_at']}');
+      if (cancelledAt != null && status.isTerminalWithoutProgress) {
+        final returned = CreditRules.returnedOnCancel(job);
+        items.add(item(
+          'booking_cancelled',
+          '${status.label} · $service',
+          cancelledAt.toLocal(),
+          body: returned > 0
+              ? 'Credits returned to your balance: ${formatUsd(returned)}'
+              : '',
+        ));
+      }
+
+      final rebookedAt = DateTime.tryParse(
+          '${timeline['rebookedAt'] ?? timeline['rebooked_at'] ?? job['rebookedAt'] ?? job['rebooked_at']}');
+      if (rebookedAt != null &&
+          start != null &&
+          !status.isTerminalWithoutProgress) {
+        items.add(item(
+          'rebooked',
+          'TradeWorks moved your visit',
+          rebookedAt.toLocal(),
+          body:
+              '$service · ${labels.visitPhrase(start, labels.jobVisitEnd(job))} with $who',
+        ));
+      }
     }
     return items;
   }
@@ -520,35 +586,40 @@ class _InboxActivityViewState extends State<InboxActivityView> {
     if (item.unread && item.job == null && item.id.isNotEmpty) {
       unawaited(HomeownerService.instance.markNotificationRead(item.id));
     }
-    var job = item.job;
-    final id = item.workOrderId;
-    if (job == null && id != null) {
-      try {
-        job = await HomeownerService.instance.findWorkOrder(id);
-      } catch (_) {
-        job = null;
-      }
+    final route = NotificationRouteData.fromData({
+      'type': item.type,
+      'id': item.targetId.isNotEmpty
+          ? item.targetId
+          : item.workOrderId?.toString() ?? '',
+      'contractor_name': item.proName,
+    });
+    if (route.destination == NotificationDestination.rewards) {
+      Navigator.popUntil(context, (candidate) => candidate.isFirst);
+      AppTabNavigation.request(3);
+      return;
     }
-    if (!mounted || job == null) return;
-    final opened = job;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => WorkOrderDetailScreen(
-          job: opened,
-          // Like Home: a receipt row lands on Job money (A08b).
-          focusMoney: item.type == 'receipt',
-        ),
-      ),
-    );
-    if (mounted) _load(refresh: true);
+    if (route.destination == NotificationDestination.home) {
+      Navigator.popUntil(context, (candidate) => candidate.isFirst);
+      AppTabNavigation.request(0);
+      return;
+    }
+    try {
+      await openNotificationRoute(context, route);
+    } catch (_) {
+      // Keep the feed usable during backend rollout; the refresh below will
+      // reconcile stale or removed work-order rows.
+    }
+    if (mounted) {
+      _load(refresh: true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) return const SkeletonPage(layout: SkeletonLayout.inbox);
-    if (_error != null)
+    if (_error != null) {
       return OfflineState(onRetry: () => _load(refresh: true));
+    }
     final now = DateTime.now();
     bool isToday(DateTime d) =>
         d.year == now.year && d.month == now.month && d.day == now.day;
@@ -562,6 +633,14 @@ class _InboxActivityViewState extends State<InboxActivityView> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(gutter, 0, gutter, TwSpace.s28),
         children: [
+          if (_items.any((item) => item.unread && item.job == null))
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _markingAllRead ? null : _markAllRead,
+                child: const Text('Mark all read'),
+              ),
+            ),
           if (_items.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: TwSpace.s40),
@@ -614,6 +693,16 @@ class _ActivityRow extends StatelessWidget {
 
   (IconData, Color, Color) get _look => switch (item.type) {
         'reminder' => (Icons.event_outlined, AppTheme.blueTint, AppTheme.blue),
+        'rebooked' => (
+            Icons.event_available_outlined,
+            AppTheme.blueTint,
+            AppTheme.blue
+          ),
+        'booking_cancelled' => (
+            Icons.event_busy_outlined,
+            AppTheme.subtle,
+            AppTheme.textSecondary
+          ),
         'cap' || 'estimate' => (
             Icons.description_outlined,
             AppTheme.amberTint,
@@ -673,6 +762,10 @@ class _ActivityRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(item.title, style: TwType.title()),
+                  if (item.body.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(item.body, style: TwType.bodySm()),
+                  ],
                   const SizedBox(height: TwSpace.s4),
                   Text.rich(
                     TextSpan(children: [
@@ -724,4 +817,3 @@ class _ActivityRow extends StatelessWidget {
     );
   }
 }
-

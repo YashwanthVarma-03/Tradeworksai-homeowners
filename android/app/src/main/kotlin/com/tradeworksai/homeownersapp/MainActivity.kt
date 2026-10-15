@@ -1,4 +1,4 @@
-package com.tradeworksai.homeowners_app
+package com.tradeworksai.homeownersapp
 
 import io.flutter.embedding.android.FlutterActivity
 

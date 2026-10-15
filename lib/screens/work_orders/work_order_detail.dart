@@ -3,12 +3,10 @@ import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import '../../ui/tw.dart';
 import '../../widgets/capsules.dart';
-import '../../widgets/alert_row.dart';
 import '../../services/document_upload.dart';
-import '../../utils/arrival_check_state.dart';
-import 'arrival_check.dart';
 import 'no_show_reply.dart';
 import 'package:flutter/material.dart';
+import '../../utils/credit_rules.dart';
 import '../../utils/display_format.dart';
 import '../../utils/work_order_status.dart';
 import '../../theme.dart';
@@ -268,7 +266,9 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
             ? TwStickyBar(
                 children: [
                   TwPrimaryButton(
-                    label: 'Review the cap',
+                    label: _jobType() == 'quote_request'
+                        ? 'Review the estimate'
+                        : 'Review the cap',
                     onPressed: _openCapReview,
                   ),
                 ],
@@ -286,27 +286,6 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                 Text(woId, style: TwType.meta()),
                 const SizedBox(height: 10),
                 _statusChip(),
-                // No-show (Oct 1): only while still Booked after the visit
-                // window (ArrivalCheckState.pending); opens the report directly.
-                if (ArrivalCheckState.pending(_job))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 14),
-                    child: AlertRow(
-                      icon: Icons.schedule_rounded,
-                      title: 'Your visit window has passed',
-                      body: 'Not started by your pro.',
-                      footer: Align(
-                        alignment: Alignment.centerLeft,
-                        child: TwTextAction(
-                          label: 'Report a no-show',
-                          onPressed: () async {
-                            if (await openArrivalCheck(context, _job) &&
-                                mounted) Navigator.pop(context, true);
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
                 if (resolved.state == WorkOrderState.noShowCustomer)
                   Padding(
                       padding: const EdgeInsets.only(top: 14),
@@ -917,6 +896,10 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       _ => 'Upfront price',
     };
     final hasCredits = credits != null && credits > 0;
+    final returned = CreditRules.creditReturned(_job);
+    final returnedOnCancel = CreditRules.returnedOnCancel(_job);
+    final closedWithoutWork =
+        WorkOrderStatus.fromJob(_job).isTerminalWithoutProgress;
     final meta = TwType.meta();
 
     return Column(
@@ -957,10 +940,25 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                   const SizedBox(height: TwSpace.s4),
                   Text('The pro sends you an estimate', style: meta),
                 ],
-                if (hasCredits) ...[
+                if (closedWithoutWork && returnedOnCancel > 0) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Credits returned to your balance: '
+                    '${formatUsd(returnedOnCancel)}',
+                    style: TwType.label(color: AppTheme.purple),
+                  ),
+                ] else if (hasCredits) ...[
                   const SizedBox(height: 14),
                   _moneyRow('Credits applied', '−${formatUsd(credits)}',
                       valueColor: AppTheme.purple),
+                  if (returned > 0) ...[
+                    const SizedBox(height: 10),
+                    _moneyRow(
+                      'Credit returned to your balance',
+                      '+${formatUsd(returned)}',
+                      valueColor: AppTheme.purple,
+                    ),
+                  ],
                 ],
                 if (completed && paid != null) ...[
                   if (hasCredits) ...[
@@ -970,6 +968,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                   const SizedBox(height: 10),
                   _moneyRow('You paid the pro', formatUsd(paid), strong: true),
                 ] else if (!completed &&
+                    !closedWithoutWork &&
                     type == 'rate_card' &&
                     price != null) ...[
                   if (hasCredits) ...[
@@ -1262,7 +1261,14 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
           .performWorkOrderAction(workOrderId: woId, action: 'cancel');
       if (!mounted) return;
 
-      AppNotification.showSuccess(context, 'Booking cancelled.');
+      final credit = CreditRules.creditsApplied(_job);
+      AppNotification.showSuccess(
+        context,
+        credit > 0
+            ? 'Booking cancelled. ${formatUsd(credit)} in credits is back in '
+                'your balance.'
+            : 'Booking cancelled.',
+      );
       didCancel = true;
       Navigator.pop(context, true);
     } catch (error) {

@@ -6,7 +6,10 @@ import '../../widgets/app_notification.dart';
 import 'package:intl/intl.dart';
 
 import '../../utils/display_format.dart';
+import '../../utils/credit_rules.dart';
+import '../../utils/transaction_id.dart';
 import '../../widgets/alert_row.dart';
+import '../../widgets/credit_apply_card.dart';
 import '../../widgets/transaction_guard.dart';
 import '../../ui/tw.dart';
 import 'reschedule_work_order.dart';
@@ -33,6 +36,30 @@ class CapApprovalScreen extends StatefulWidget {
 class _CapApprovalScreenState extends State<CapApprovalScreen> {
   bool _isProcessing = false;
   bool _isChoosingSlot = false;
+  double? _balance;
+  double _creditToApply = 0;
+  late final String _creditRequestId = TransactionId.uuid();
+
+  bool get _isEstimate =>
+      '${widget.job['workOrderType'] ?? widget.job['work_order_type'] ?? ''}'
+          .toLowerCase() ==
+      'quote_request';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBalance();
+  }
+
+  Future<void> _loadBalance() async {
+    try {
+      final rewards = await HomeownerService.instance.fetchRewards();
+      final balance = CreditRules.availableBalance(rewards);
+      if (mounted && balance != null) setState(() => _balance = balance);
+    } catch (_) {
+      // Approval remains available without credit if rewards cannot load.
+    }
+  }
   Map<String, dynamic> get _quote => _asMap(widget.job['quote']);
   Map<String, dynamic> get _pro => _asMap(widget.job['pro']);
 
@@ -53,7 +80,9 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
             widget.job['quoteAmount'] ??
             widget.job['quote_amount'] ??
             _quote['total'] ??
-            _quote['totalNTE'],
+            _quote['totalNTE'] ??
+            widget.job['estimateAmount'] ??
+            widget.job['estimate_amount'],
       );
 
   String? get _proName =>
@@ -153,6 +182,8 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
                   contractorId: contractorId!,
                   selectSlotOnly: true,
                   capAmount: _capAmount,
+                  isEstimate: _isEstimate,
+                  creditApplied: _creditToApply,
                 )),
       );
       if (!mounted || slot == null) return;
@@ -160,6 +191,30 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       final endsAt = slot['end'];
       if (!mounted) return;
       setState(() => _isProcessing = true);
+      if (_isEstimate) {
+        await HomeownerService.instance.respondToEstimate(
+          workOrderId: _workOrderId(),
+          accept: true,
+          contractorId: contractorId,
+          startsAt: startsAt,
+          endsAt: endsAt,
+          creditAmount: _creditToApply,
+          creditRequestId: _creditRequestId,
+        );
+        if (mounted) {
+          final workStart = DateTime.tryParse(startsAt ?? '')?.toLocal();
+          final workEnd = DateTime.tryParse(endsAt ?? '')?.toLocal();
+          AppNotification.showInfo(
+            context,
+            workStart == null
+                ? 'Estimate accepted. Your work is booked.'
+                : 'Estimate accepted. Your work is booked for '
+                    '${formatVisit(workStart, workEnd)}.',
+          );
+          Navigator.pop(context, true);
+        }
+        return;
+      }
       await HomeownerService.instance.respondToCap(
         workOrderId: _workOrderId(),
         accept: true,
@@ -168,6 +223,8 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
         contractorId: contractorId,
         startsAt: startsAt,
         endsAt: endsAt,
+        creditAmount: _creditToApply,
+        creditRequestId: _creditRequestId,
       );
 
       if (mounted) {
@@ -203,6 +260,18 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
 
     setState(() => _isProcessing = true);
     try {
+      if (_isEstimate) {
+        await HomeownerService.instance.respondToEstimate(
+          workOrderId: _workOrderId(),
+          accept: false,
+          reason: 'homeowner_declined_estimate',
+        );
+        if (mounted) {
+          AppNotification.showInfo(context, 'Estimate declined.');
+          Navigator.pop(context, true);
+        }
+        return;
+      }
       await HomeownerService.instance.respondToCap(
         workOrderId: _workOrderId(),
         accept: false,
@@ -230,11 +299,21 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.pageBackground,
-        title: Text('Decline this cap?', style: TwType.h3()),
-        content: Text(
-          'The pro will be told you didn\'t approve the cap. Your diagnostic visit stays as booked.',
-          style: TwType.bodySm(),
+        title: Text(
+          _isEstimate ? 'Decline this estimate?' : 'Decline this cap?',
+          style: TwType.h3(),
         ),
+        content: _isEstimate
+            ? Text(
+                'The pro will be told you declined the estimate. You can '
+                'message your pro if you want to discuss it first.',
+                style: TwType.bodySm(),
+              )
+            : Text(
+                'Declining the cap cancels this booking. The pro will be told '
+                'you didn\'t approve it.',
+                style: TwType.bodySm(),
+              ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -267,7 +346,7 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       child: Scaffold(
         backgroundColor: AppTheme.pageBackground,
         appBar: TwAppBar(
-          title: 'Approve the cap',
+          title: _isEstimate ? 'Review the estimate' : 'Approve the cap',
           onBack: () {
             if (!_isProcessing) Navigator.pop(context);
           },
@@ -293,7 +372,12 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('This cap isn\'t ready yet', style: TwType.h2()),
+            Text(
+              _isEstimate
+                  ? 'This estimate isn\'t ready yet'
+                  : 'This cap isn\'t ready yet',
+              style: TwType.h2(),
+            ),
             const SizedBox(height: TwSpace.s8),
             Text(
               'Your pro hasn\'t submitted a price for this job yet. You\'ll be '
@@ -337,6 +421,14 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
                 _amountOrNull(item['amount'] ?? item['total']),
               ),
           ],
+          const SizedBox(height: TwSpace.s28),
+          CreditApplyCard(
+            total: cap,
+            balance: _balance,
+            estimate: _isEstimate,
+            enabled: !_isProcessing && !_isChoosingSlot,
+            onChanged: (value) => setState(() => _creditToApply = value),
+          ),
         ],
       )),
     );
@@ -351,14 +443,15 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TwPrimaryButton(
-              label: 'Approve cap',
+              label: _isEstimate ? 'Accept estimate' : 'Approve cap',
               onPressed: busy ? null : _approve,
               loading: busy,
             ),
             const SizedBox(height: TwSpace.s4),
             Center(
               child: TwTextAction(
-                label: 'Decline this cap',
+                label:
+                    _isEstimate ? 'Decline this estimate' : 'Decline this cap',
                 onPressed: busy ? null : _decline,
                 destructive: true,
               ),
@@ -403,12 +496,16 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
 
   /// v3.3 alert row: tinted icon circle, bold line, one sentence (E01).
   Widget _infoBanner() {
-    return const AlertRow(
+    return AlertRow(
       icon: Icons.info_outline_rounded,
       tint: AppTheme.blueTint,
       iconColor: AppTheme.blue,
-      title: 'You approve a not-to-exceed cap before work begins.',
-      body: 'The final price may be lower — never higher.',
+      title: _isEstimate
+          ? 'You accept the estimate before work begins.'
+          : 'You approve a not-to-exceed cap before work begins.',
+      body: _isEstimate
+          ? 'Then pick a 2-hour window for the work.'
+          : 'The final price may be lower — never higher.',
     );
   }
 
@@ -425,8 +522,8 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
     final meta = [_serviceName, _woNumber].whereType<String>().join(' · ');
     final visit = _diagnosticVisit;
     final fee = _diagnosticFee;
-    final visitText =
-        visit == null ? 'Diagnostic visit' : 'Diagnostic visit · $visit';
+    final visitLabel = _isEstimate ? 'Estimate visit' : 'Diagnostic visit';
+    final visitText = visit == null ? visitLabel : '$visitLabel · $visit';
     return TwCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -499,7 +596,7 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
         child: Column(
           children: [
             Text(
-              'Not to exceed',
+              _isEstimate ? 'Estimate' : 'Not to exceed',
               textAlign: TextAlign.center,
               style: TwType.label(color: AppTheme.textSecondary),
             ),

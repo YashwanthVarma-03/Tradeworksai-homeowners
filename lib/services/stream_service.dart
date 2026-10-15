@@ -1,12 +1,15 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
 import 'api_config.dart';
 import 'auth_service.dart';
+import 'notification_preferences.dart';
+import 'push_notification_config.dart';
 import '../utils/app_error_utils.dart';
 
 class StreamService extends ChangeNotifier {
@@ -25,6 +28,7 @@ class StreamService extends ChangeNotifier {
   Future<void>? _connectInFlight;
   String? _lastError;
   DateTime? _lastFailureAt;
+  String? _registeredPushToken;
   static const Duration _connectFailureCooldown = Duration(seconds: 15);
 
   StreamChatClient? get client => _client;
@@ -207,6 +211,7 @@ class StreamService extends ChangeNotifier {
             token,
           );
         }
+        await _syncPushDeviceFromCache();
         _lastError = null;
         _lastFailureAt = null;
       } catch (e) {
@@ -233,6 +238,58 @@ class StreamService extends ChangeNotifier {
     } catch (_) {}
     _lastError = null;
     notifyListeners();
+  }
+
+  Future<void> _syncPushDeviceFromCache() async {
+    if (!PushNotificationConfig.isConfigured) return;
+    try {
+      final preferences = await NotificationPreferences.loadCached() ??
+          const NotificationPreferences();
+      final token = await FirebaseMessaging.instance.getToken(
+        vapidKey: kIsWeb && PushNotificationConfig.vapidKey.isNotEmpty
+            ? PushNotificationConfig.vapidKey
+            : null,
+      );
+      if (token == null || token.isEmpty) return;
+      await syncPushDevice(token, enabled: preferences.pushMessages);
+    } catch (_) {
+      // Chat stays available even when the push provider is not configured.
+    }
+  }
+
+  Future<void> syncPushDevice(String token, {required bool enabled}) async {
+    final client = _client;
+    if (client == null || client.state.currentUser == null || token.isEmpty) {
+      return;
+    }
+    if (enabled) {
+      await client.addDevice(token, PushProvider.firebase);
+      _registeredPushToken = token;
+      return;
+    }
+    await client.removeDevice(token);
+    if (_registeredPushToken == token) _registeredPushToken = null;
+  }
+
+  Future<Channel> openChannelById(
+    String channelId, {
+    bool forceReconnect = false,
+  }) async {
+    final rawId = channelId.trim();
+    if (rawId.isEmpty) {
+      throw Exception('This conversation could not be opened.');
+    }
+    await ensureConnected(forceReconnect: forceReconnect);
+    final client = _client;
+    if (client == null || client.state.currentUser == null) {
+      throw Exception('Chat is not available right now.');
+    }
+    final separator = rawId.indexOf(':');
+    final type = separator > 0 ? rawId.substring(0, separator) : 'messaging';
+    final id = separator > 0 ? rawId.substring(separator + 1) : rawId;
+    final channel = client.channel(type, id: id);
+    await channel.watch();
+    return channel;
   }
 
   Future<Channel> openDirectMessageChannel({

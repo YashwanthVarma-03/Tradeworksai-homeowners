@@ -15,6 +15,7 @@ import '../widgets/offline_state.dart';
 class ChatScreen extends StatefulWidget {
   final String contractorId;
   final String contractorName;
+  final String? channelId;
 
   /// Kept so existing callers compile. It no longer pre-selects a job:
   /// a message is never auto-assigned (decisions §8).
@@ -27,7 +28,15 @@ class ChatScreen extends StatefulWidget {
     required this.contractorName,
     this.jobReference,
     this.existingChannel,
-  });
+  }) : channelId = null;
+
+  const ChatScreen.forChannel({
+    super.key,
+    required this.channelId,
+    this.contractorName = 'Messages',
+  })  : contractorId = '',
+        jobReference = null,
+        existingChannel = null;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -55,6 +64,7 @@ class _ChatScreenState extends State<ChatScreen> {
   /// work-order list (decisions §8). Nothing is pre-selected, even when chat
   /// was opened from a work order: a message is never auto-assigned.
   Future<void> _loadJobsWithPro() async {
+    if (widget.contractorId.isEmpty) return;
     try {
       final data = await HomeownerService.instance.fetchWorkOrders();
       final tabs = data['tabs'];
@@ -209,11 +219,16 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _initChannel({bool forceReconnect = false}) async {
     try {
       final channel = widget.existingChannel ??
-          await StreamService.instance.openDirectMessageChannel(
-            otherUserId: widget.contractorId,
-            otherUserName: widget.contractorName,
-            forceReconnect: forceReconnect,
-          );
+          (widget.channelId != null
+              ? await StreamService.instance.openChannelById(
+                  widget.channelId!,
+                  forceReconnect: forceReconnect,
+                )
+              : await StreamService.instance.openDirectMessageChannel(
+                  otherUserId: widget.contractorId,
+                  otherUserName: widget.contractorName,
+                  forceReconnect: forceReconnect,
+                ));
 
       if (!mounted) return;
       setState(() {
@@ -291,8 +306,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   Expanded(
                       child: StreamMessageListView(
                     loadingBuilder: (_) => const SkeletonPage(
-                        layout: SkeletonLayout.chat,
-                        label: 'Loading messages'),
+                        layout: SkeletonLayout.chat, label: 'Loading messages'),
                     dateDividerBuilder: (date) => _ChatDateDivider(date: date),
                     messageBuilder:
                         (context, details, messages, defaultWidget) {
@@ -311,12 +325,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                     : Alignment.centerLeft,
                                 child: Padding(
                                   padding: EdgeInsets.symmetric(
-                                      horizontal: gutter,
-                                      vertical: TwSpace.s4),
+                                      horizontal: gutter, vertical: TwSpace.s4),
                                   child: _JobChip(
                                     label: reference.trim(),
                                     onTap: () => _openJob(
-                                        details.message.extraData['workOrderId'],
+                                        details
+                                            .message.extraData['workOrderId'],
                                         reference.trim()),
                                   ),
                                 ),

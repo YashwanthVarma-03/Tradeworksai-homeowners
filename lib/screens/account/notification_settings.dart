@@ -1,8 +1,8 @@
 import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/auth_service.dart';
+import '../../services/homeowner_service.dart';
 import '../../services/notification_preferences.dart';
 import '../../services/push_notification_service.dart';
 import '../../theme.dart';
@@ -24,11 +24,11 @@ class _NotificationSettingsScreenState
   static const Color _lineSoft = AppTheme.cardBorder;
 
   bool _isLoading = true;
-  bool _pushStatus = false;
-  bool _pushMessages = false;
-  bool _pushCredits = false;
+  bool _pushStatus = true;
+  bool _pushMessages = true;
+  bool _pushCredits = true;
   bool _pushPromos = false;
-  bool _emailReceipts = false;
+  bool _emailReceipts = true;
   bool _emailPromos = false;
   bool _isSaving = false;
 
@@ -68,7 +68,11 @@ class _NotificationSettingsScreenState
     });
 
     try {
-      if (next.hasPushEnabled) {
+      final enabledPushCategory = (!previous.pushStatus && next.pushStatus) ||
+          (!previous.pushMessages && next.pushMessages) ||
+          (!previous.pushCredits && next.pushCredits) ||
+          (!previous.pushPromos && next.pushPromos);
+      if (enabledPushCategory) {
         final allowed =
             await PushNotificationService.instance.requestPermissionAndRegister(
           userId: userId,
@@ -76,16 +80,16 @@ class _NotificationSettingsScreenState
         );
         if (!allowed) {
           throw StateError(
-            PushNotificationService.instance.isAvailable
+            PushNotificationService.instance.isAvailable ||
+                    PushNotificationService.instance.supportsOpenAppAlerts
                 ? 'permission_denied'
                 : 'push_not_configured',
           );
         }
       }
-      final store = await SharedPreferences.getInstance();
-      for (final entry in next.toJson().entries) {
-        await store.setBool('notification_${entry.key}', entry.value);
-      }
+      await HomeownerService.instance
+          .updateNotificationPreferences(next.toApiPayload());
+      await next.cache();
       await PushNotificationService.instance.updatePreferences(
         userId: userId,
         preferences: next,
@@ -131,27 +135,26 @@ class _NotificationSettingsScreenState
 
   Future<void> _loadSettings() async {
     setState(() => _isLoading = true);
+    NotificationPreferences preferences;
     try {
-      final store = await SharedPreferences.getInstance();
-      if (!mounted) return;
-      setState(() {
-        _pushStatus = store.getBool('notification_pushStatus') ?? false;
-        _pushMessages = store.getBool('notification_pushMessages') ?? false;
-        _pushCredits = store.getBool('notification_pushCredits') ?? false;
-        _pushPromos = store.getBool('notification_pushPromos') ?? false;
-        _emailReceipts = store.getBool('notification_emailReceipts') ?? false;
-        _emailPromos = store.getBool('notification_emailPromos') ?? false;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      AppNotification.showError(
-        context,
-        e,
-        fallback: 'We couldn\'t load notification settings. Please try again.',
+      preferences = NotificationPreferences.fromAccount(
+        await HomeownerService.instance.fetchAccount(),
       );
+      await preferences.cache();
+    } catch (_) {
+      preferences = await NotificationPreferences.loadCached() ??
+          const NotificationPreferences();
     }
+    if (!mounted) return;
+    setState(() {
+      _pushStatus = preferences.pushStatus;
+      _pushMessages = preferences.pushMessages;
+      _pushCredits = preferences.pushCredits;
+      _pushPromos = preferences.pushPromos;
+      _emailReceipts = preferences.emailReceipts;
+      _emailPromos = preferences.emailPromos;
+      _isLoading = false;
+    });
   }
 
   @override
@@ -180,10 +183,15 @@ class _NotificationSettingsScreenState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _sectionLabel('Push notifications'),
+                          _sectionLabel(
+                            PushNotificationService.instance.isConfigured
+                                ? 'Push notifications'
+                                : 'Alerts while the app is open',
+                          ),
                           _toggleTile(
                             title: 'Work-order status updates',
-                            subtitle: 'Booked, en route, in progress, completed',
+                            subtitle:
+                                'Booked, en route, in progress, completed',
                             value: _pushStatus,
                             onChanged: _isSaving
                                 ? null
@@ -235,7 +243,8 @@ class _NotificationSettingsScreenState
                           ),
                           _toggleTile(
                             title: 'Promotions & offers',
-                            subtitle: 'Occasional offers · Off unless you turn it on',
+                            subtitle:
+                                'Occasional offers · Off unless you turn it on',
                             last: true,
                             value: _pushPromos,
                             onChanged: _isSaving
@@ -272,7 +281,8 @@ class _NotificationSettingsScreenState
                           ),
                           _toggleTile(
                             title: 'Promotions & offers',
-                            subtitle: 'Occasional offers · Off unless you turn it on',
+                            subtitle:
+                                'Occasional offers · Off unless you turn it on',
                             last: true,
                             value: _emailPromos,
                             onChanged: _isSaving
@@ -320,9 +330,8 @@ class _NotificationSettingsScreenState
     return Container(
       padding: const EdgeInsets.symmetric(vertical: TwSpace.s12),
       decoration: BoxDecoration(
-        border: last
-            ? null
-            : const Border(bottom: BorderSide(color: _lineSoft)),
+        border:
+            last ? null : const Border(bottom: BorderSide(color: _lineSoft)),
       ),
       child: Row(
         children: [
@@ -365,7 +374,11 @@ class _NotificationSettingsScreenState
           const SizedBox(width: TwSpace.s12),
           Expanded(
             child: Text(
-              'Push alerts open the work order they’re about.',
+              PushNotificationService.instance.isConfigured
+                  ? 'Push alerts open the message or work order they’re about.'
+                  : 'New chat messages can alert you while this app is open. '
+                      'Activity refreshes when you reopen it. Alerts while '
+                      'the app is closed need a push service.',
               style: TwType.bodySm(),
             ),
           ),
@@ -373,6 +386,4 @@ class _NotificationSettingsScreenState
       ),
     );
   }
-
 }
-
