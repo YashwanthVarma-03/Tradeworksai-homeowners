@@ -49,7 +49,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('Rewards'), findsNWidgets(2)); // Page title and tab label.
+    expect(find.text('Rewards'), findsOneWidget); // Only the navigation label.
     expect(find.text('Available service credits'), findsOneWidget);
     expect(find.text('Upload your paid receipt'), findsOneWidget);
     expect(tester.takeException(), isNull);

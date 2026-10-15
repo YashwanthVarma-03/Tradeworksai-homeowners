@@ -1,3 +1,4 @@
+import '../utils/paid_amount.dart';
 import '../widgets/loading_skeleton.dart';
 import 'dart:async';
 
@@ -552,8 +553,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Bookings', style: TwType.h1(context)),
-          const SizedBox(height: TwSpace.s8),
           TwUnderlineTabs(
             labels: const ['Upcoming', 'History'],
             index: _activeSegment,
@@ -1319,7 +1318,7 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     }
     final amount = _paidAmount(job);
     return amount == null
-        ? '${_monthDayLabel(start)} · Paid'
+        ? '${_monthDayLabel(start)} · Completed'
         : '${_monthDayLabel(start)} · Paid $amount';
   }
 
@@ -1377,21 +1376,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
   }
 
   String? _paidAmount(Map<String, dynamic> job) {
-    for (final key in const [
-      'paidAmount',
-      'paid_amount',
-      'total',
-      'totalAmount',
-      'finalAmount',
-      'amount',
-      'price',
-    ]) {
-      final value = job[key];
-      if (value is num) return formatUsd(value);
-      final parsed = num.tryParse(value?.toString() ?? '');
-      if (parsed != null) return formatUsd(parsed);
-    }
-    return null;
+    final amount = customerPaidAmount(job);
+    return amount == null ? null : formatUsd(amount);
   }
 }
 
@@ -1412,4 +1398,3 @@ class _BookingSectionLabel extends StatelessWidget {
     );
   }
 }
-

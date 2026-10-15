@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +15,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
+    await loadCatalogFixture();
     final materialIcons = FontLoader('MaterialIcons')
       ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
     final inter = FontLoader('Inter')
@@ -121,7 +123,7 @@ void main() {
         matchesGoldenFile('goldens/guest-search.png'),
       );
 
-      await tester.tap(find.text('AC repair'));
+      await tester.tap(find.text('Furniture Assembly'));
       await tester.pumpAndSettle();
       expect(searchCalls, 1);
       expect(find.text('100 pros'), findsWidgets);

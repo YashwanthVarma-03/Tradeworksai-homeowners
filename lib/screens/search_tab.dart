@@ -137,6 +137,8 @@ class _SearchTabState extends State<SearchTab> {
   @override
   void initState() {
     super.initState();
+    ServiceCatalog.revision.addListener(_refreshServiceCatalog);
+    unawaited(ServiceCatalog.load());
     _searchController =
         TextEditingController(text: widget.initialSearchQuery ?? '');
     _searchFocusNode = FocusNode();
@@ -216,6 +218,7 @@ class _SearchTabState extends State<SearchTab> {
 
   @override
   void dispose() {
+    ServiceCatalog.revision.removeListener(_refreshServiceCatalog);
     BrowseSearchHistory.revision.removeListener(_loadRecentSearches);
     ServiceLocation.selected.removeListener(_handleSharedLocationChanged);
     HomeownerService.instance.contractorCatalogVersion
@@ -817,6 +820,7 @@ class _SearchTabState extends State<SearchTab> {
       _searchController.clear();
       _view = _BrowseView.allCategories;
     });
+    _preserveSearchViewOnUnfocus = true;
     _searchFocusNode.unfocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureSelectedRailVisible();
@@ -872,6 +876,15 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   Future<void> _runAllServicesSearch() async {
+    await ServiceCatalog.load();
+    if (!mounted) return;
+    if (!ServiceCatalog.loaded) {
+      setState(() {
+        _isLoadingResults = false;
+        _resultsError = ServiceCatalog.error;
+      });
+      return;
+    }
     _bookingDescription = null;
     _descriptionCategory = null;
     if (_selectedZip.isEmpty && !await _requestZipIfNeeded()) return;
@@ -1475,6 +1488,9 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   String? _categorySlugForName(String category) {
+    for (final service in ServiceCatalog.items) {
+      if (service.category == category) return service.categorySlug;
+    }
     switch (category) {
       case 'Handyman':
         return 'handyman-general-repairs';
@@ -1490,6 +1506,7 @@ class _SearchTabState extends State<SearchTab> {
         return 'pool-spa';
       case 'Cleaning':
         return 'cleaning';
+      case 'Lawn':
       case 'Landscaping':
         return 'landscaping-lawn-care';
       case 'Tree Service':
@@ -1629,259 +1646,65 @@ class _SearchTabState extends State<SearchTab> {
     return match?.group(1);
   }
 
-  List<_BrowseCategory> get _allCategories => const [
-        _BrowseCategory(
-          name: 'Moving',
-          icon: Icons.local_shipping,
-          serviceCount: 4,
-          prosCount: 2,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Appliance Repair',
-          icon: Icons.kitchen,
-          serviceCount: 9,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Concrete',
-          icon: Icons.construction,
-          serviceCount: 5,
-          prosCount: 0,
-          color: AppTheme.teal700,
-          covered: false,
-        ),
-        _BrowseCategory(
-          name: 'Garage Doors',
-          icon: Icons.garage,
-          serviceCount: 3,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Flooring',
-          icon: Icons.layers,
-          serviceCount: 6,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Plumbing',
-          icon: Icons.plumbing,
-          serviceCount: 12,
-          prosCount: 3,
-          color: AppTheme.teal700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'HVAC',
-          icon: Icons.ac_unit,
-          serviceCount: 9,
-          prosCount: 2,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Electrical',
-          icon: Icons.flash_on,
-          serviceCount: 7,
-          prosCount: 2,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Cleaning',
-          icon: Icons.cleaning_services,
-          serviceCount: 8,
-          prosCount: 1,
-          color: AppTheme.teal700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Landscaping',
-          icon: Icons.nature_people,
-          serviceCount: 10,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Painting',
-          icon: Icons.format_paint,
-          serviceCount: 5,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Water Treatment',
-          icon: Icons.water_drop,
-          serviceCount: 4,
-          prosCount: 1,
-          color: AppTheme.teal700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Roofing',
-          icon: Icons.roofing,
-          serviceCount: 6,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Windows & Doors',
-          icon: Icons.window,
-          serviceCount: 6,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Smart Home',
-          icon: Icons.settings_remote,
-          serviceCount: 3,
-          prosCount: 0,
-          color: AppTheme.teal700,
-          covered: false,
-        ),
-        _BrowseCategory(
-          name: 'Solar Energy',
-          icon: Icons.solar_power,
-          serviceCount: 4,
-          prosCount: 0,
-          color: AppTheme.navy700,
-          covered: false,
-        ),
-        _BrowseCategory(
-          name: 'Tree Service',
-          icon: Icons.park,
-          serviceCount: 4,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Pest Control',
-          icon: Icons.bug_report,
-          serviceCount: 6,
-          prosCount: 1,
-          color: AppTheme.teal700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Home Security',
-          icon: Icons.security,
-          serviceCount: 4,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Insulation',
-          icon: Icons.wb_shade,
-          serviceCount: 2,
-          prosCount: 0,
-          color: AppTheme.navy700,
-          covered: false,
-        ),
-        _BrowseCategory(
-          name: 'Locksmith',
-          icon: Icons.lock,
-          serviceCount: 4,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Junk Removal',
-          icon: Icons.delete_outline,
-          serviceCount: 4,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Remodeling',
-          icon: Icons.construction,
-          serviceCount: 8,
-          prosCount: 1,
-          color: AppTheme.teal700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Fencing & Decks',
-          icon: Icons.fence,
-          serviceCount: 5,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Drywall & Plaster',
-          icon: Icons.texture,
-          serviceCount: 4,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Gutters',
-          icon: Icons.waves,
-          serviceCount: 3,
-          prosCount: 1,
-          color: AppTheme.teal700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Screen Repair',
-          icon: Icons.grid_on,
-          serviceCount: 2,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Pool & Spa',
-          icon: Icons.pool,
-          serviceCount: 4,
-          prosCount: 1,
-          color: AppTheme.navy700,
-          covered: true,
-        ),
-        _BrowseCategory(
-          name: 'Fireplace & Chimney',
-          icon: Icons.fireplace,
-          serviceCount: 3,
-          prosCount: 0,
-          color: AppTheme.teal700,
-          covered: false,
-        ),
-        _BrowseCategory(
-          name: 'Siding',
-          icon: Icons.home_work,
-          serviceCount: 3,
-          prosCount: 0,
-          color: AppTheme.navy700,
-          covered: false,
-        ),
-        _BrowseCategory(
-          name: 'Concrete & Masonry',
-          icon: Icons.foundation,
-          serviceCount: 4,
-          prosCount: 0,
-          color: AppTheme.navy700,
-          covered: false,
-        ),
-      ];
+  void _refreshServiceCatalog() {
+    if (mounted) setState(() {});
+  }
+
+  List<_BrowseCategory> get _allCategories {
+    const icons = <String, IconData>{
+      'Moving': Icons.local_shipping,
+      'Appliance Repair': Icons.kitchen,
+      'Concrete': Icons.construction,
+      'Garage Doors': Icons.garage,
+      'Flooring': Icons.layers,
+      'Plumbing': Icons.plumbing,
+      'HVAC': Icons.ac_unit,
+      'Electrical': Icons.flash_on,
+      'Cleaning': Icons.cleaning_services,
+      'Landscaping': Icons.nature_people,
+      'Painting': Icons.format_paint,
+      'Water Treatment': Icons.water_drop,
+      'Roofing': Icons.roofing,
+      'Windows & Doors': Icons.window,
+      'Smart Home': Icons.settings_remote,
+      'Solar Energy': Icons.solar_power,
+      'Tree Service': Icons.park,
+      'Pest Control': Icons.bug_report,
+      'Home Security': Icons.security,
+      'Insulation': Icons.wb_shade,
+      'Locksmith': Icons.lock,
+      'Junk Removal': Icons.delete_outline,
+      'Remodeling': Icons.construction,
+      'Fencing & Decks': Icons.fence,
+      'Drywall & Plaster': Icons.texture,
+      'Gutters': Icons.waves,
+      'Screen Repair': Icons.grid_on,
+      'Pool & Spa': Icons.pool,
+      'Fireplace & Chimney': Icons.fireplace,
+      'Siding': Icons.home_work,
+      'Concrete & Masonry': Icons.foundation,
+    };
+    final groups = <String, List<ServiceCatalogItem>>{};
+    for (final service in ServiceCatalog.items) {
+      groups.putIfAbsent(service.categorySlug, () => []).add(service);
+    }
+    return groups.entries.map((entry) {
+      final name =
+          _categoryNameForSlug(entry.key) ?? entry.value.first.category;
+      return _BrowseCategory(
+        name: name,
+        icon: icons[name] ?? Icons.home_repair_service_outlined,
+        serviceCount: entry.value.length,
+        prosCount: _categoryCounts[name] ?? 0,
+        color: AppTheme.navy700,
+        covered: true,
+      );
+    }).toList();
+  }
 
   List<_BrowseService> get _serviceCatalog => ServiceCatalog.items
-      .map((service) => _BrowseService(service.name, service.category))
+      .map((service) => _BrowseService(service.name,
+          _categoryNameForSlug(service.categorySlug) ?? service.category))
       .toList(growable: false);
 
   List<_BrowsePro> _matchesQuery(String query) {
@@ -1997,8 +1820,7 @@ class _SearchTabState extends State<SearchTab> {
 
   Future<void> _openCompareMessage(Map<String, dynamic> pro) async {
     if (!AuthService.instance.isAuthenticated) {
-      AppNotification.showInfo(
-          context, 'Please sign in to message this pro.');
+      AppNotification.showInfo(context, 'Please sign in to message this pro.');
       return;
     }
     final recipientId = StreamService.instance.resolveMessagingUserId(pro);
@@ -2056,6 +1878,9 @@ class _SearchTabState extends State<SearchTab> {
       );
     }
 
+    if (_view == _BrowseView.allCategories) {
+      return _buildAllCategories();
+    }
     if (_selectedZip.isEmpty) {
       return _buildZipRequired();
     }
@@ -2215,7 +2040,9 @@ class _SearchTabState extends State<SearchTab> {
                 ),
                 const SizedBox(width: TwSpace.s12),
                 Text(
-                  '${_serviceCatalog.length} services',
+                  ServiceCatalog.loaded
+                      ? '${_serviceCatalog.length} services'
+                      : 'Loading services…',
                   style: TwType.caption(),
                 ),
               ],
@@ -2226,6 +2053,15 @@ class _SearchTabState extends State<SearchTab> {
               style: TwType.bodySm(color: AppTheme.textSecondary),
             ),
             const SizedBox(height: TwSpace.s16),
+            if (ServiceCatalog.error != null) ...[
+              Text(ServiceCatalog.error!, style: TwType.bodySm()),
+              TextButton(
+                  onPressed: () => ServiceCatalog.load(forceRefresh: true),
+                  child: const Text('Retry')),
+            ],
+            if (ServiceCatalog.loaded && _serviceCatalog.isEmpty)
+              Text('No services are available right now.',
+                  style: TwType.bodySm()),
             ..._serviceCatalog.map(
               (service) => Padding(
                 padding: const EdgeInsets.only(bottom: TwSpace.s8),
@@ -2662,8 +2498,7 @@ class _SearchTabState extends State<SearchTab> {
       controller: _searchController,
       focusNode: _searchFocusNode,
       hint: 'Search a service or pro',
-      borderColor:
-          _searchFocusNode.hasFocus ? AppTheme.blue : AppTheme.border,
+      borderColor: _searchFocusNode.hasFocus ? AppTheme.blue : AppTheme.border,
       onTap: focusSearchField,
       // Keep suggestions mounted while dismissing the keyboard so the same
       // pointer gesture can still activate a Recent, Popular, or type-ahead
@@ -3413,4 +3248,3 @@ class _AllServiceListRow extends StatelessWidget {
     );
   }
 }
-

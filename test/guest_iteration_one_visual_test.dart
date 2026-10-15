@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
+    await loadCatalogFixture();
     final materialIcons = FontLoader('MaterialIcons')
       ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
     final inter = FontLoader('Inter')
@@ -88,8 +90,8 @@ void main() {
     );
 
     expect(find.text('What do you need done?'), findsOneWidget);
-    expect(find.text('See all 22'), findsOneWidget);
-    expect(find.text('All 22'), findsOneWidget);
+    expect(find.text('See all 164'), findsOneWidget);
+    expect(find.text('All 164'), findsOneWidget);
     expect(find.text('CREATE YOUR ACCOUNT'), findsNothing);
     expect(tester.takeException(), isNull);
 
@@ -143,11 +145,11 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pump(const Duration(milliseconds: 750));
     expect(ticker.controller!.page, closeTo(start + 1, 0.01));
-    expect(find.text('Drain cleaning'), findsOneWidget);
+    expect(find.text('TV Mounting'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.arrow_forward_rounded).first);
     await tester.pump();
-    expect(submitted, 'Drain cleaning');
+    expect(submitted, 'TV Mounting');
   });
 
   testWidgets('bookings gate matches the iteration one surface',

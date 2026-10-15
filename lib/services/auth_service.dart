@@ -49,6 +49,14 @@ class AuthService extends ChangeNotifier {
   GoogleSignIn? _googleSignIn;
 
   bool _isAuthenticated = false;
+  String? _recoveryUserId;
+  bool _resetInProgress = false;
+  String? passwordRecoveryError;
+  bool get isPasswordRecovery => _recoveryUserId != null;
+  bool get showPasswordRecovery =>
+      isPasswordRecovery || passwordRecoveryError != null;
+  String? get pendingPasswordResetEmail =>
+      _prefs?.getString('pendingPasswordResetEmail');
   String? _userId;
   String? _userEmail;
   String? _userName;
@@ -63,7 +71,7 @@ class AuthService extends ChangeNotifier {
   bool? _textMessage;
   bool? _whatsapp;
 
-  bool get isAuthenticated => _isAuthenticated;
+  bool get isAuthenticated => _isAuthenticated && !isPasswordRecovery;
   String? get userId => _userId;
   String? get userEmail => _userEmail;
   String? get userName => _userName;
@@ -82,6 +90,15 @@ class AuthService extends ChangeNotifier {
 
   Future<void> loadSession() async {
     _prefs = await SharedPreferences.getInstance();
+    final storedRecovery = _prefs!.getString('passwordRecoveryUserId');
+    if (storedRecovery != null &&
+        storedRecovery == _client.auth.currentUser?.id) {
+      _recoveryUserId = storedRecovery;
+    }
+    _bindAuthListener();
+    // The SDK replays its latest auth event, including a cold-start recovery link.
+    await Future<void>.delayed(Duration.zero);
+    if (isPasswordRecovery) return;
 
     final rememberLogin = _prefs!.getBool(_rememberLoginKey) ?? true;
     if (!rememberLogin) {
@@ -120,7 +137,19 @@ class AuthService extends ChangeNotifier {
     _authSubscription ??= _client.auth.onAuthStateChange.listen(
       (state) async {
         final session = state.session;
+        if (state.event == AuthChangeEvent.passwordRecovery &&
+            session != null) {
+          _recoveryUserId = session.user.id;
+          _isAuthenticated = false;
+          passwordRecoveryError = null;
+          _prefs ??= await SharedPreferences.getInstance();
+          await _prefs!.setString('passwordRecoveryUserId', session.user.id);
+          if (!_resetInProgress) notifyListeners();
+          return;
+        }
         if (state.event == AuthChangeEvent.signedOut || session == null) {
+          _recoveryUserId = null;
+          await _prefs?.remove('passwordRecoveryUserId');
           await _clearSession(notify: true);
           await StreamService.instance.disconnect();
           return;
@@ -138,7 +167,20 @@ class AuthService extends ChangeNotifier {
 
         await _syncFromSession(session);
       },
-      onError: (_) {
+      onError: (Object error) {
+        if (error is AuthException &&
+            (pendingPasswordResetEmail != null || isPasswordRecovery) &&
+            const [
+              'otp_expired',
+              'flow_state_expired',
+              'flow_state_not_found',
+              'bad_code_verifier',
+            ].contains(error.code)) {
+          passwordRecoveryError =
+              'This reset link is expired or cannot be verified on this device. Request a new link and open it on the same device.';
+          notifyListeners();
+          return;
+        }
         unawaited(_discardInvalidSession());
       },
     );
@@ -200,17 +242,18 @@ class AuthService extends ChangeNotifier {
             defaultTargetPlatform == TargetPlatform.iOS)) {
       final webClientId = ApiConfig.googleWebClientId.trim();
       if (webClientId.isEmpty) {
-        throw StateError('Google sign-in is not configured for this app build.');
+        throw StateError(
+            'Google sign-in is not configured for this app build.');
       }
       final iosClientId = ApiConfig.googleIosClientId.trim();
       if (defaultTargetPlatform == TargetPlatform.iOS && iosClientId.isEmpty) {
-        throw StateError('Google sign-in is not configured for this iOS build.');
+        throw StateError(
+            'Google sign-in is not configured for this iOS build.');
       }
 
       _googleSignIn ??= GoogleSignIn(
-        clientId: defaultTargetPlatform == TargetPlatform.iOS
-            ? iosClientId
-            : null,
+        clientId:
+            defaultTargetPlatform == TargetPlatform.iOS ? iosClientId : null,
         serverClientId: webClientId,
         scopes: const ['email', 'profile'],
       );
@@ -222,8 +265,10 @@ class AuthService extends ChangeNotifier {
       final googleAuth = await account.authentication;
       final idToken = googleAuth.idToken;
       final accessToken = googleAuth.accessToken;
-      if (idToken == null || idToken.isEmpty ||
-          accessToken == null || accessToken.isEmpty) {
+      if (idToken == null ||
+          idToken.isEmpty ||
+          accessToken == null ||
+          accessToken.isEmpty) {
         throw Exception('Google could not finish sign-in. Please try again.');
       }
 
@@ -340,47 +385,76 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<String> requestPasswordReset(String email) async {
-    await storePendingPasswordResetEmail(email);
-    await _client.auth.resetPasswordForEmail(email);
-    return 'Password reset email sent. Check your inbox for the verification code or reset link.';
+    final normalizedEmail = email.trim();
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(normalizedEmail)) {
+      throw const AuthException('Enter a valid email address.');
+    }
+    await _client.auth.resetPasswordForEmail(normalizedEmail,
+        redirectTo: kIsWeb ? Uri.base.origin : _nativeGoogleCallbackUrl);
+    await storePendingPasswordResetEmail(normalizedEmail);
+    passwordRecoveryError = null;
+    return 'If an account uses this email, a reset link has been sent. Open it on this device to choose a new password.';
   }
 
   Future<String> performPasswordReset({
     required String token,
     required String password,
   }) async {
-    final email = _prefs?.getString('pendingPasswordResetEmail');
-    if (email == null || email.isEmpty) {
-      throw Exception(
-          'Request a reset link first so the app knows which email to verify.');
+    if (password.length < 8) {
+      throw const AuthException('Password must be at least 8 characters.');
     }
-
-    final response = await _client.auth.verifyOTP(
-      type: OtpType.recovery,
-      token: token,
-      email: email,
-    );
-    if (response.session == null) {
-      throw Exception('Reset code is invalid or expired.');
+    _prefs ??= await SharedPreferences.getInstance();
+    _resetInProgress = true;
+    try {
+      if (!isPasswordRecovery) {
+        final email = pendingPasswordResetEmail;
+        if (email == null ||
+            email.isEmpty ||
+            !RegExp(r'^\d{6,10}$').hasMatch(token)) {
+          throw const AuthException(
+              'Open your reset link on this device, or enter the verification code if your email includes one.');
+        }
+        final response = await _client.auth.verifyOTP(
+          type: OtpType.recovery,
+          token: token,
+          email: email,
+        );
+        if (response.session == null) {
+          throw const AuthException('Reset code is invalid or expired.');
+        }
+        _recoveryUserId = response.session!.user.id;
+      }
+      final session = _client.auth.currentSession;
+      if (session == null ||
+          session.isExpired ||
+          session.user.id != _recoveryUserId) {
+        throw const AuthException(
+            'Your reset session has expired. Request a new reset link.');
+      }
+      await _client.auth.updateUser(UserAttributes(password: password));
+    } finally {
+      _resetInProgress = false;
     }
-
-    await _client.auth.updateUser(
-      UserAttributes(password: password),
-    );
     var otherSessionsRevoked = true;
     try {
       await _client.auth.signOut(scope: SignOutScope.others);
     } catch (_) {
       otherSessionsRevoked = false;
     }
-    await _syncFromSession(_client.auth.currentSession);
+    _recoveryUserId = null;
+    passwordRecoveryError = null;
+    await _prefs?.remove('passwordRecoveryUserId');
     await _prefs?.remove('pendingPasswordResetEmail');
+    await _syncFromSession(_client.auth.currentSession);
     return otherSessionsRevoked
         ? 'Your password has been reset. Your other sessions have been revoked.'
         : 'Your password has been reset, but we could not sign out your other devices. Please try signing out of those devices.';
   }
 
   Future<void> logout() async {
+    _recoveryUserId = null;
+    passwordRecoveryError = null;
+    await _prefs?.remove('passwordRecoveryUserId');
     for (final hook in List<FutureOr<void> Function()>.from(
       _beforeLogoutHooks,
     )) {
@@ -432,6 +506,11 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> _syncFromSession(Session? session) async {
+    if (isPasswordRecovery) {
+      _isAuthenticated = false;
+      if (!_resetInProgress) notifyListeners();
+      return;
+    }
     _prefs ??= await SharedPreferences.getInstance();
     if (session == null) {
       await _clearSession(notify: true);

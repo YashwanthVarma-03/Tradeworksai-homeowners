@@ -354,9 +354,8 @@ class _FigmaProfileSurface extends StatelessWidget {
 
   Widget _priceCard(BuildContext context) {
     final stack = TwLayout.stackRows(context);
-    final Widget? capsule = nextSlot.isEmpty
-        ? null
-        : AvailabilityCapsule(label: 'Next: $nextSlot');
+    final Widget? capsule =
+        nextSlot.isEmpty ? null : AvailabilityCapsule(label: 'Next: $nextSlot');
     // B02b: "$89.00" in display type, "diagnostic" after it in value type.
     final Widget amount = price.isEmpty
         ? const SizedBox.shrink()
@@ -416,8 +415,7 @@ class _FigmaProfileSurface extends StatelessWidget {
             runSpacing: TwSpace.s4,
             children: [
               Text('Your project request', style: TwType.h3()),
-              if (service.isNotEmpty)
-                Text(service, style: TwType.meta()),
+              if (service.isNotEmpty) Text(service, style: TwType.meta()),
             ],
           ),
           const SizedBox(height: TwSpace.s12),
@@ -547,7 +545,7 @@ class _FigmaProfileSurface extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ...hours.map(_keyValue),
+            _alignedFacts(hours),
             if (timeZone.isNotEmpty) Text(timeZone, style: TwType.caption()),
           ],
         ),
@@ -557,16 +555,45 @@ class _FigmaProfileSurface extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ...responseTimes.map(_keyValue),
+            _alignedFacts(responseTimes),
             Text('You choose one when you book. The fee goes to the pro.',
                 style: TwType.caption()),
           ],
         ),
       );
 
-  Widget _keyValue(MapEntry<String, String> item) => Padding(
-        padding: const EdgeInsets.only(bottom: TwSpace.s8),
-        child: TwDetailRow(label: item.key, value: item.value),
+  Widget _alignedFacts(List<MapEntry<String, String>> items) => LayoutBuilder(
+        builder: (context, constraints) {
+          final valueStyle = TwType.value();
+          var widest = 0.0;
+          for (final item in items) {
+            final painter = TextPainter(
+                text: TextSpan(text: item.value, style: valueStyle),
+                textDirection: Directionality.of(context),
+                textScaler: MediaQuery.textScalerOf(context))
+              ..layout();
+            if (painter.width > widest) widest = painter.width;
+            painter.dispose();
+          }
+          final valueWidth =
+              (widest + 1).clamp(0.0, constraints.maxWidth * 0.62);
+          return Column(
+              children: items
+                  .map((item) => Padding(
+                        padding: const EdgeInsets.only(bottom: TwSpace.s12),
+                        child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                  child: Text(item.key, style: TwType.meta())),
+                              const SizedBox(width: TwSpace.s12),
+                              SizedBox(
+                                  width: valueWidth,
+                                  child: Text(item.value, style: valueStyle)),
+                            ]),
+                      ))
+                  .toList());
+        },
       );
 
   /// One list, one place. Opens on the searched service's category; the rest
@@ -2508,4 +2535,3 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     );
   }
 }
-

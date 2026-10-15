@@ -1,3 +1,4 @@
+import 'support/catalog_fixture.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
+    await loadCatalogFixture();
     await Future.wait([
       (FontLoader('MaterialIcons')
             ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf')))

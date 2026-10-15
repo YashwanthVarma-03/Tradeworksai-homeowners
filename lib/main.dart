@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/dashboard_shell.dart';
+import 'screens/password_reset_page.dart';
 import 'services/auth_service.dart';
 import 'services/supabase_config.dart';
 import 'services/push_notification_service.dart';
@@ -58,6 +59,8 @@ class MyApp extends StatelessWidget {
           }
         }
         return MaterialApp(
+          // Recovery replaces any open login/chat route, not only the Home tab.
+          key: ValueKey(AuthService.instance.showPasswordRecovery),
           title: 'Tradeworks One',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
@@ -71,7 +74,9 @@ class MyApp extends StatelessWidget {
           ),
           // The marketplace is intentionally public. Authentication unlocks
           // account data and booking submission, not the initial app shell.
-          home: const DashboardShell(),
+          home: AuthService.instance.showPasswordRecovery
+              ? const PasswordResetPage()
+              : const DashboardShell(),
         );
       },
     );

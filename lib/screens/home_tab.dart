@@ -56,7 +56,7 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
-  static final List<String> _serviceNames = ServiceCatalog.names;
+  List<String> get _serviceNames => ServiceCatalog.names;
 
   static const List<String> _homeCategories = [
     'HVAC',
@@ -108,6 +108,8 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     _searchController.addListener(_refreshInputs);
     _searchFocusNode.addListener(_refreshInputs);
     ServiceLocation.selected.addListener(_handleSharedLocationChanged);
+    ServiceCatalog.revision.addListener(_refreshInputs);
+    unawaited(ServiceCatalog.load());
 
     _tickerPageController =
         PageController(initialPage: 1000 * _serviceNames.length);
@@ -162,6 +164,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(ServiceCatalog.load());
     if (!widget.isGuest && state == AppLifecycleState.resumed) {
       _fetchHomeData(showLoading: false, forceRefresh: true);
     }
@@ -169,6 +172,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    ServiceCatalog.revision.removeListener(_refreshInputs);
     ServiceLocation.selected.removeListener(_handleSharedLocationChanged);
     if (!widget.isGuest) {
       HomeownerService.instance.syncVersion
@@ -613,10 +617,16 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   String get _displayedService {
     final typed = _searchController.text.trim();
-    return typed.isNotEmpty ? typed : _serviceNames[_serviceTickerIndex];
+    return typed.isNotEmpty
+        ? typed
+        : _serviceNames.isEmpty
+            ? ''
+            : _serviceNames[_serviceTickerIndex % _serviceNames.length];
   }
 
-  String get _allServicesLabel => 'All 22';
+  String get _allServicesLabel => ServiceCatalog.loaded
+      ? 'All ${ServiceCatalog.items.length}'
+      : 'All services';
 
   void _openSearch([String? value]) {
     final query = (value ?? _displayedService).trim();
@@ -860,23 +870,26 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
               Expanded(
                 child: SizedBox(
                   height: 20,
-                  child: PageView.builder(
-                    controller: _tickerPageController,
-                    scrollDirection: Axis.vertical,
-                    physics: const NeverScrollableScrollPhysics(),
-                    onPageChanged: (index) =>
-                        _serviceTickerIndex = index % _serviceNames.length,
-                    itemBuilder: (context, index) => Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _serviceNames[index % _serviceNames.length],
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TwType.bodySm(color: AppTheme.navy)
-                            .copyWith(fontWeight: FontWeight.w500, height: 1),
-                      ),
-                    ),
-                  ),
+                  child: _serviceNames.isEmpty
+                      ? const SizedBox.shrink()
+                      : PageView.builder(
+                          controller: _tickerPageController,
+                          scrollDirection: Axis.vertical,
+                          physics: const NeverScrollableScrollPhysics(),
+                          onPageChanged: (index) => _serviceTickerIndex =
+                              index % _serviceNames.length,
+                          itemBuilder: (context, index) => Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              _serviceNames[index % _serviceNames.length],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TwType.bodySm(color: AppTheme.navy)
+                                  .copyWith(
+                                      fontWeight: FontWeight.w500, height: 1),
+                            ),
+                          ),
+                        ),
                 ),
               ),
             ],
@@ -902,7 +915,11 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             TextButton(
               onPressed: () => widget.onCategorySelected('All'),
               style: _linkStyle,
-              child: Text('See all 22', style: TwType.link(size: 14)),
+              child: Text(
+                  ServiceCatalog.loaded
+                      ? 'See all ${ServiceCatalog.items.length}'
+                      : 'See all',
+                  style: TwType.link(size: 14)),
             ),
           ],
         ),
@@ -1279,8 +1296,12 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     return ColoredBox(
       color: _pageBackground,
       child: RefreshIndicator(
-        onRefresh:
-            widget.isGuest ? _loadSharedLocationOverride : _fetchHomeData,
+        onRefresh: () async {
+          await Future.wait([
+            ServiceCatalog.load(forceRefresh: true),
+            widget.isGuest ? _loadSharedLocationOverride() : _fetchHomeData(),
+          ]);
+        },
         color: AppTheme.navy,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),

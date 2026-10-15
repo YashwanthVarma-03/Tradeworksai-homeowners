@@ -189,8 +189,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Profile', style: Theme.of(context).textTheme.headlineLarge),
-                  const SizedBox(height: 12),
                   _accountHeader(),
                   const SizedBox(height: 12),
                   _creditsCard(),

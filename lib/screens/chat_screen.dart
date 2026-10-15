@@ -550,7 +550,7 @@ StreamChatThemeData get twStreamChatTheme {
         colors: [AppTheme.cardBorder, AppTheme.cardBorder],
       ),
       activeBorderGradient: const LinearGradient(
-        colors: [AppTheme.blue, AppTheme.blue],
+        colors: [AppTheme.cardBorder, AppTheme.cardBorder],
       ),
       actionButtonColor: AppTheme.navy,
       actionButtonIdleColor: AppTheme.navy,

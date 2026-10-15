@@ -1,4 +1,6 @@
 import '../widgets/loading_skeleton.dart';
+import '../utils/rewards_data.dart';
+import '../widgets/rewards_gift_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/homeowner_service.dart';
@@ -231,8 +233,6 @@ class _RewardTabState extends State<RewardTab> {
         : 'Earn service credits on qualifying customer-paid spend and at milestones. ';
     return '$overview'
         'There are no codes, and nothing is applied without you asking. '
-        'You choose how much credit to apply when you book: up to the full price on an upfront-price job, the diagnostic fee on a job where you approve the cap (and more when you approve it), and nothing on a free estimate visit until you accept the estimate. '
-        'Credit left over after the final invoice, or on a cancelled job, goes back to your balance. '
         'Credits lower what you pay, so they also lower what this job earns and what it adds toward your band. '
         'Credits are used soonest-expiring first, with milestones before band credits.';
   }
@@ -245,7 +245,7 @@ class _RewardTabState extends State<RewardTab> {
     if (_data == null && _error != null) {
       return OfflineState(onRetry: () => _load(refresh: true));
     }
-    final d = _data ?? {};
+    final d = normalizeRewards(_data ?? {});
     final program = d['program'] is Map
         ? Map<String, dynamic>.from(d['program'] as Map)
         : const <String, dynamic>{};
@@ -286,13 +286,6 @@ class _RewardTabState extends State<RewardTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: TwSpace.s8),
-                      child: Semantics(
-                        header: true,
-                        child: Text('Rewards', style: TwType.h1(context)),
-                      ),
-                    ),
                     if (_error != null)
                       Padding(
                           padding: EdgeInsets.only(bottom: TwSpace.s16),
@@ -396,16 +389,14 @@ class _RewardTabState extends State<RewardTab> {
           Row(
             children: [
               Expanded(
-                child: Text('Available service credits',
-                    style: TwType.title()),
+                child: Text('Available service credits', style: TwType.title()),
               ),
               Container(
                 width: 36,
                 height: 36,
                 decoration: const BoxDecoration(
                     color: AppTheme.purpleTint, shape: BoxShape.circle),
-                child: const Icon(Icons.redeem_outlined,
-                    size: 18, color: AppTheme.purple),
+                child: const RewardsGiftIcon(color: AppTheme.purple),
               ),
             ],
           ),
@@ -428,10 +419,8 @@ class _RewardTabState extends State<RewardTab> {
               children: [
                 if (ledgerBalance != null)
                   _balanceMetric('Ledger total', ledgerBalance),
-                if (reserved != null)
-                  _balanceMetric('Reserved', reserved),
-                if (locked != null)
-                  _balanceMetric('Locked', locked),
+                if (reserved != null) _balanceMetric('Reserved', reserved),
+                if (locked != null) _balanceMetric('Locked', locked),
               ],
             ),
           ],
@@ -565,8 +554,7 @@ class _RewardTabState extends State<RewardTab> {
     // `programPeriodEnd` is the last day of this year.
     final periodEnd = _parse(
         d['periodEnd'] ?? d['programPeriodEnd'] ?? d['programPeriodEnds']);
-    final resets =
-        _parse(d['resetDate'] ?? d['nextAnniversary']) ?? periodEnd;
+    final resets = _parse(d['resetDate'] ?? d['nextAnniversary']) ?? periodEnd;
     final yearStart = _parse(
         d['periodStart'] ?? d['programPeriodStart'] ?? d['anniversaryDate']);
     // The API's period end is exclusive and is also the reset date.
@@ -582,8 +570,7 @@ class _RewardTabState extends State<RewardTab> {
             : _number(d['annualQualifyingSpendCap']));
     final rate = current >= 0
         ? _rate(bands[current]['rate'])
-        : _rate(
-            d['currentMarginalRate'] ?? d['rate'] ?? d['currentBandRate']);
+        : _rate(d['currentMarginalRate'] ?? d['rate'] ?? d['currentBandRate']);
     final tier = _text(d['tier']);
     final bandLine = rate.isEmpty
         ? tier
@@ -782,7 +769,12 @@ class _RewardTabState extends State<RewardTab> {
   }
 
   Widget _milestoneRow(Map<String, dynamic> m, {required bool last}) {
-    final reached = m['reachedAt'] != null;
+    final reached = m['reached'] == true || m['reachedAt'] != null;
+    final reachedDetails = <String>[
+      m['reachedAt'] != null ? 'Reached ${_date(m['reachedAt'])}' : 'Reached',
+      if (m['expiresAt'] != null) 'Expires ${_date(m['expiresAt'])}',
+      if (m['awardedThisPeriod'] == false) 'Bonus not yet awarded',
+    ].join(' · ');
     return Container(
       padding: const EdgeInsets.symmetric(vertical: TwSpace.s8),
       decoration: BoxDecoration(
@@ -805,17 +797,13 @@ class _RewardTabState extends State<RewardTab> {
               children: [
                 Text.rich(
                   TextSpan(children: [
-                    TextSpan(
-                        text: _money(m['amount']), style: TwType.label()),
+                    TextSpan(text: _money(m['amount']), style: TwType.label()),
                     TextSpan(text: ' at ${_money(m['threshold'])} counted'),
                   ]),
                   style: TwType.body(color: AppTheme.navy),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                    reached
-                        ? 'Reached ${_date(m['reachedAt'])} · Expires ${_date(m['expiresAt'])}'
-                        : 'Not reached',
+                Text(reached ? reachedDetails : 'Not reached',
                     style: _metaStyle),
               ],
             ),
@@ -827,8 +815,7 @@ class _RewardTabState extends State<RewardTab> {
 
   Widget _ledgerRow(Map<String, dynamic> row, {required bool last}) {
     final rawType = '${row['type'] ?? ''}';
-    final creditStatus =
-        '${row['creditStatus'] ?? ''}'.trim().toLowerCase();
+    final creditStatus = '${row['creditStatus'] ?? ''}'.trim().toLowerCase();
     final type = row['expired'] == true || creditStatus == 'expired'
         ? 'expired'
         : switch ((rawType, creditStatus)) {
@@ -853,17 +840,15 @@ class _RewardTabState extends State<RewardTab> {
       'reserved': 'Reserved',
       'expired': 'Expired'
     };
-    final linked =
-        const [
+    final linked = const [
           'earned',
           'earns_nothing',
           'applied',
           'returned',
           'locked',
           'reserved'
-        ]
-                .contains(type) &&
-            int.tryParse('${row['workOrderId']}') != null;
+        ].contains(type) &&
+        int.tryParse('${row['workOrderId']}') != null;
     final when = _date(row['occurredAt'] ?? row['createdAt']);
     // Line 1 names the job: "WO-24144 · HVAC tune-up · Hutchins Plumbing Co."
     final job = [_woLabel(row), _service(row), _pro(row)]
@@ -952,4 +937,3 @@ class _RewardTabState extends State<RewardTab> {
     );
   }
 }
-
