@@ -182,7 +182,8 @@ class _RescheduleProposalScreenState extends State<RescheduleProposalScreen> {
                 child: TextButton.icon(
                   onPressed: _responding
                       ? null
-                      : () => openProThread(context, job, proName: pro),
+                      : () => openProThread(context, job,
+                          proName: pro, workOrderId: workOrderDbId(job)),
                   icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
                   label: Text('Message $pro'),
                   style: TextButton.styleFrom(

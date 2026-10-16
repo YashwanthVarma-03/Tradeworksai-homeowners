@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -7,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:homeowners_app/services/auth_service.dart';
 import 'package:homeowners_app/services/homeowner_service.dart';
 import 'package:homeowners_app/services/stream_service.dart';
+import 'package:homeowners_app/screens/chat_screen.dart';
+import 'package:homeowners_app/screens/work_orders/no_show_reply.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -112,7 +115,8 @@ void main() {
             }),
             200);
       }
-      if (request.url.path.endsWith('/notifications-read')) {
+      if (request.url.path.endsWith('/notifications-read') ||
+          request.url.path == '/notifications/read-all') {
         unreadCount = 0;
         return http.Response(jsonEncode({'success': true}), 200);
       }
@@ -166,17 +170,269 @@ void main() {
         'push': {'status': false},
       },
     });
-    expect(jsonDecode(calls[2].body), {'limit': 20, 'offset': 40});
+    expect(calls[2].url.queryParameters, {'limit': '20', 'offset': '40'});
+    expect(jsonDecode(calls[2].body), isEmpty);
+    expect(calls[3].url.path, '/homeowner/notifications-read');
     expect(jsonDecode(calls[3].body), {'id': 123});
     expect(calls[4].url.path, '/homeowner/notifications-list');
-    expect(jsonDecode(calls[5].body), {'all': true});
+    expect(calls[5].url.path, '/notifications/read-all');
+    expect(jsonDecode(calls[5].body), isEmpty);
     expect(calls[6].url.path, '/homeowner/notifications-list');
     expect(jsonDecode(calls[7].body), {
       'provider': 'fcm',
       'token': 'device-token',
       'platform': 'ios',
     });
-    expect(calls[8].url.path, '/homeowner/push-tokens/456');
+    expect(calls[8].url.path, '/push-tokens/456');
+  });
+
+  test('notification pagination advances via query parameters', () async {
+    final offsets = <int>[];
+    final client = MockClient((request) async {
+      expect(request.url.path, '/homeowner/notifications-list');
+      expect(request.method, 'POST');
+      expect(jsonDecode(request.body), isEmpty);
+      final offset = int.parse(request.url.queryParameters['offset']!);
+      final limit = int.parse(request.url.queryParameters['limit']!);
+      offsets.add(offset);
+      return http.Response(
+          jsonEncode({
+            'notifications': List.generate(limit, (i) => {'id': offset + i}),
+            'unreadCount': 30,
+          }),
+          200);
+    });
+    await http.runWithClient(() async {
+      final first = await HomeownerService.instance
+          .fetchNotifications(limit: 10, offset: 0);
+      final second = await HomeownerService.instance
+          .fetchNotifications(limit: 10, offset: 10);
+      expect(first!.length, 10);
+      expect(second!.first['id'], 10);
+      expect(
+          first
+              .map((n) => n['id'])
+              .toSet()
+              .intersection(second.map((n) => n['id']).toSet()),
+          isEmpty);
+    }, () => client);
+    expect(offsets, [0, 10]);
+  });
+
+  test('failed mark-all preserves unread count and reports failure', () async {
+    final service = HomeownerService.instance;
+    service.notificationUnreadCount.value = 7;
+    await http.runWithClient(() async {
+      await expectLater(service.markAllNotificationsRead(), throwsException);
+      expect(service.notificationUnreadCount.value, 7);
+    },
+        () => MockClient((request) async {
+              expect(request.url.path, '/notifications/read-all');
+              return http.Response(
+                  '{"success":false,"error":"notification_update_failed"}',
+                  503);
+            }));
+  });
+
+  test('no-show reply uses dedicated route and returns case receipt', () async {
+    final calls = <http.Request>[];
+    await http.runWithClient(() async {
+      final result = await HomeownerService.instance.replyToNoShow(
+        workOrderId: 42,
+        replyText: '  I was home.  ',
+      );
+      expect(result['caseId'], 8);
+      expect(result['replyId'], 9);
+      expect(result['replayed'], false);
+    },
+        () => MockClient((request) async {
+              calls.add(request);
+              expect(request.method, 'POST');
+              expect(
+                  request.url.path, '/homeowner/work-orders/42/no-show-reply');
+              expect(request.headers['authorization'], startsWith('Bearer '));
+              expect(jsonDecode(request.body), {'replyText': 'I was home.'});
+              return http.Response(
+                  '{"success":true,"workOrderId":42,"caseId":8,"replyId":9,"replayed":false}',
+                  201);
+            }));
+    expect(calls.length, 1);
+  });
+
+  test('rejected no-show reply does not fall back to work-order actions',
+      () async {
+    var calls = 0;
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance.replyToNoShow(
+            workOrderId: 42,
+            replyText: 'I was home.',
+          ),
+          throwsException);
+    },
+        () => MockClient((request) async {
+              calls++;
+              expect(
+                  request.url.path, '/homeowner/work-orders/42/no-show-reply');
+              return http.Response(
+                  '{"success":false,"error":"no_show_case_not_found"}', 409);
+            }));
+    expect(calls, 1);
+  });
+
+  test('no-show reply rejects empty and over-limit text before sending',
+      () async {
+    await http.runWithClient(() async {
+      for (final text in [' ', 'x' * 2001]) {
+        await expectLater(
+            HomeownerService.instance.replyToNoShow(
+              workOrderId: 42,
+              replyText: text,
+            ),
+            throwsArgumentError);
+      }
+    },
+        () => MockClient(
+            (_) async => throw StateError('Unexpected HTTP request')));
+  });
+
+  test('chat uses canonical channel identity for new and existing threads',
+      () async {
+    for (final created in [true, false]) {
+      await http.runWithClient(() async {
+        expect(
+            await HomeownerService.instance.resolveChatThread(workOrderId: 42),
+            'messaging:server-channel-42');
+      },
+          () => MockClient((request) async {
+                expect(request.method, 'POST');
+                expect(request.url.path, '/shared/chat-threads');
+                expect(request.headers['authorization'], startsWith('Bearer '));
+                expect(jsonDecode(request.body), {'workOrderId': 42});
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'channelId': 'server-channel-42',
+                      'channelType': 'messaging',
+                      'created': created,
+                    }),
+                    created ? 201 : 200);
+              }));
+    }
+  });
+
+  test('invalid chat response cannot produce an invented channel', () async {
+    for (final response in [
+      http.Response('{"success":false,"error":"work_order_required"}', 403),
+      http.Response('{"success":true}', 200),
+      http.Response('{"success":true,"channelId":" "}', 201),
+      http.Response('{"success":true,"channelId":42}', 201),
+    ]) {
+      var calls = 0;
+      await http.runWithClient(() async {
+        await expectLater(
+            StreamService.instance.openWorkOrderChannel(
+              workOrderId: 42,
+            ),
+            throwsException);
+      },
+          () => MockClient((request) async {
+                calls++;
+                expect(request.url.path, '/shared/chat-threads');
+                return response;
+              }));
+      expect(calls, 1);
+    }
+  });
+
+  testWidgets('no-show screen sends replyText and returns confirmed success',
+      (tester) async {
+    bool? sent;
+    final calls = <http.Request>[];
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: Builder(
+        builder: (context) => TextButton(
+            onPressed: () async {
+              sent = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        const NoShowReplyScreen(job: {'work_order_id': 42}),
+                  ));
+            },
+            child: const Text('Open reply')),
+      ))));
+      await tester.tap(find.text('Open reply'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'I was waiting at home.');
+      await tester.pump();
+      await tester.tap(find.text('Send reply'));
+      await tester.pumpAndSettle();
+      expect(sent, isTrue);
+      expect(calls.length, 1);
+      expect(jsonDecode(calls.single.body),
+          {'replyText': 'I was waiting at home.'});
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+    },
+        () => MockClient((request) async {
+              calls.add(request);
+              expect(
+                  request.url.path, '/homeowner/work-orders/42/no-show-reply');
+              return http.Response(
+                  '{"success":true,"workOrderId":42,"caseId":1,"replyId":2}',
+                  201);
+            }));
+  });
+
+  testWidgets('work-order chat asks backend even without a Stream user ID',
+      (tester) async {
+    final calls = <String>[];
+    await http.runWithClient(() async {
+      await tester.pumpWidget(const MaterialApp(
+          home: ChatScreen(
+        contractorId: '',
+        contractorName: 'Your pro',
+        workOrderId: 42,
+      )));
+      await tester.pumpAndSettle();
+      expect(calls, ['/shared/chat-threads']);
+      expect(find.text('Messaging unavailable'), findsOneWidget);
+    },
+        () => MockClient((request) async {
+              calls.add(request.url.path);
+              expect(jsonDecode(request.body), {'workOrderId': 42});
+              return http.Response(
+                  '{"success":false,"error":"work_order_not_found"}', 404);
+            }));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('profile chat requires an existing shared work order',
+      (tester) async {
+    final calls = <String>[];
+    await http.runWithClient(() async {
+      await tester.pumpWidget(const MaterialApp(
+          home: ChatScreen(
+        contractorId: '77',
+        contractorName: 'Your pro',
+      )));
+      await tester.pumpAndSettle();
+      expect(calls, ['/homeowner/work-orders-list']);
+      expect(
+          find.text(
+              'Book a service with this pro before starting a conversation.'),
+          findsOneWidget);
+    },
+        () => MockClient((request) async {
+              calls.add(request.url.path);
+              return http.Response(
+                  '{"success":true,"tabs":{"active":[],"scheduled":[],"history":[]}}',
+                  200);
+            }));
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test('cap acceptance retains the server action and chosen appointment',

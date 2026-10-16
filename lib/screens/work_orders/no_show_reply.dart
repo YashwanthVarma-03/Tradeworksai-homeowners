@@ -43,7 +43,8 @@ class _NoShowReplyScreenState extends State<NoShowReplyScreen> {
 
   Future<void> _send() async {
     final value = _text.text.trim();
-    final id = int.tryParse('${widget.job['workOrderId'] ?? widget.job['id']}');
+    final id = int.tryParse(
+        '${widget.job['workOrderId'] ?? widget.job['work_order_id'] ?? widget.job['id']}');
     if (id == null || value.isEmpty || value.length > _maxLength) {
       AppNotification.showInfo(
           context, 'Write a reply of up to 2,000 characters.');
@@ -51,10 +52,14 @@ class _NoShowReplyScreenState extends State<NoShowReplyScreen> {
     }
     setState(() => _sending = true);
     try {
-      await HomeownerService.instance.performWorkOrderAction(
-          workOrderId: id, action: 'no_show_reply', extra: {'text': value});
+      final result = await HomeownerService.instance
+          .replyToNoShow(workOrderId: id, replyText: value);
       if (!mounted) return;
-      AppNotification.showSuccess(context, 'Your reply was sent for review.');
+      AppNotification.showSuccess(
+          context,
+          result['replayed'] == true
+              ? 'Your reply is already on file for review.'
+              : 'Your reply was sent for review.');
       Navigator.pop(context, true);
     } catch (e) {
       if (mounted) AppNotification.showError(context, e);

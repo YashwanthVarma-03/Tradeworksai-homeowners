@@ -1055,10 +1055,11 @@ class HomeownerService {
     final uid = _userId;
     if (uid == null) return null;
     try {
-      final data = await _post(_notificationsListPath, {
-        if (limit != null) 'limit': limit,
-        if (offset != null) 'offset': offset,
-      });
+      final endpoint = Uri(path: _notificationsListPath, queryParameters: {
+        'limit': '${limit ?? 50}',
+        'offset': '${offset ?? 0}',
+      }).toString();
+      final data = await _post(endpoint, const {});
       final unread = data['unreadCount'] ?? data['unread_count'];
       if (unread != null) {
         _setNotificationUnreadCount(
@@ -1091,7 +1092,7 @@ class HomeownerService {
 
   Future<void> markAllNotificationsRead() async {
     if (!notificationsFeedEnabled) return;
-    await _post(_notificationsReadPath, {'all': true});
+    await _post('notifications/read-all', const {});
     _setNotificationUnreadCount(0);
     await fetchNotifications();
   }
@@ -1145,6 +1146,43 @@ class HomeownerService {
     await _invalidateWorkOrderCache();
     unawaited(syncInBackground());
     return result;
+  }
+
+  Future<Map<String, dynamic>> replyToNoShow({
+    required int workOrderId,
+    required String replyText,
+  }) async {
+    if (_userId == null) throw Exception('User is not authenticated');
+    final text = replyText.trim();
+    if (workOrderId <= 0 || text.isEmpty || text.length > 2000) {
+      throw ArgumentError('Write a reply of up to 2,000 characters.');
+    }
+    final result = await _post(
+      'homeowner/work-orders/$workOrderId/no-show-reply',
+      {'replyText': text},
+    );
+    await _invalidateWorkOrderCache();
+    return result;
+  }
+
+  /// The server validates ownership and creates/resolves the canonical thread.
+  /// Do not send a Stream user ID as the optional contractor profile ID.
+  Future<String> resolveChatThread({required int workOrderId}) async {
+    if (_userId == null) throw Exception('User is not authenticated');
+    if (workOrderId <= 0) throw ArgumentError('A work order is required.');
+    final result = await _post('shared/chat-threads', {
+      'workOrderId': workOrderId,
+    });
+    final id = result['channelId'];
+    final type = result['channelType'] ?? 'messaging';
+    if (id is! String ||
+        id.trim().isEmpty ||
+        type is! String ||
+        type.trim().isEmpty) {
+      throw Exception(
+          'The conversation could not be opened. Please try again.');
+    }
+    return '${type.trim()}:${id.trim()}';
   }
 
   // Cap approval books the repair window in the same call.
@@ -1970,7 +2008,7 @@ class HomeownerService {
   Future<void> removePushDevice(String tokenId) async {
     if (tokenId.trim().isEmpty || _userId == null) return;
     await _post(
-      'homeowner/push-tokens/${Uri.encodeComponent(tokenId)}',
+      'push-tokens/${Uri.encodeComponent(tokenId)}',
       const {},
       method: 'DELETE',
     );

@@ -7,6 +7,7 @@ import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
 import 'api_config.dart';
 import 'auth_service.dart';
+import 'homeowner_service.dart';
 import 'fcm_token_provider.dart';
 import 'notification_preferences.dart';
 import 'push_notification_config.dart';
@@ -72,7 +73,7 @@ class StreamService extends ChangeNotifier {
     }
 
     // A contractor profile ID and a work-order ID are not Stream user IDs.
-    // Only an explicit user-id field is valid for creating a direct channel.
+    // Only explicit user-id fields can match a pro to their work orders.
     return null;
   }
 
@@ -86,7 +87,6 @@ class StreamService extends ChangeNotifier {
 
   Future<void> ensureConnected({
     bool forceReconnect = false,
-    String? withUserId,
   }) async {
     final userId = AuthService.instance.userId;
     final email = AuthService.instance.userEmail;
@@ -104,9 +104,7 @@ class StreamService extends ChangeNotifier {
 
     if (_connectInFlight != null) {
       await _connectInFlight;
-      if (!forceReconnect &&
-          (withUserId == null || withUserId.isEmpty) &&
-          isReady) {
+      if (!forceReconnect && isReady) {
         return;
       }
     }
@@ -132,8 +130,6 @@ class StreamService extends ChangeNotifier {
           body: jsonEncode({
             if (userId != null) 'userId': userId,
             if (email != null && email.isNotEmpty) 'email': email,
-            if (withUserId != null && withUserId.isNotEmpty)
-              'withUserId': withUserId,
           }),
         );
         final resolvedResponse = response.statusCode == 404
@@ -143,8 +139,6 @@ class StreamService extends ChangeNotifier {
                 body: jsonEncode({
                   if (userId != null) 'userId': userId,
                   if (email != null && email.isNotEmpty) 'email': email,
-                  if (withUserId != null && withUserId.isNotEmpty)
-                    'withUserId': withUserId,
                 }),
               )
             : response;
@@ -304,42 +298,16 @@ class StreamService extends ChangeNotifier {
     return channel;
   }
 
-  Future<Channel> openDirectMessageChannel({
-    required String otherUserId,
-    required String otherUserName,
+  Future<Channel> openWorkOrderChannel({
+    required int workOrderId,
     bool forceReconnect = false,
   }) async {
-    await ensureConnected(
+    final channelId = await HomeownerService.instance.resolveChatThread(
+      workOrderId: workOrderId,
+    );
+    return openChannelById(
+      channelId,
       forceReconnect: forceReconnect,
-      withUserId: otherUserId,
     );
-
-    final client = _client;
-    if (client == null) {
-      throw Exception('Chat is not available right now.');
-    }
-
-    final currentUserId = client.state.currentUser?.id;
-    if (currentUserId == null || currentUserId.isEmpty) {
-      throw Exception('Not connected. Please log in again.');
-    }
-
-    if (currentUserId == otherUserId) {
-      throw Exception('Unable to open a conversation with this account.');
-    }
-
-    final ids = [currentUserId, otherUserId]..sort();
-    final channelId = ids.join('_');
-
-    final channel = client.channel(
-      'messaging',
-      id: channelId,
-      extraData: {
-        'name': otherUserName,
-        'members': [currentUserId, otherUserId],
-      },
-    );
-    await channel.watch();
-    return channel;
   }
 }

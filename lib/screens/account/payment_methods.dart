@@ -56,6 +56,8 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
           for (final job in rows.whereType<Map>()) {
             if (job['pro'] is! Map) continue;
             final pro = Map<String, dynamic>.from(job['pro']);
+            pro['workOrderId'] =
+                job['workOrderId'] ?? job['work_order_id'] ?? job['id'];
             final key = '${pro['slug'] ?? pro['userId'] ?? pro['id'] ?? ''}';
             if (key.isNotEmpty) pros.putIfAbsent(key, () => pro);
           }
@@ -71,7 +73,8 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
               data['profile'] ?? data['contractor'] ?? data['pro'] ?? data;
           return {
             ...pro,
-            if (profile is Map) ...Map<String, dynamic>.from(profile)
+            if (profile is Map) ...Map<String, dynamic>.from(profile),
+            'workOrderId': pro['workOrderId'],
           };
         } catch (_) {
           return {...pro, 'loadFailed': true};
@@ -150,8 +153,8 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Text('Pay your pro directly',
-                                    style: AppTheme.headingStyle
-                                        .copyWith(fontSize: 24, height: 30 / 24)),
+                                    style: AppTheme.headingStyle.copyWith(
+                                        fontSize: 24, height: 30 / 24)),
                                 const SizedBox(height: 8),
                                 const Text(
                                   'You pay your pro directly. TradeWorks adds no markup and takes no fee — we only fund the credits you apply.',
@@ -162,7 +165,8 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                                 ),
                                 const SizedBox(height: 28),
                                 Row(
-                                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.baseline,
                                   textBaseline: TextBaseline.alphabetic,
                                   children: [
                                     Expanded(

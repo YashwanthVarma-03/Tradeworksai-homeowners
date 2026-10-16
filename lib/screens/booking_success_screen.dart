@@ -192,13 +192,15 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
 
   void _openMessage() {
     final contractorId = _contractorId;
-    if (contractorId.isEmpty) return;
+    final workOrderId = int.tryParse(_workOrderId(widget.workOrder));
+    if (contractorId.isEmpty && workOrderId == null) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatScreen(
           contractorId: contractorId,
           contractorName: _proName,
+          workOrderId: workOrderId,
           jobReference: _workOrderId(widget.workOrder).isEmpty
               ? null
               : '$_serviceName · ${widget.workOrder?['woNumber'] ?? _workOrderId(widget.workOrder)}',
@@ -211,8 +213,8 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
   Widget build(BuildContext context) {
     final trade = widget.trade?.trim() ?? '';
     final rowLabel = TwType.bodySm(color: AppTheme.body);
-    final rowValue =
-        TwType.bodySm(color: AppTheme.navy).copyWith(fontWeight: FontWeight.w600);
+    final rowValue = TwType.bodySm(color: AppTheme.navy)
+        .copyWith(fontWeight: FontWeight.w600);
 
     return PopScope(
       canPop: _exitRequested,
@@ -370,7 +372,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                   onPressed: _openWorkOrder,
                 ),
                 const SizedBox(height: TwSpace.s12),
-                // _openMessage does nothing when there is no messaging id.
+                // A newly booked work order is sufficient to resolve chat.
                 TwSecondaryButton(
                   label: 'Message $_proName',
                   icon: Icons.chat_bubble_outline_rounded,
@@ -516,4 +518,3 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
     return text.isEmpty || text.toLowerCase() == 'null' ? fallback : text;
   }
 }
-

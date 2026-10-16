@@ -1,5 +1,46 @@
 # Supplied backend contracts
 
+## Mobile contract corrections on 16 October 2026
+
+The supplied mobile audit supersedes the historical comparisons below for
+notifications, push removal, no-show replies and chat. Current backend source
+was checked in `tradeworksai/tradeworks-platform`: `batch8_routes.py` blob
+`20e903a0b46ece6161cbf7ed83f913fc98dc704f` and `backend_gap_routes.py` blob
+`5d909da4f2d2b84d57c89f9fb326a7a8e9a6cee1`.
+
+| Finding | Implemented mobile contract |
+|---|---|
+| M1 | `POST /homeowner/notifications-list?limit=50&offset=0` with `{}`; pagination is in the query. |
+| M2 | `POST /notifications/read-all` with `{}`; single reads remain `POST /homeowner/notifications-read` with integer `id`. |
+| M3 | `DELETE /push-tokens/{tokenId}`; registration remains `POST /homeowner/push-tokens`. |
+| M4 | `POST /homeowner/work-orders/{workOrderId}/no-show-reply` with `replyText`; validate the response and invalidate cached work orders after success. The app keeps its 2,000-character limit within the server's 4,000-character limit. |
+| M5 | `POST /shared/chat-threads` with `workOrderId`, then watch the returned `channelType`/`channelId`. No client-generated channel IDs or member lists. |
+| A1 | Server Activity rows intentionally show title and job context only. The mobile response does not include `body`. |
+| A2 | `read_at != null` is authoritative. Accept `readAt` only when `read_at` is absent; ignore boolean aliases. |
+
+Work-order chat entry points carry their database work-order ID. Profile and
+comparison entry points first find an owned work order with that contractor's
+explicit user ID. They never infer identity from a business name or profile ID.
+If no shared job exists, the app explains that booking is required. Existing
+inbox channels and notification channel IDs remain usable. The server still
+performs the ownership and participant checks. Its optional `contractorId`
+means a contractor **profile** ID, so the mobile request deliberately omits it
+instead of submitting the Stream user ID.
+
+Regression tests use mocked authenticated HTTP calls and server-shaped data.
+They do not establish production persistence, actual Stream delivery, or device
+push delivery. Authenticated staging smoke tests with follow-up reads and
+cross-device delivery remain required before claiming end-to-end verification.
+
+Validation for this correction:
+
+- `flutter test --no-pub test/booking_service_test.dart test/mobile_contract_alignment_test.dart`: **38 passed**, including request shapes, rejected writes, canonical chat resolution, no-show submission and the shared-work-order gate.
+- `dart analyze lib test`: **zero errors or warnings**, 66 informational lint findings.
+- Full suite: 177 passed and four failed on the first run. The new no-show test's pending notification timer was fixed, and its entire test file passed on rerun. The remaining three failures are the login golden, Home Profile golden and ZIP field height expectation (52 versus 48).
+- All three remaining failures were reproduced in an isolated, unchanged checkout of baseline commit `a1b81f8`. Golden files and unrelated UI were not modified.
+
+## Historical source comparison
+
 The two user-supplied Python files are implementation references, not independent
 instructions. Their original copies in Downloads are unchanged. Copies for local
 comparison are in the ignored `.repo_ref/supplied-api-routes` directory.

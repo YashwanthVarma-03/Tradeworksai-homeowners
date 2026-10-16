@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:stream_chat_flutter/stream_chat_flutter.dart';
 
 import '../utils/app_error_utils.dart';
+import '../utils/chat_work_order.dart';
 import '../services/homeowner_service.dart';
 import '../services/stream_service.dart';
 import '../utils/work_order_labels.dart';
@@ -13,9 +14,11 @@ import '../ui/tw.dart';
 import '../widgets/offline_state.dart';
 
 class ChatScreen extends StatefulWidget {
+  /// Stream user ID, used only to find this pro's work orders.
   final String contractorId;
   final String contractorName;
   final String? channelId;
+  final int? workOrderId;
 
   /// Kept so existing callers compile. It no longer pre-selects a job:
   /// a message is never auto-assigned (decisions §8).
@@ -28,6 +31,7 @@ class ChatScreen extends StatefulWidget {
     required this.contractorName,
     this.jobReference,
     this.existingChannel,
+    this.workOrderId,
   }) : channelId = null;
 
   const ChatScreen.forChannel({
@@ -35,6 +39,7 @@ class ChatScreen extends StatefulWidget {
     required this.channelId,
     this.contractorName = 'Messages',
   })  : contractorId = '',
+        workOrderId = null,
         jobReference = null,
         existingChannel = null;
 
@@ -67,48 +72,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (widget.contractorId.isEmpty) return;
     try {
       final data = await HomeownerService.instance.fetchWorkOrders();
-      final tabs = data['tabs'];
-      final jobs = <Map<String, dynamic>>[];
-      final seen = <String>{};
-      if (tabs is Map) {
-        for (final list in tabs.values.whereType<List>()) {
-          for (final raw in list.whereType<Map>()) {
-            final job = Map<String, dynamic>.from(raw);
-            final label = workOrderLabel(job);
-            if (label.isEmpty || !_isWithThisPro(job) || !seen.add(label)) {
-              continue;
-            }
-            jobs.add(job);
-          }
-        }
-      }
+      final jobs = chatWorkOrders(data, widget.contractorId);
       if (mounted) setState(() => _jobsWithPro = jobs);
     } catch (_) {
       // Without the list the picker is hidden; messaging still works.
     }
-  }
-
-  bool _isWithThisPro(Map<String, dynamic> job) {
-    for (final node in [job['pro'], job['contractor']]) {
-      if (node is Map &&
-          StreamService.instance
-                  .resolveMessagingUserId(Map<String, dynamic>.from(node)) ==
-              widget.contractorId) {
-        return true;
-      }
-    }
-    for (final key in const [
-      'chatUserId',
-      'chat_user_id',
-      'streamUserId',
-      'stream_user_id',
-      'contractorUserId',
-      'contractor_user_id',
-    ]) {
-      if ('${job[key] ?? ''}' == widget.contractorId) return true;
-    }
-    final name = widget.contractorName.trim().toLowerCase();
-    return name.isNotEmpty && jobProName(job, '').trim().toLowerCase() == name;
   }
 
   /// "WO-24144 · HVAC tune-up" — the chip and the picker read the same.
@@ -218,15 +186,28 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _initChannel({bool forceReconnect = false}) async {
     try {
+      var workOrderId = widget.workOrderId;
+      if (widget.existingChannel == null &&
+          widget.channelId == null &&
+          workOrderId == null) {
+        final data = await HomeownerService.instance.fetchWorkOrders(
+          forceRefresh: true,
+        );
+        final jobs = chatWorkOrders(data, widget.contractorId);
+        if (jobs.isEmpty) {
+          throw Exception(
+              'Book a service with this pro before starting a conversation.');
+        }
+        workOrderId = workOrderDbId(jobs.first);
+      }
       final channel = widget.existingChannel ??
           (widget.channelId != null
               ? await StreamService.instance.openChannelById(
                   widget.channelId!,
                   forceReconnect: forceReconnect,
                 )
-              : await StreamService.instance.openDirectMessageChannel(
-                  otherUserId: widget.contractorId,
-                  otherUserName: widget.contractorName,
+              : await StreamService.instance.openWorkOrderChannel(
+                  workOrderId: workOrderId!,
                   forceReconnect: forceReconnect,
                 ));
 

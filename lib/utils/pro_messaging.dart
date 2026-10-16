@@ -19,17 +19,20 @@ Future<void> openProThread(
   BuildContext context,
   Map<String, dynamic> source, {
   String? proName,
+  int? workOrderId,
 }) async {
   final nested = source['pro'] ?? source['contractor'];
   final pro = nested is Map
       ? Map<String, dynamic>.from(nested)
       : Map<String, dynamic>.from(source);
+  workOrderId ??= int.tryParse(
+      '${source['workOrderId'] ?? source['work_order_id'] ?? (nested is Map ? source['id'] : null)}');
   var userId = StreamService.instance.resolveMessagingUserId(pro) ??
       StreamService.instance.resolveMessagingUserId(source) ??
       _text(source['contractorUserId']) ??
       _text(source['contractor_user_id']);
 
-  if (userId == null) {
+  if (userId == null && workOrderId == null) {
     final slug = _text(pro['slug']) ??
         _text(pro['profileSlug']) ??
         _text(pro['profile_slug']) ??
@@ -51,7 +54,7 @@ Future<void> openProThread(
   }
 
   if (!context.mounted) return;
-  if (userId == null || userId.isEmpty) {
+  if ((userId == null || userId.isEmpty) && workOrderId == null) {
     AppNotification.showInfo(
         context, 'Messaging is not available for this pro yet.');
     return;
@@ -64,7 +67,11 @@ Future<void> openProThread(
   await Navigator.push(
     context,
     MaterialPageRoute(
-      builder: (_) => ChatScreen(contractorId: userId!, contractorName: name),
+      builder: (_) => ChatScreen(
+        contractorId: userId ?? '',
+        contractorName: name,
+        workOrderId: workOrderId,
+      ),
     ),
   );
 }

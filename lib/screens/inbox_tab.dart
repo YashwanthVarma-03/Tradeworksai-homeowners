@@ -385,12 +385,15 @@ class ActivityItem {
       proName: text(row['pro_name'] ?? row['proName']),
       waitingOnYou:
           row['waiting_on_you'] == true || row['waitingOnYou'] == true,
-      unread: text(row['read_at'] ?? row['readAt']).isEmpty,
+      // The timestamp is authoritative; a boolean alias is not required.
+      unread:
+          (row.containsKey('read_at') ? row['read_at'] : row['readAt']) == null,
       targetId: text(row['channel_id'] ??
           row['channelId'] ??
           row['work_order_id'] ??
           row['workOrderId']),
-      body: text(row['body']),
+      // The mobile feed is intentionally title-only: its response omits body.
+      // Locally derived events can still supply their own supporting copy.
     );
   }
 }

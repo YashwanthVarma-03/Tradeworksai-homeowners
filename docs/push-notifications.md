@@ -76,16 +76,22 @@ TradeWorks calls use the signed-in homeowner's Supabase bearer token. These are 
 | Action | API | Request | Response used |
 | --- | --- | --- | --- |
 | Register phone | `POST /homeowner/push-tokens` | `{"provider":"fcm","platform":"ios","token":"<FCM token>"}` | Token-record ID; missing ID is an error |
-| Remove phone | `DELETE /homeowner/push-tokens/<tokenId>` | No extra user ID | Success before session clear; failed deletion queued for that account |
+| Remove phone | `DELETE /push-tokens/<tokenId>` | No extra user ID | Success before session clear; failed deletion queued for that account |
 | Read preferences | `GET /homeowner/account` | No body | `account.preferences.push` and `.email` |
 | Save preferences | `PATCH /homeowner/account/notification-preferences` | `{"preferences":{"push":{"messages":true}}}` | Success, then update local cache |
-| Open Activity | `POST /homeowner/notifications-list` | `{"limit":50,"offset":0}` | `notifications[]`, `unreadCount`, `read_at` |
+| Open Activity | `POST /homeowner/notifications-list?limit=50&offset=0` | Empty JSON object | `notifications[]`, `unreadCount`, `read_at`; title-only feed with job context |
 | Mark one read | `POST /homeowner/notifications-read` | `{"id":1056}` | Success; update unread state |
-| Mark all read | Same read API | `{"all":true}` | Success; update unread state |
+| Mark all read | `POST /notifications/read-all` | Empty JSON object | Success; refresh unread state |
 | Enable chat push | Stream `addDevice(token, PushProvider.firebase)` | FCM token and connected user | Stream registration success |
 | Disable chat push | Stream `removeDevice(token)` | Registered token | Stream removal success |
 
 The old `homeowner/profile` actions `register_push_device` and `update_notification_settings` are invalid and must not be used.
+
+Activity uses `read_at != null` as the source of truth for read state, with
+`readAt` accepted when the snake-case field is absent. It does not require or
+infer a `read` boolean. The mobile feed intentionally displays titles and job
+context because the backend does not return `body`; locally derived events may
+still provide supporting copy.
 
 ## Tap destinations
 

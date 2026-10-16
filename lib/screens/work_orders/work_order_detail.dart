@@ -15,10 +15,9 @@ import 'cap_approval.dart';
 import 'leave_review.dart';
 import 'reschedule_work_order.dart';
 import '../../services/homeowner_service.dart';
-import '../../services/stream_service.dart';
+import '../../utils/pro_messaging.dart';
 import '../../widgets/app_notification.dart';
 import '../../widgets/transaction_guard.dart';
-import '../chat_screen.dart';
 
 class WorkOrderDetailScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -144,7 +143,10 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   }
 
   String _workOrderId() {
-    return _readString(_job['workOrderId']) ?? _readString(_job['id']) ?? '';
+    return _readString(_job['workOrderId']) ??
+        _readString(_job['work_order_id']) ??
+        _readString(_job['id']) ??
+        '';
   }
 
   /// "WO-24144" — the work-order number, never the database id with a "#".
@@ -1135,68 +1137,12 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
 
   // Batch 19 A1: no Call button and no tel: launcher on the homeowner side.
   // The pro is reached through Message only (see _proSection).
-  Future<void> _openMessage() async {
-    final pro = _job['pro'];
-    final contractor = _job['contractor'];
-    final proData = pro is Map
-        ? Map<String, dynamic>.from(pro)
-        : contractor is Map
-            ? Map<String, dynamic>.from(contractor)
-            : const <String, dynamic>{};
-    String? messagingUserId =
-        StreamService.instance.resolveMessagingUserId(proData) ??
-            _readString(_job['chatUserId']) ??
-            _readString(_job['chat_user_id']) ??
-            _readString(_job['streamUserId']) ??
-            _readString(_job['stream_user_id']) ??
-            _readString(_job['contractorUserId']) ??
-            _readString(_job['contractor_user_id']);
-
-    if (messagingUserId == null) {
-      final slug = _readString(_job['proSlug']) ??
-          _readString(_job['pro_slug']) ??
-          _readString(_job['contractorSlug']) ??
-          _readString(_job['contractor_slug']) ??
-          _readString(proData['slug']) ??
-          _readString(proData['profileSlug']) ??
-          _readString(proData['profile_slug']) ??
-          _readString(proData['businessSlug']) ??
-          _readString(proData['business_slug']) ??
-          _readString(proData['contractorSlug']) ??
-          _readString(proData['contractor_slug']);
-      if (slug != null) {
-        try {
-          final profile =
-              await HomeownerService.instance.getContractorProfile(slug);
-          messagingUserId =
-              StreamService.instance.resolveMessagingUserId(profile);
-        } catch (_) {
-          // The explicit user ID in the work order remains the preferred path.
-        }
-      }
-    }
-
-    if (!mounted) return;
-    if (messagingUserId == null || messagingUserId.isEmpty) {
-      AppNotification.showInfo(
+  Future<void> _openMessage() => openProThread(
         context,
-        'Messaging is not available for this pro yet.',
+        _job,
+        proName: _proName().isEmpty ? 'Pro' : _proName(),
+        workOrderId: int.tryParse(_workOrderId()),
       );
-      return;
-    }
-
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          contractorId: messagingUserId!,
-          contractorName: _proName().isEmpty ? 'Pro' : _proName(),
-          jobReference:
-              '${_serviceName()} · ${_job['woNumber'] ?? _workOrderId()}',
-        ),
-      ),
-    );
-  }
 
   Widget _outlineButton(
     String label, {
@@ -1466,4 +1412,3 @@ class _TimelineStep {
 
   const _TimelineStep(this.title, this.caption);
 }
-
