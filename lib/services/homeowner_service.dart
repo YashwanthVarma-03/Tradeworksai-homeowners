@@ -15,31 +15,16 @@ class HomeownerService {
   HomeownerService._internal();
 
   static const String _workOrdersListPath = 'homeowner/work-orders-list';
-  static const String _legacyWorkOrdersListPath =
-      'homeowner-work-orders-list-v2-supabase';
   static const String _workOrdersActionPath = 'homeowner/work-orders-action';
-  static const String _legacyWorkOrdersActionPath =
-      'homeowner-work-orders-action-v2-supabase';
   static const String _bookingCommitPath = 'homeowner/booking-commit';
-  static const String _legacyBookingCommitPath = 'booking-commit-v2-supabase';
   static const String _reviewActionPath = 'homeowner/review-action';
-  static const String _legacyReviewActionPath =
-      'homeowner-review-action-v2-supabase';
   static const String _profilePath = 'homeowner/profile';
-  static const String _legacyProfilePath = 'homeowner-profile-v2-supabase';
   static const String _rewardsPath = ApiConfig.rewardsUrl;
   static const String _verifyPath = 'homeowner/verify';
-  static const String _legacyVerifyPath = 'homeowner-verify-v2-supabase';
   static const String _contractorProfilePath = 'public/contractor-profile-get';
-  static const String _legacyContractorProfilePath =
-      'public-contractor-profile-get-v2-supabase';
   static const String _contractorSearchPath = 'public/contractor-search';
-  static const String _legacyContractorSearchPath =
-      'public-contractor-search-v2-supabase';
   static const String _zipCoveragePath = 'public/zip-coverage-get';
   static const String _availabilityPath = 'contractor/availability-get';
-  static const String _legacyAvailabilityPath =
-      'contractor-availability-get-v2-supabase';
 
   // Live profile and address caches.
   List<dynamic>? _cachedAddresses;
@@ -96,6 +81,8 @@ class HomeownerService {
   final Map<String, DateTime> _availabilityCacheAt = {};
   final Map<String, Future<Map<String, dynamic>>> _bookingCommitsInFlight = {};
   final Map<String, Map<String, dynamic>> _completedBookingCommits = {};
+  final Map<String, Map<String, dynamic>> _pendingBookingBodies = {};
+  final Map<String, String> _pendingBookingInputs = {};
   SharedPreferences? _preferences;
   Future<SharedPreferences>? _preferencesInFlight;
   final Map<String, _RecentRequestFailure> _recentRequestFailures = {};
@@ -572,6 +559,8 @@ class HomeownerService {
     _reviewsHydrationInFlight = null;
     _bookingCommitsInFlight.clear();
     _completedBookingCommits.clear();
+    _pendingBookingBodies.clear();
+    _pendingBookingInputs.clear();
   }
 
   Future<SharedPreferences> _getPreferences() {
@@ -868,25 +857,11 @@ class HomeownerService {
   Future<Map<String, dynamic>> _post(
     String endpoint,
     Map<String, dynamic> body, {
-    String? fallbackEndpoint,
     String method = 'POST',
   }) async {
     _throwIfRecentFailure(endpoint);
     try {
-      http.Response response;
-      try {
-        response = await _postRaw(endpoint, body, method: method);
-      } catch (primaryError) {
-        if (fallbackEndpoint == null ||
-            !AppErrorUtils.isNetworkError(primaryError)) {
-          rethrow;
-        }
-        response = await _postRaw(fallbackEndpoint, body);
-      }
-
-      if (fallbackEndpoint != null && _shouldUseFallbackEndpoint(response)) {
-        response = await _postRaw(fallbackEndpoint, body);
-      }
+      final response = await _postRaw(endpoint, body, method: method);
 
       if (response.statusCode == 204 && response.body.isEmpty) {
         _clearRecentFailure(endpoint);
@@ -912,6 +887,19 @@ class HomeownerService {
         throw Exception('Please sign in to continue.');
       }
 
+      // Preserve the booking conflict code even when the API also supplies a
+      // generic error/message. Both HTTP errors and ok:false holds can carry it.
+      if (endpoint == _bookingCommitPath &&
+          (response.statusCode >= 400 ||
+              data['success'] == false ||
+              data['ok'] == false) &&
+          [data['code'], data['error'], data['reason']]
+              .join(' ')
+              .toUpperCase()
+              .contains('CALENDAR_BLOCKED')) {
+        throw Exception('CALENDAR_BLOCKED');
+      }
+
       if (response.statusCode >= 400) {
         final error = data['error'] ??
             data['reason'] ??
@@ -931,43 +919,10 @@ class HomeownerService {
       }
 
       _clearRecentFailure(endpoint);
-      if (fallbackEndpoint != null) {
-        _clearRecentFailure(fallbackEndpoint);
-      }
       return data;
     } catch (e) {
       _cacheRecentFailure(endpoint, e);
-      if (fallbackEndpoint != null) {
-        _cacheRecentFailure(fallbackEndpoint, e);
-      }
       rethrow;
-    }
-  }
-
-  /// Some deployed API generations return a successful HTTP status with an
-  /// application-level `not_found` or `server_error` payload. Treat those the
-  /// same as an HTTP 404/5xx and use the maintained legacy endpoint when one
-  /// is available, instead of exposing a transient backend route mismatch.
-  bool _shouldUseFallbackEndpoint(http.Response response) {
-    if (response.statusCode == 404 || response.statusCode >= 500) {
-      return true;
-    }
-    if (response.body.isEmpty) return false;
-
-    try {
-      final data = jsonDecode(response.body);
-      if (data is! Map) return false;
-      if (data['success'] != false && data['ok'] != false) return false;
-      final detail = [data['error'], data['reason'], data['message']]
-          .whereType<Object>()
-          .join(' ')
-          .toLowerCase();
-      return detail.contains('not_found') ||
-          detail.contains('not found') ||
-          detail.contains('server_error') ||
-          detail.contains('internal server error');
-    } catch (_) {
-      return false;
     }
   }
 
@@ -1023,7 +978,6 @@ class HomeownerService {
     final future = _post(
       _workOrdersListPath,
       {'userId': uid},
-      fallbackEndpoint: _legacyWorkOrdersListPath,
     ).then(_withNormalizedTabs);
     _workOrdersInFlight = future;
     try {
@@ -1141,7 +1095,6 @@ class HomeownerService {
     final result = await _post(
       _workOrdersActionPath,
       body,
-      fallbackEndpoint: _legacyWorkOrdersActionPath,
     );
     await _invalidateWorkOrderCache();
     unawaited(syncInBackground());
@@ -1163,6 +1116,19 @@ class HomeownerService {
     );
     await _invalidateWorkOrderCache();
     return result;
+  }
+
+  Future<Map<String, dynamic>?> getNoShowCase(int workOrderId) async {
+    if (_userId == null) throw Exception('User is not authenticated');
+    if (workOrderId <= 0) throw ArgumentError('A work order is required.');
+    final result = await _post(
+      'homeowner/work-orders/$workOrderId/no-show-case',
+      const {},
+      method: 'GET',
+    );
+    final record =
+        result['case'] ?? result['noShowCase'] ?? result['no_show_case'];
+    return record is Map ? Map<String, dynamic>.from(record) : null;
   }
 
   /// The server validates ownership and creates/resolves the canonical thread.
@@ -1224,7 +1190,6 @@ class HomeownerService {
     final result = await _post(
       _workOrdersActionPath,
       body,
-      fallbackEndpoint: _legacyWorkOrdersActionPath,
     );
     await _invalidateWorkOrderCache();
     unawaited(syncInBackground());
@@ -1265,7 +1230,6 @@ class HomeownerService {
     final result = await _post(
       _bookingCommitPath,
       body,
-      fallbackEndpoint: _legacyBookingCommitPath,
     );
     await _invalidateWorkOrderCache();
     unawaited(syncInBackground());
@@ -1308,7 +1272,6 @@ class HomeownerService {
     final result = await _post(
       _reviewActionPath,
       body,
-      fallbackEndpoint: _legacyReviewActionPath,
     );
     _cacheReview(workOrderId, {
       'rating': ratingInt.toDouble(),
@@ -1350,16 +1313,13 @@ class HomeownerService {
     required String expectedUpdatedAt,
   }) async {
     if (_userId == null) throw Exception('User is not authenticated');
-    await _post(
-        _reviewActionPath,
-        {
-          'action': 'delete_review',
-          'requestId': TransactionId.uuid(),
-          'workOrderId': workOrderId,
-          'reviewId': reviewId,
-          'expectedUpdatedAt': expectedUpdatedAt,
-        },
-        fallbackEndpoint: _legacyReviewActionPath);
+    await _post(_reviewActionPath, {
+      'action': 'delete_review',
+      'requestId': TransactionId.uuid(),
+      'workOrderId': workOrderId,
+      'reviewId': reviewId,
+      'expectedUpdatedAt': expectedUpdatedAt,
+    });
     _reviewsByWorkOrder.remove(workOrderId);
     _invalidateReviewEligibilityCache(workOrderId);
     await _invalidateWorkOrderCache();
@@ -1623,7 +1583,6 @@ class HomeownerService {
         'requesterUserId': _userId,
         'requester_user_id': _userId,
       },
-      fallbackEndpoint: _legacyReviewActionPath,
     );
     _reviewEligibilityInFlight[workOrderId] = future;
     try {
@@ -1662,14 +1621,12 @@ class HomeownerService {
 
       final future = () async {
         var response = await _postRaw(_contractorProfilePath, {'slug': slug});
-        if (response.statusCode == 404) {
-          response =
-              await _postRaw(_legacyContractorProfilePath, {'slug': slug});
-        }
         if (response.body.isEmpty) throw Exception('Empty response');
         final data = jsonDecode(response.body);
         if (data is! Map<String, dynamic>) throw Exception('Invalid response');
-        if (data['success'] == false || data['ok'] == false) {
+        if (response.statusCode >= 400 ||
+            data['success'] == false ||
+            data['ok'] == false) {
           throw Exception(
             data['error'] ??
                 data['reason'] ??
@@ -1702,8 +1659,8 @@ class HomeownerService {
     required String contractorId,
     String? serviceId,
     String urgency = 'standard',
-    required String fromDate,
-    required String toDate,
+    String? fromDate,
+    String? toDate,
     String? propertyZip,
     int? durationMinutes,
     String? serviceName,
@@ -1715,8 +1672,8 @@ class HomeownerService {
       contractorId,
       serviceId ?? '',
       urgency,
-      fromDate,
-      toDate,
+      fromDate ?? '',
+      toDate ?? '',
       propertyZip ?? '',
       durationMinutes?.toString() ?? '',
       serviceName ?? '',
@@ -1746,8 +1703,8 @@ class HomeownerService {
         'contractorId': contractorId,
         if (serviceId != null && serviceId.isNotEmpty) 'serviceId': serviceId,
         'urgency': urgency,
-        'fromDate': fromDate,
-        'toDate': toDate,
+        if (fromDate != null) 'fromDate': fromDate,
+        if (toDate != null) 'toDate': toDate,
         if (propertyZip != null && propertyZip.isNotEmpty)
           'propertyZip': propertyZip,
         if (durationMinutes != null && durationMinutes > 0)
@@ -1759,25 +1716,13 @@ class HomeownerService {
         if (workOrderType != null && workOrderType.isNotEmpty)
           'workOrderType': workOrderType,
       };
-      late http.Response response;
-      try {
-        response = await _postRaw(_availabilityPath, payload);
-      } catch (error) {
-        // Availability is public and has a maintained legacy route. A
-        // temporary failure on the newer route must not block booking.
-        if (!AppErrorUtils.isNetworkError(error)) rethrow;
-        response = await _postRaw(_legacyAvailabilityPath, payload);
-      }
-      // The hosted API has two route generations. The newer route can return
-      // a transient server/auth failure even though the public legacy function
-      // is healthy, so use it as a genuine fallback for public availability.
-      if (_shouldUseLegacyAvailability(response)) {
-        response = await _postRaw(_legacyAvailabilityPath, payload);
-      }
+      final response = await _postRaw(_availabilityPath, payload);
       if (response.body.isEmpty) throw Exception('Empty response');
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>) throw Exception('Invalid response');
-      if (data['success'] == false || data['ok'] == false) {
+      if (response.statusCode >= 400 ||
+          data['success'] == false ||
+          data['ok'] == false) {
         throw Exception(
           data['error'] ??
               data['reason'] ??
@@ -1800,30 +1745,6 @@ class HomeownerService {
           fallback: 'Unable to load availability right now. Please try again.',
         ),
       );
-    }
-  }
-
-  bool _shouldUseLegacyAvailability(http.Response response) {
-    if (response.statusCode == 404 || response.statusCode >= 500) {
-      return true;
-    }
-    if (!AuthService.instance.isAuthenticated && response.statusCode == 401) {
-      return true;
-    }
-    if (response.body.isEmpty) return false;
-    try {
-      final data = jsonDecode(response.body);
-      if (data is! Map) return false;
-      if (data['success'] != false && data['ok'] != false) return false;
-      final detail = [data['error'], data['reason'], data['message']]
-          .whereType<Object>()
-          .join(' ')
-          .toLowerCase();
-      return detail.contains('server_error') ||
-          detail.contains('unauthenticated') ||
-          detail.contains('unauthorized');
-    } catch (_) {
-      return false;
     }
   }
 
@@ -1902,7 +1823,6 @@ class HomeownerService {
         'action': 'get',
         'userId': uid,
       },
-      fallbackEndpoint: _legacyProfilePath,
     );
     _profileInFlight = future;
     try {
@@ -1945,18 +1865,14 @@ class HomeownerService {
         'preferredContact': preferredContact,
         'marketingConsent': marketingConsent,
       },
-      fallbackEndpoint: _legacyProfilePath,
     );
     await _invalidateProfileCache();
     unawaited(syncInBackground());
     return result;
   }
 
-  /// Help & support's contact form (F09). Off until the backend ships
-  /// `homeowner/support-request`; returns null while off so the form can
-  /// hand the request to the phone's email app instead. A request is never
-  /// reported as sent unless this call returned.
-  static const bool supportRequestEnabled = false;
+  /// Help & support uses the live route, with an email fallback in the screen.
+  static const bool supportRequestEnabled = true;
   static const String _supportRequestPath = 'homeowner/support-request';
 
   Future<Map<String, dynamic>?> submitSupportRequest({
@@ -2031,8 +1947,7 @@ class HomeownerService {
       if (address['unit'] != null) 'unit': address['unit'],
     };
 
-    final result =
-        await _post(_profilePath, body, fallbackEndpoint: _legacyProfilePath);
+    final result = await _post(_profilePath, body);
     if (result['success'] == true && result['addresses'] != null) {
       _cachedAddresses = result['addresses'];
     }
@@ -2062,8 +1977,7 @@ class HomeownerService {
       if (address['unit'] != null) 'unit': address['unit'],
     };
 
-    final result =
-        await _post(_profilePath, body, fallbackEndpoint: _legacyProfilePath);
+    final result = await _post(_profilePath, body);
     if (result['success'] == true && result['addresses'] != null) {
       _cachedAddresses = result['addresses'];
     }
@@ -2083,7 +1997,6 @@ class HomeownerService {
         'userId': uid,
         'addressId': addressId,
       },
-      fallbackEndpoint: _legacyProfilePath,
     );
     if (result['success'] == true && result['addresses'] != null) {
       _cachedAddresses = result['addresses'];
@@ -2104,7 +2017,6 @@ class HomeownerService {
         'userId': uid,
         'addressId': addressId,
       },
-      fallbackEndpoint: _legacyProfilePath,
     );
     if (result['success'] == true && result['addresses'] != null) {
       _cachedAddresses = result['addresses'];
@@ -2127,7 +2039,8 @@ class HomeownerService {
     if (_userId == null) {
       return Future.error(Exception('User is not authenticated'));
     }
-    final key = transactionId?.trim() ?? '';
+    final key =
+        transactionId?.trim() ?? booking['credit_request_id']?.toString() ?? '';
     if (key.isEmpty) {
       return _commitBooking(
         contractorId: contractorId,
@@ -2179,6 +2092,22 @@ class HomeownerService {
     final uid = _userId;
     if (uid == null) throw Exception('User is not authenticated');
 
+    final input =
+        jsonEncode([contractorId, action, urgency, booking, startsAt, endsAt]);
+    final pending = _pendingBookingBodies[transactionId];
+    if (pending != null) {
+      if (pending['action'] == 'quote_request') {
+        // The legacy estimate endpoint does not honour idempotencyKey.
+        // Reposting after a lost response could create a second work order.
+        throw Exception(
+            'The estimate request may already be booked. Check Bookings before sending another request.');
+      }
+      if (_pendingBookingInputs[transactionId] != input) {
+        throw Exception(
+            'The previous booking is still being confirmed. Retry it before changing the booking details.');
+      }
+      return _sendBookingCommit(pending, uid, transactionId);
+    }
     final bookingPayload = Map<String, dynamic>.from(booking);
     bookingPayload['requester_user_id'] = uid;
     if (transactionId != null) {
@@ -2191,15 +2120,25 @@ class HomeownerService {
     final creditRequestId = bookingPayload.remove('credit_request_id');
     final intakeToken = bookingPayload.remove('intake_session_token');
     final contractorServiceId = bookingPayload.remove('contractor_service_id');
+    if (contractorServiceId == null) {
+      throw Exception('A service is required to book this appointment.');
+    }
     if (creditAmount > 0 && (action != 'commit' || creditRequestId == null)) {
       throw Exception(
           'Credits require a confirmed booking and a request identifier.');
     }
+    if (action == 'quote_request') {
+      final start = DateTime.tryParse(startsAt ?? '');
+      final end = DateTime.tryParse(endsAt ?? '');
+      if (urgency != 'standard' ||
+          start == null ||
+          end == null ||
+          end.difference(start) != const Duration(hours: 2)) {
+        throw ArgumentError('Choose a two-hour window for the free visit.');
+      }
+    }
     int? holdId;
     if (action == 'commit') {
-      if (contractorServiceId == null) {
-        throw Exception('A service is required to book this appointment.');
-      }
       final hold = await _post(
         _bookingCommitPath,
         {
@@ -2213,15 +2152,17 @@ class HomeownerService {
           if (bookingPayload['property_tz'] != null)
             'propertyTz': bookingPayload['property_tz'],
         },
-        fallbackEndpoint: _legacyBookingCommitPath,
       );
       holdId = int.tryParse('${hold['holdId'] ?? hold['hold_id']}');
       if (holdId == null) {
         throw Exception(
             'That time is no longer available. Pick another window.');
       }
-      startsAt ??= hold['startsAt']?.toString();
-      endsAt ??= hold['endsAt']?.toString();
+      // Urgent/emergency holds allocate their own current window. The hold
+      // response is authoritative even when a preview supplied other times.
+      startsAt =
+          hold['startsAt']?.toString() ?? hold['start']?.toString() ?? startsAt;
+      endsAt = hold['endsAt']?.toString() ?? hold['end']?.toString() ?? endsAt;
     }
     final idempotencyKey = transactionId != null &&
             RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(transactionId)
@@ -2231,7 +2172,7 @@ class HomeownerService {
       if (creditAmount > 0) ...{
         'applyServiceCredit': true,
         'serviceCreditAmount': creditAmount.toStringAsFixed(2),
-        'creditRequestId': creditRequestId
+        'creditRequestId': idempotencyKey
       },
       if (intakeToken != null) 'intakeSessionToken': intakeToken,
       'contractorId': contractorId,
@@ -2244,15 +2185,20 @@ class HomeownerService {
       if (startsAt != null) 'startsAt': startsAt,
       if (endsAt != null) 'endsAt': endsAt,
       'idempotencyKey': idempotencyKey,
-      if (action == 'commit' && booking['address_zip'] != null)
-        'propertyZip': booking['address_zip'],
+      if (booking['address_zip'] != null) 'propertyZip': booking['address_zip'],
     };
 
+    if (transactionId != null) {
+      _pendingBookingInputs[transactionId] = input;
+      _pendingBookingBodies[transactionId] = body;
+    }
+    return _sendBookingCommit(body, uid, transactionId);
+  }
+
+  Future<Map<String, dynamic>> _sendBookingCommit(
+      Map<String, dynamic> body, String uid, String? transactionId) async {
     try {
       var response = await _postRaw(_bookingCommitPath, body);
-      if (response.statusCode == 404) {
-        response = await _postRaw(_legacyBookingCommitPath, body);
-      }
       if (response.body.isEmpty) throw Exception('Empty response');
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>)
@@ -2261,17 +2207,52 @@ class HomeownerService {
       if (response.statusCode >= 400 ||
           data['ok'] == false ||
           data['success'] == false) {
+        if (response.statusCode < 500) {
+          _pendingBookingBodies.remove(transactionId);
+          _pendingBookingInputs.remove(transactionId);
+        }
         throw Exception(
             data['reason'] ?? data['error'] ?? 'Booking commit failed');
+      }
+      final record = data['wo'] ??
+          data['workOrder'] ??
+          data['work_order'] ??
+          data['booking'] ??
+          data['data'] ??
+          data;
+      final id = data['workOrderId'] ??
+          data['work_order_id'] ??
+          (record is Map
+              ? record['workOrderId'] ?? record['work_order_id'] ?? record['id']
+              : null);
+      if (int.tryParse('$id') == null || int.parse('$id') <= 0) {
+        throw Exception(
+            'The server did not confirm a work order. Retry to check this booking.');
       }
       if (_userId != uid) {
         throw Exception('The signed-in user changed during this request.');
       }
+      _pendingBookingBodies.remove(transactionId);
+      _pendingBookingInputs.remove(transactionId);
       await _invalidateWorkOrderCache();
       await _invalidateAvailabilityCache();
       await _invalidateRewardsCache();
       unawaited(syncInBackground());
-      return data;
+      return {
+        ...data,
+        if (body['startsAt'] != null) ...{
+          'scheduledStart': data['scheduledStart'] ??
+              data['scheduled_start'] ??
+              data['startsAt'] ??
+              data['start'] ??
+              body['startsAt'],
+          'scheduledEnd': data['scheduledEnd'] ??
+              data['scheduled_end'] ??
+              data['endsAt'] ??
+              data['end'] ??
+              body['endsAt'],
+        },
+      };
     } catch (e) {
       rethrow;
     }
@@ -2307,17 +2288,14 @@ class HomeownerService {
         'urgency': urgency,
       };
       _throwIfRecentFailure(_contractorSearchPath);
-      _throwIfRecentFailure(_legacyContractorSearchPath);
       var response = await _postRaw(_contractorSearchPath, payload);
-      if (_shouldUseFallbackEndpoint(response)) {
-        response = await _postRaw(_legacyContractorSearchPath, payload);
-      }
       if (response.body.isEmpty) {
         throw Exception(ApiConfig.emptyResponseMessage(_contractorSearchPath));
       }
       final data = jsonDecode(response.body);
       if (data is! Map<String, dynamic>) throw Exception('Invalid response');
-      if (data['success'] == false && data['covered'] != false) {
+      if (response.statusCode >= 400 ||
+          (data['success'] == false && data['covered'] != false)) {
         throw Exception(
           data['error'] ??
               data['reason'] ??
@@ -2326,15 +2304,12 @@ class HomeownerService {
         );
       }
       _clearRecentFailure(_contractorSearchPath);
-      _clearRecentFailure(_legacyContractorSearchPath);
       _searchProsCache[identity] = data;
       _searchProsCacheAt[identity] = DateTime.now();
       await _writePersistentCache(resource, data);
       return data;
     } catch (e) {
       _cacheRecentFailure(_contractorSearchPath, e,
-          fallbackMessage: 'Unable to load available pros right now.');
-      _cacheRecentFailure(_legacyContractorSearchPath, e,
           fallbackMessage: 'Unable to load available pros right now.');
       throw Exception(
         AppErrorUtils.friendlyMessage(
@@ -2411,7 +2386,6 @@ class HomeownerService {
         'action': 'send',
         'email': email,
       },
-      fallbackEndpoint: _legacyVerifyPath,
     );
   }
 
@@ -2424,7 +2398,6 @@ class HomeownerService {
         if (uid != null) 'userId': uid,
         'token': token,
       },
-      fallbackEndpoint: _legacyVerifyPath,
     );
   }
 
@@ -2780,7 +2753,9 @@ class HomeownerService {
 
   Future<Map<String, dynamic>?> getReview(int workOrderId) async {
     final cached = cachedReviewForWorkOrder(workOrderId);
-    if (cached != null && cached['detailsAvailable'] != false) return cached;
+    if (cached != null &&
+        cached['detailsAvailable'] != false &&
+        cached['updatedAt'] != null) return cached;
     try {
       final review = await _fetchReviewFromEndpoint(workOrderId);
       if (review != null) return review;
@@ -2831,7 +2806,6 @@ class HomeownerService {
         'requesterUserId': _userId,
         'requester_user_id': _userId,
       },
-      fallbackEndpoint: _legacyReviewActionPath,
     );
     if (response['review'] is! Map) return null;
     final review = _normalizeReview(
@@ -2844,6 +2818,9 @@ class HomeownerService {
   String bookingErrorMessage(Object error) {
     final raw =
         error.toString().replaceAll('Exception: ', '').trim().toLowerCase();
+    if (raw.contains('calendar_blocked')) {
+      return 'That time was just taken. Pick another window.';
+    }
     if (raw.contains('booking_cap')) {
       return 'You have reached the maximum number of open bookings. Please complete or cancel an existing booking before creating a new one.';
     }

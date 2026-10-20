@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>TradeWorks uses your camera to photograph the job, receipts and documents.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TradeWorks uses your photos so you can attach pictures of the job, receipts and documents.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>TradeWorks saves photos you choose to keep.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TradeWorks uses the microphone when you describe a job by voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>TradeWorks turns your spoken job description into text.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -63,6 +73,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>fetch</string>
 	</array>
 </dict>
 </plist>

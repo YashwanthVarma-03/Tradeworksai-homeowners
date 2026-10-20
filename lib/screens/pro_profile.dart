@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../widgets/loading_skeleton.dart';
 import '../widgets/review_annotations.dart';
 import 'dart:async';
@@ -13,6 +15,9 @@ import '../widgets/app_notification.dart';
 import '../widgets/capsules.dart';
 import '../ui/tw.dart';
 import '../utils/display_format.dart';
+import '../utils/booking_timing.dart';
+import '../utils/booking_identity.dart';
+import '../services/service_location.dart';
 import 'book_flow.dart';
 import 'chat_screen.dart';
 import 'login_page.dart';
@@ -45,6 +50,7 @@ class _ProfileFact {
 class _ProfileService {
   final String category;
   final String name;
+  final String? serviceId;
 
   /// The amount with cents ("$89.00"). Empty for a Free visit.
   final String price;
@@ -56,6 +62,7 @@ class _ProfileService {
   const _ProfileService({
     required this.category,
     required this.name,
+    this.serviceId,
     required this.price,
     this.workOrderType = 'rate_card',
   });
@@ -138,6 +145,7 @@ class _FigmaProfileSurface extends StatelessWidget {
   final List<String> paymentMethods;
   final Map<int, double> ratingBreakdown;
   final List<Map<String, dynamic>> reviews;
+  final Map<String, dynamic>? combinedReviews;
   final bool loading;
   final bool bookActionLoading;
   final String bookActionLabel;
@@ -178,6 +186,7 @@ class _FigmaProfileSurface extends StatelessWidget {
     required this.paymentMethods,
     required this.ratingBreakdown,
     required this.reviews,
+    this.combinedReviews,
     required this.loading,
     required this.bookActionLoading,
     required this.bookActionLabel,
@@ -277,10 +286,11 @@ class _FigmaProfileSurface extends StatelessWidget {
                                 const SizedBox(height: TwSpace.s28),
                                 _section('How you pay', _howYouPay()),
                               ],
-                              if (_hasRating) ...[
-                                const SizedBox(height: TwSpace.s28),
-                                _reviewSection(context),
-                              ],
+                              const SizedBox(height: TwSpace.s28),
+                              _hasRating
+                                  ? _reviewSection(context)
+                                  : _section(
+                                      'Reviews', _reviewSection(context)),
                             ],
                           ),
                         ),
@@ -353,9 +363,20 @@ class _FigmaProfileSurface extends StatelessWidget {
   }
 
   Widget _priceCard(BuildContext context) {
-    final stack = TwLayout.stackRows(context);
-    final Widget? capsule =
-        nextSlot.isEmpty ? null : AvailabilityCapsule(label: 'Next: $nextSlot');
+    final detailedWindow = nextSlot.contains(':');
+    final stack = TwLayout.stackRows(context) || detailedWindow;
+    final Widget? capsule = nextSlot.isEmpty
+        ? null
+        : detailedWindow
+            ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.schedule_outlined,
+                    size: 18, color: AppTheme.green),
+                const SizedBox(width: TwSpace.s8),
+                Expanded(
+                    child: Text('Next: $nextSlot',
+                        style: TwType.bodySm(color: AppTheme.green))),
+              ])
+            : AvailabilityCapsule(label: 'Next: $nextSlot');
     // B02b: "$89.00" in display type, "diagnostic" after it in value type.
     final Widget amount = price.isEmpty
         ? const SizedBox.shrink()
@@ -421,10 +442,8 @@ class _FigmaProfileSurface extends StatelessWidget {
           const SizedBox(height: TwSpace.s12),
           _bookButton(),
           const SizedBox(height: TwSpace.s12),
-          Text(
-              "Books a 2-hour window on ${_shortBusinessName(businessName)}'s calendar",
-              textAlign: TextAlign.center,
-              style: TwType.caption()),
+          Text('Pick a 2-hour window that works for you',
+              textAlign: TextAlign.center, style: TwType.caption()),
           const SizedBox(height: TwSpace.s12),
           TwSecondaryButton(
             label: 'Message',
@@ -689,7 +708,12 @@ class _FigmaProfileSurface extends StatelessWidget {
 
   Widget _reviewSection(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _ratingCard(context),
+      if (_hasRating) _ratingCard(context),
+      if (combinedReviews != null) ...[
+        const SizedBox(height: 16),
+        Text('TradeWorks reviews · $_tradeWorksCount', style: TwType.h3()),
+        Text('Verified jobs only', style: TwType.caption()),
+      ],
       if (reviews.isNotEmpty) ...[
         const SizedBox(height: TwSpace.s16),
         ...reviews.take(2).map(_reviewCard),
@@ -701,7 +725,11 @@ class _FigmaProfileSurface extends StatelessWidget {
               minimumSize: const Size(48, 44),
               padding: const EdgeInsets.symmetric(horizontal: TwSpace.s12),
             ),
-            child: Text('See all $_reviewsLabel', style: TwType.link()),
+            child: Text(
+                combinedReviews == null
+                    ? 'See all $_reviewsLabel'
+                    : 'See all $_tradeWorksCount TradeWorks reviews',
+                style: TwType.link()),
           ),
         ),
       ] else
@@ -709,13 +737,98 @@ class _FigmaProfileSurface extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: TwSpace.s20),
           child: Center(
             child: Text(
-              'No written reviews yet',
+              _hasRating ? 'No written reviews yet' : 'No reviews yet',
               textAlign: TextAlign.center,
               style: TwType.bodySm(color: _muted),
             ),
           ),
         ),
+      if (combinedReviews != null && _googleCount > 0) ...[
+        const SizedBox(height: 24),
+        Row(children: [
+          Text('G', style: TwType.title(color: AppTheme.textSecondary)),
+          const SizedBox(width: 8),
+          Expanded(
+              child:
+                  Text('Google reviews · $_googleCount', style: TwType.h3())),
+          if (combinedReviews!['google_rating'] != null)
+            Text('${combinedReviews!['google_rating']} on Google',
+                style: TwType.caption()),
+        ]),
+        const SizedBox(height: 12),
+        ..._googleReviews.map(_googleReviewCard),
+        if (_googleUrl != null)
+          TextButton(
+              onPressed: () =>
+                  launchUrl(_googleUrl!, mode: LaunchMode.externalApplication),
+              child: Text('See all $_googleCount on Google ↗',
+                  style: TwType.link())),
+      ],
     ]);
+  }
+
+  int get _googleCount =>
+      num.tryParse(
+              '${combinedReviews?['google_review_count'] ?? combinedReviews?['review_count_google'] ?? 0}')
+          ?.toInt() ??
+      0;
+  int get _tradeWorksCount =>
+      num.tryParse(
+              '${combinedReviews?['tradeworks_review_count'] ?? combinedReviews?['review_count_tradeworks'] ?? combinedReviews?['verifiedCount'] ?? ((int.tryParse(reviewCount) ?? 0) - _googleCount)}')
+          ?.toInt() ??
+      0;
+  List<Map<String, dynamic>> get _googleReviews =>
+      (combinedReviews?['google_reviews'] as List? ?? [])
+          .whereType<Map>()
+          .map((r) => Map<String, dynamic>.from(r))
+          .toList();
+  Uri? get _googleUrl {
+    final uri = Uri.tryParse(
+        '${combinedReviews?['google_review_url'] ?? combinedReviews?['google_reviews_url'] ?? ''}');
+    return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty
+        ? uri
+        : null;
+  }
+
+  Widget _googleReviewCard(Map<String, dynamic> review) {
+    final date = DateTime.tryParse(
+        '${review['date'] ?? review['created_at'] ?? review['publishTime'] ?? ''}');
+    final stars =
+        (num.tryParse('${review['rating'] ?? review['stars'] ?? 0}') ?? 0)
+            .round()
+            .clamp(0, 5);
+    final author = review['author'] is Map ? review['author'] as Map : const {};
+    return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: _line),
+            borderRadius: BorderRadius.circular(14)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text('G', style: TwType.title(color: AppTheme.textSecondary)),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(
+                    '${review['name'] ?? review['author_name'] ?? author['displayName'] ?? author['name'] ?? 'Google reviewer'}',
+                    style: TwType.title())),
+            if (date != null)
+              Text(DateFormat.yMMMd().format(date), style: TwType.caption()),
+          ]),
+          const SizedBox(height: 8),
+          Row(
+              children: List.generate(
+                  5,
+                  (i) => Icon(Icons.star_rounded,
+                      size: 14,
+                      color: i < stars ? AppTheme.gold : AppTheme.cardBorder))),
+          if ('${review['text'] ?? review['comment'] ?? ''}'.isNotEmpty)
+            Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('${review['text'] ?? review['comment']}',
+                    style: TwType.bodySm())),
+        ]));
   }
 
   Widget _ratingCard(BuildContext context) {
@@ -737,6 +850,9 @@ class _FigmaProfileSurface extends StatelessWidget {
               const SizedBox(height: TwSpace.s4),
               Text(_reviewsLabel,
                   textAlign: TextAlign.center, style: TwType.caption()),
+              if (combinedReviews != null)
+                Text('$_tradeWorksCount TradeWorks · $_googleCount Google',
+                    textAlign: TextAlign.center, style: TwType.caption()),
             ])),
         const SizedBox(width: TwSpace.s12),
         Expanded(
@@ -902,12 +1018,14 @@ class _AllReviewsScreen extends StatelessWidget {
   static const Color _line = AppTheme.cardBorder;
 
   final String businessName;
+  final String sourceLabel;
   final String rating;
   final String reviewCount;
   final List<Map<String, dynamic>> reviews;
 
   const _AllReviewsScreen({
     required this.businessName,
+    this.sourceLabel = 'Reviews',
     required this.rating,
     required this.reviewCount,
     required this.reviews,
@@ -919,7 +1037,8 @@ class _AllReviewsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: TwAppBar(
-        title: 'Reviews${businessName.isEmpty ? '' : ' for $businessName'}',
+        title:
+            '$sourceLabel${businessName.isEmpty ? '' : ' for $businessName'}',
         onBack: () => Navigator.of(context).pop(),
       ),
       body: SafeArea(
@@ -937,10 +1056,12 @@ class _AllReviewsScreen extends StatelessWidget {
                   child: TwFactPanel(
                     child: Row(
                       children: [
-                        const Icon(Icons.star_rounded,
-                            color: AppTheme.gold, size: 20),
+                        if (rating.isNotEmpty)
+                          const Icon(Icons.star_rounded,
+                              color: AppTheme.gold, size: 20),
                         const SizedBox(width: TwSpace.s8),
-                        Text(rating, style: TwType.price()),
+                        if (rating.isNotEmpty)
+                          Text(rating, style: TwType.price()),
                         const SizedBox(width: TwSpace.s12),
                         Expanded(
                           child: Text(
@@ -1051,6 +1172,9 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   bool _isStartingBooking = false;
   bool _showAllServices = false;
   Map<String, dynamic>? _profile;
+  String _liveNextSlot = '';
+  bool _availabilityResolved = false;
+  int _availabilityGeneration = 0;
   final ScrollController _profileScrollController = ScrollController();
 
   @override
@@ -1068,7 +1192,43 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   }
 
   void _handleAuthChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      unawaited(_refreshAvailability());
+    }
+  }
+
+  Future<void> _refreshAvailability() async {
+    final generation = ++_availabilityGeneration;
+    final contractorId = BookingIdentity.contractor(_displayPro);
+    final serviceId = _searchedService?.serviceId;
+    if (contractorId == null || serviceId == null) return;
+    try {
+      final data = await HomeownerService.instance.getContractorAvailability(
+        contractorId: contractorId,
+        serviceId: serviceId,
+        propertyZip: _requestZip.isEmpty ? null : _requestZip,
+        forceRefresh: true,
+      );
+      final slots =
+          BookingTiming.eligible(data['slots'] as List? ?? [], 'standard');
+      if (!mounted || generation != _availabilityGeneration) return;
+      setState(() {
+        _availabilityResolved = true;
+        _liveNextSlot = slots.isEmpty || data['paused'] == true
+            ? ''
+            : BookingTiming.label(slots.first['start']?.toString(),
+                    slots.first['end']?.toString()) ??
+                '';
+      });
+    } catch (_) {
+      if (!mounted || generation != _availabilityGeneration) return;
+      // An old search label is not proof of a currently bookable window.
+      setState(() {
+        _availabilityResolved = true;
+        _liveNextSlot = '';
+      });
+    }
   }
 
   Future<void> _fetchProfile() async {
@@ -1076,6 +1236,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       final slug = _profileSlug(widget.pro);
       if (slug.isEmpty) {
         setState(() => _isLoading = false);
+        await _refreshAvailability();
         return;
       }
 
@@ -1086,6 +1247,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         _profile = profile.isEmpty ? null : profile;
         _isLoading = false;
       });
+      await _refreshAvailability();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1345,7 +1507,13 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
             .contains(normalized);
   }
 
+  bool get _hasCombinedReviews =>
+      _number(_displayPro['rating_combined']) != null &&
+      _number(_displayPro['review_count_combined']) != null;
+
   String get _rating {
+    if (_hasCombinedReviews)
+      return _number(_displayPro['rating_combined'])!.toStringAsFixed(1);
     final reviewsMap = _asMap(_displayPro['reviews']);
     final reviewSummary = _asMap(
       _displayPro['review_summary'] ?? _displayPro['reviewSummary'],
@@ -1379,6 +1547,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   }
 
   String get _reviewCount {
+    if (_hasCombinedReviews)
+      return _number(_displayPro['review_count_combined'])!.toInt().toString();
     final reviewsMap = _asMap(_displayPro['reviews']);
     final reviewSummary = _asMap(
       _displayPro['review_summary'] ?? _displayPro['reviewSummary'],
@@ -1437,6 +1607,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     return _ProfileService(
       category: _category.isEmpty ? 'Services' : _category,
       name: name,
+      serviceId: BookingIdentity.offering(widget.pro),
       price: type == 'quote_request' ? '' : price,
       workOrderType: type.isEmpty ? 'rate_card' : type,
     );
@@ -1445,6 +1616,12 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   /// The service the homeowner searched for, else the first listed service.
   _ProfileService? get _searchedService {
     final services = _services;
+    final wantedId = BookingIdentity.offering(widget.pro);
+    if (wantedId != null) {
+      for (final service in services) {
+        if (service.serviceId == wantedId) return service;
+      }
+    }
     final wanted = _serviceLabel.toLowerCase();
     for (final s in services) {
       if (s.name.toLowerCase() == wanted) return s;
@@ -1483,37 +1660,16 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   }
 
   String get _nextSlot {
+    if (_availabilityResolved) return _liveNextSlot;
     final raw = _text(_displayPro['nextAvailable']);
     if (raw.isEmpty || raw == 'Availability pending') return '';
     final lower = raw.toLowerCase();
     if (lower.contains('today')) return 'Today';
     if (lower.contains('tomorrow')) return 'Tomorrow';
-    final parsed = DateTime.tryParse(raw);
-    if (parsed != null) {
-      final local = parsed.toLocal();
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final slotDay = DateTime(local.year, local.month, local.day);
-      final daysAway = slotDay.difference(today).inDays;
-      if (daysAway == 0) return 'Today';
-      if (daysAway == 1) return 'Tomorrow';
-      return _weekdayLabel(local.weekday);
-    }
+    final label = BookingTiming.label(raw);
+    if (label != null) return label;
     final commaIndex = raw.indexOf(',');
     return commaIndex == -1 ? raw : raw.substring(0, commaIndex);
-  }
-
-  String _weekdayLabel(int weekday) {
-    const labels = {
-      DateTime.monday: 'Monday',
-      DateTime.tuesday: 'Tuesday',
-      DateTime.wednesday: 'Wednesday',
-      DateTime.thursday: 'Thursday',
-      DateTime.friday: 'Friday',
-      DateTime.saturday: 'Saturday',
-      DateTime.sunday: 'Sunday',
-    };
-    return labels[weekday] ?? 'Soon';
   }
 
   /// "Plumbing · AC / HVAC · Electrical · +2 more". No distance (the
@@ -1579,7 +1735,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     );
   }
 
-  String get _requestZip => _text(widget.pro['requestZip']);
+  String get _requestZip => _text(widget.pro['requestZip'],
+      _text(widget.pro['zip'], ServiceLocation.selected.value?.zip ?? ''));
 
   String get _employeeLine {
     return _text(
@@ -2009,7 +2166,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
             service['enabled'],
             service['active'],
             service['is_active'],
-            service['isActive']
+            service['isActive'],
+            service['is_book_now_enabled']
           ].any((value) => _boolValue(value) == false) ||
           const {'off', 'inactive', 'pending', 'pending_approval'}
               .contains(status)) {
@@ -2039,6 +2197,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       final key = '$category|$name'.toLowerCase();
       if (!seen.add(key)) continue;
       services.add(_ProfileService(
+        serviceId: BookingIdentity.offering(service, offeringRecord: true),
         category: category.isEmpty ? 'Services' : category,
         name: name,
         price: price,
@@ -2067,12 +2226,20 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     );
     final values = <int, double>{};
 
+    if (_hasCombinedReviews) {
+      _readRatingDistribution(
+          _displayPro['rating_distribution_combined'] ??
+              _displayPro['rating_breakdown_combined'],
+          values);
+    }
     for (final source in [
-      aggregate,
-      reviewSummary,
-      _asMap(_displayPro['ratings']),
-      reviewsMap,
-      _displayPro,
+      if (!_hasCombinedReviews) aggregate,
+      if (!_hasCombinedReviews) ...[
+        reviewSummary,
+        _asMap(_displayPro['ratings']),
+        reviewsMap,
+        _displayPro
+      ],
     ]) {
       if (values.isNotEmpty) break;
       for (final candidate in _ratingDistributionCandidates(source)) {
@@ -2081,7 +2248,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       }
     }
 
-    if (values.isEmpty) {
+    if (values.isEmpty && !_hasCombinedReviews) {
       for (final review in _reviewsList()) {
         final stars = (_number(review['rating']) ?? 0).round();
         if (stars >= 1 && stars <= 5) {
@@ -2240,7 +2407,9 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
           _displayPro['reviews'],
     );
     if (items.isNotEmpty) {
-      return items.map((item) {
+      return items
+          .where((item) => _asMap(item)['source'] != 'google')
+          .map((item) {
         final review = _asMap(item);
         final author = _asMap(review['author'] ?? review['reviewer']);
         return <String, dynamic>{
@@ -2332,8 +2501,19 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       MaterialPageRoute(
         builder: (_) => _AllReviewsScreen(
           businessName: _businessName,
-          rating: _rating,
-          reviewCount: _reviewCount,
+          sourceLabel: _hasCombinedReviews ? 'TradeWorks reviews' : 'Reviews',
+          rating: _hasCombinedReviews
+              ? _text(_displayPro['verifiedRating'] ??
+                  _asMap(_asMap(_displayPro['reviews'])['verified_aggregate'])[
+                      'avg_rating'])
+              : _rating,
+          reviewCount: _hasCombinedReviews
+              ? _text(
+                  _displayPro['tradeworks_review_count'] ??
+                      _displayPro['review_count_tradeworks'] ??
+                      _displayPro['verifiedCount'],
+                  '${reviews.length}')
+              : _reviewCount,
           reviews: reviews,
         ),
       ),
@@ -2364,7 +2544,12 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       final result = await navigator.push(
         BookFlowScreen.route<Object?>(
           initialDescription: widget.initialDescription,
-          pro: _displayPro,
+          pro: {
+            ..._displayPro,
+            if (_searchedService?.serviceId != null)
+              'contractorServiceId': _searchedService!.serviceId,
+            'zip': _requestZip,
+          },
         ),
       );
       if (result == BookFlowExit.changeContractor && mounted) {
@@ -2520,6 +2705,7 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       paymentMethods: _paymentMethods,
       ratingBreakdown: _ratingBreakdown(),
       reviews: _visibleReviews(),
+      combinedReviews: _hasCombinedReviews ? _displayPro : null,
       loading: _isLoading,
       bookActionLoading: _isStartingBooking,
       bookActionLabel: AuthService.instance.isAuthenticated

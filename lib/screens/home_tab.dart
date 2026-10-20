@@ -2,7 +2,7 @@ import '../widgets/loading_skeleton.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import '../services/stream_service.dart';
+import '../widgets/rewards_gift_icon.dart';
 import '../ui/tw.dart';
 
 import '../services/browse_search_history.dart';
@@ -27,6 +27,7 @@ class HomeTab extends StatefulWidget {
   final VoidCallback onBookTap;
   final Function(Map<String, dynamic>) onJobTap;
   final VoidCallback onInboxTap;
+  final VoidCallback? onRewardsTap;
   final VoidCallback onHelpTap;
   final Function(String) onSearchQuery;
   final Function(String) onCategorySelected;
@@ -41,6 +42,7 @@ class HomeTab extends StatefulWidget {
     required this.onBookTap,
     required this.onJobTap,
     required this.onInboxTap,
+    this.onRewardsTap,
     required this.onHelpTap,
     required this.onSearchQuery,
     required this.onCategorySelected,
@@ -84,7 +86,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  late final PageController _tickerPageController;
   Timer? _serviceTicker;
   int _serviceTickerIndex = 0;
 
@@ -111,19 +112,14 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     ServiceCatalog.revision.addListener(_refreshInputs);
     unawaited(ServiceCatalog.load());
 
-    _tickerPageController =
-        PageController(initialPage: 1000 * _serviceNames.length);
     _serviceTicker = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted ||
-          !_tickerPageController.hasClients ||
-          _searchController.text.trim().isNotEmpty ||
-          _searchFocusNode.hasFocus) {
-        return;
-      }
-      _tickerPageController.nextPage(
-        duration: const Duration(milliseconds: 750),
-        curve: Curves.fastOutSlowIn,
-      );
+          _serviceNames.isEmpty ||
+          _searchFocusNode.hasFocus ||
+          _searchController.text.isNotEmpty ||
+          !TickerMode.of(context)) return;
+      setState(() => _serviceTickerIndex =
+          (_serviceTickerIndex + 1) % _serviceNames.length);
     });
 
     _loadSharedLocationOverride();
@@ -179,7 +175,6 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           .removeListener(_refreshFromSharedSync);
     }
     _serviceTicker?.cancel();
-    _tickerPageController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _searchController
       ..removeListener(_refreshInputs)
@@ -625,7 +620,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   }
 
   String get _allServicesLabel => ServiceCatalog.loaded
-      ? 'All ${ServiceCatalog.items.length}'
+      ? 'All ${ServiceCatalog.mainServices.length}'
       : 'All services';
 
   void _openSearch([String? value]) {
@@ -758,7 +753,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                 tooltip: 'Help and FAQs',
                 onPressed: widget.onHelpTap,
               ),
-              if (!widget.isGuest) _buildInboxButton(),
+              _buildRewardsButton(),
             ],
           ),
           const SizedBox(height: TwSpace.s12),
@@ -785,45 +780,19 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
     );
   }
 
-  /// Inbox icon with the A01 unread dot: 8px blue with a 2px white ring.
-  /// Reads the chat client's own unread total (no new request); shows no dot
-  /// until chat has connected.
-  Widget _buildInboxButton() {
-    final chatState = StreamService.instance.client?.state;
-    return StreamBuilder<int>(
-      stream: chatState?.totalUnreadCountStream,
-      initialData: chatState?.totalUnreadCount ?? 0,
-      builder: (context, snapshot) {
-        final unread = (snapshot.data ?? 0) > 0;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            _headerIcon(
-              icon: Icons.mail_outline_rounded,
-              tooltip: unread ? 'Inbox, unread messages' : 'Inbox',
-              onPressed: widget.onInboxTap,
-            ),
-            if (unread)
-              Positioned(
-                top: 8,
-                right: 7,
-                child: IgnorePointer(
-                  child: Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: AppTheme.blue,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppTheme.white, width: 2),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
+  Widget _buildRewardsButton() => IconButton(
+        tooltip: 'Rewards',
+        onPressed: widget.onRewardsTap ?? widget.onCreateAccount,
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        padding: const EdgeInsets.all(4),
+        icon: Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+                color: AppTheme.purpleTint, shape: BoxShape.circle),
+            alignment: Alignment.center,
+            child: const RewardsGiftIcon(color: AppTheme.purple, size: 20)),
+      );
 
   Widget _buildHomeSearchBar() {
     void focusSearchField() {
@@ -840,62 +809,23 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       onSubmit: _openSearch,
       onPhotoTap: () => _openAiLayer('camera'),
       onVoiceTap: () => _openAiLayer('voice'),
-      borderColor: AppTheme.border,
       showShadow: false,
-      emptyOverlay: LayoutBuilder(
-        builder: (context, constraints) {
-          final prefixStyle =
-              TwType.bodySm(color: AppTheme.body).copyWith(height: 1);
-          bool fits(String label) {
-            final painter = TextPainter(
-              text: TextSpan(text: label, style: prefixStyle),
-              textDirection: Directionality.of(context),
-              textScaler: MediaQuery.textScalerOf(context),
-              maxLines: 1,
-            )..layout();
-            final fits = painter.width + 16 <= constraints.maxWidth;
-            painter.dispose();
-            return fits;
-          }
-
-          final prefix = fits('Search a service ')
-              ? 'Search a service '
-              : fits('Search ')
-                  ? 'Search '
-                  : '';
-          return Row(
-            children: [
-              if (prefix.isNotEmpty)
-                Text(prefix, maxLines: 1, style: prefixStyle),
+      emptyOverlay: _serviceNames.isEmpty
+          ? Text('Search a service', style: TwType.bodySm())
+          : Row(children: [
+              Flexible(
+                  child: Text('Search ',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.clip,
+                      style: TwType.bodySm(color: AppTheme.textSecondary))),
               Expanded(
-                child: SizedBox(
-                  height: 20,
-                  child: _serviceNames.isEmpty
-                      ? const SizedBox.shrink()
-                      : PageView.builder(
-                          controller: _tickerPageController,
-                          scrollDirection: Axis.vertical,
-                          physics: const NeverScrollableScrollPhysics(),
-                          onPageChanged: (index) => _serviceTickerIndex =
-                              index % _serviceNames.length,
-                          itemBuilder: (context, index) => Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              _serviceNames[index % _serviceNames.length],
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TwType.bodySm(color: AppTheme.navy)
-                                  .copyWith(
-                                      fontWeight: FontWeight.w500, height: 1),
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+                  child: Text(
+                      _serviceNames[_serviceTickerIndex % _serviceNames.length],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TwType.bodySm(color: AppTheme.navy))),
+            ]),
     );
   }
 
@@ -917,7 +847,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
               style: _linkStyle,
               child: Text(
                   ServiceCatalog.loaded
-                      ? 'See all ${ServiceCatalog.items.length}'
+                      ? 'See all ${ServiceCatalog.mainServices.length}'
                       : 'See all',
                   style: TwType.link(size: 14)),
             ),
@@ -1100,27 +1030,18 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _respondingToProposal
-                      ? null
-                      : () => _respondToProposal(item, accept: true),
-                  child: const Text('Accept'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _respondingToProposal
-                      ? null
-                      : () => _respondToProposal(item, accept: false),
-                  child: const Text('Decline'),
-                ),
-              ),
-            ],
-          ),
+          TwButtonPair(children: [
+            TwPrimaryButton(
+                label: 'Accept',
+                onPressed: _respondingToProposal
+                    ? null
+                    : () => _respondToProposal(item, accept: true)),
+            TwSecondaryButton(
+                label: 'Decline',
+                onPressed: _respondingToProposal
+                    ? null
+                    : () => _respondToProposal(item, accept: false)),
+          ]),
           if (moreLink != null)
             Align(alignment: Alignment.centerRight, child: moreLink),
         ],

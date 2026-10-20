@@ -12,6 +12,7 @@ import 'services/supabase_config.dart';
 import 'services/push_notification_service.dart';
 import 'services/push_notification_config.dart';
 import 'theme.dart';
+import 'widgets/app_keyboard.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,13 +68,14 @@ class MyApp extends StatelessWidget {
           title: 'Tradeworks One',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
+          navigatorObservers: [KeyboardNavigationObserver()],
           // v3.3 §1.2: honour the phone's text size, clamped to 0.9×–1.3×.
           // Layouts bend (rows stack, text wraps) inside that range; beyond
           // it they would clip.
           builder: (context, child) => MediaQuery.withClampedTextScaling(
             minScaleFactor: 0.9,
             maxScaleFactor: 1.3,
-            child: child ?? const SizedBox.shrink(),
+            child: AppKeyboard(child: child ?? const SizedBox.shrink()),
           ),
           // The marketplace is intentionally public. Authentication unlocks
           // account data and booking submission, not the initial app shell.

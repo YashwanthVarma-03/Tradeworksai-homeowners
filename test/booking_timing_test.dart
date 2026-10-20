@@ -1,8 +1,33 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:homeowners_app/utils/booking_timing.dart';
 import 'package:homeowners_app/utils/transaction_id.dart';
+import 'package:homeowners_app/utils/booking_identity.dart';
 
 void main() {
+  test('offering identity does not select the catalogue or contractor user ID',
+      () {
+    expect(
+        BookingIdentity.offering({'id': 77, 'service_id': 9},
+            offeringRecord: true),
+        '77');
+    expect(
+        BookingIdentity.offering(
+            {'contractor_service_id': 88, 'id': 77, 'service_id': 9},
+            offeringRecord: true),
+        '88');
+    expect(BookingIdentity.offering({'service_id': 9}, offeringRecord: true),
+        isNull);
+    expect(BookingIdentity.contractor({'contractorId': 264, 'user_id': 220}),
+        '264');
+    expect(BookingIdentity.contractor({'user_id': 220}), isNull);
+  });
+  test('availability labels keep backend timezone and exact minutes', () {
+    expect(
+        BookingTiming.label(
+            '2026-10-18T09:15:00-04:00', '2026-10-18T10:45:00-04:00'),
+        'Sun, Oct 18, 9:15 AM – 10:45 AM');
+    expect(BookingTiming.wallClock('2026-10-18T00:15:00+05:30')!.day, 18);
+  });
   final now = DateTime.utc(2026, 10, 1, 10);
   Map<String, dynamic> slot(int hours, {int duration = 2}) => {
         'start': now.add(Duration(hours: hours)).toIso8601String(),

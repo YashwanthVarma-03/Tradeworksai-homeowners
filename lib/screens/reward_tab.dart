@@ -11,14 +11,28 @@ import '../widgets/app_notification.dart';
 import '../widgets/offline_state.dart';
 import 'work_orders/work_order_detail.dart';
 
+class RewardsScreen extends StatelessWidget {
+  const RewardsScreen({super.key, required this.onBookTap, this.loadRewards});
+  final Future<Map<String, dynamic>> Function({bool forceRefresh})? loadRewards;
+  final VoidCallback onBookTap;
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: TwAppBar(title: 'Rewards'),
+        body: RewardTab(
+            onBookTap: onBookTap, showTitle: false, loadRewards: loadRewards),
+      );
+}
+
 class RewardTab extends StatefulWidget {
   final VoidCallback onBookTap;
   final bool active;
+  final bool showTitle;
   final Future<Map<String, dynamic>> Function({bool forceRefresh})? loadRewards;
   const RewardTab({
     super.key,
     required this.onBookTap,
     this.active = true,
+    this.showTitle = true,
     this.loadRewards,
   });
   @override
@@ -232,7 +246,11 @@ class _RewardTabState extends State<RewardTab> {
         ? 'Earn up to ${_formatRatePercent(topRate)} back — plus a growing bonus at every band you reach, up to ${NumberFormat.currency(symbol: '\$', decimalDigits: 0).format(bandCredits + milestoneCredits)} a year in service credits. '
         : 'Earn service credits on qualifying customer-paid spend and at milestones. ';
     return '$overview'
-        'There are no codes, and nothing is applied without you asking. '
+        'Choose how much credit to apply when you book; it takes effect right away. '
+        'Apply up to the upfront price, or the diagnostic fee on a Cap Approval visit, '
+        'then more up to the cap when you approve it. Free visits use no credits; '
+        'you can apply credits when you accept the estimate. '
+        'Unused credits return to your balance after the final invoice, a cancellation or a no-show. '
         'Credits lower what you pay, so they also lower what this job earns and what it adds toward your band. '
         'Credits are used soonest-expiring first, with milestones before band credits.';
   }
@@ -286,6 +304,10 @@ class _RewardTabState extends State<RewardTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (widget.showTitle) ...[
+                      Text('Rewards', style: TwType.h1(context)),
+                      const SizedBox(height: TwSpace.s16),
+                    ],
                     if (_error != null)
                       Padding(
                           padding: EdgeInsets.only(bottom: TwSpace.s16),
@@ -359,6 +381,17 @@ class _RewardTabState extends State<RewardTab> {
     Map<String, dynamic>? earliest = d['earliestExpiry'] is Map
         ? Map<String, dynamic>.from(d['earliestExpiry'] as Map)
         : null;
+    if (earliest == null && d['earliestExpiry'] is String) {
+      final soon = _rows(d['expiringCredits'] ?? d['expiringSoon'])
+        ..sort((a, b) =>
+            '${a['expiresAt'] ?? ''}'.compareTo('${b['expiresAt'] ?? ''}'));
+      earliest = {
+        'expiresAt': d['earliestExpiry'],
+        'amount': soon.isEmpty
+            ? null
+            : (soon.first['amount'] ?? soon.first['sourceAmount']),
+      };
+    }
     if (earliest == null) {
       final soon = _rows(d['expiringCredits'] ?? d['expiringSoon'])
         ..sort((a, b) =>
@@ -366,15 +399,13 @@ class _RewardTabState extends State<RewardTab> {
       earliest = soon.isEmpty ? null : soon.first;
     }
     final expiryLine = earliest == null ||
-            _number(earliest['amount']) == null ||
+            _number(earliest['amount'] ?? earliest['sourceAmount']) == null ||
             _date(earliest['expiresAt']).isEmpty
         ? null
-        : 'Earliest expiry: ${_money(earliest['amount'])} on ${_date(earliest['expiresAt'])}';
+        : 'Earliest expiry: ${_money(earliest['amount'] ?? earliest['sourceAmount'])} on ${_date(earliest['expiresAt'])}';
     final reserved = _number(d['reservedBalance']);
     final locked = _number(d['lockedBalance']);
-    final ledgerBalance = _number(d['ledgerBalance']);
-    final showBreakdown =
-        reserved != null || locked != null || ledgerBalance != null;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(
           TwSpace.s20, TwSpace.s20, TwSpace.s20, TwSpace.s12),
@@ -409,20 +440,15 @@ class _RewardTabState extends State<RewardTab> {
           const SizedBox(height: 6),
           Text('Choose how much credit to apply when you book',
               style: TwType.bodySm()),
-          if (showBreakdown) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1, color: AppTheme.cardBorder),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 24,
-              runSpacing: 12,
-              children: [
-                if (ledgerBalance != null)
-                  _balanceMetric('Ledger total', ledgerBalance),
-                if (reserved != null) _balanceMetric('Reserved', reserved),
-                if (locked != null) _balanceMetric('Locked', locked),
-              ],
-            ),
+          if (reserved != null && reserved > 0) ...[
+            const SizedBox(height: TwSpace.s8),
+            Text('${formatUsd(reserved)} set aside for upcoming bookings',
+                style: TwType.meta()),
+          ],
+          if (locked != null && locked > 0) ...[
+            const SizedBox(height: TwSpace.s8),
+            Text('${formatUsd(locked)} waiting on your receipt',
+                style: TwType.meta()),
           ],
           if (expiryLine != null) ...[
             const SizedBox(height: 12),
@@ -434,18 +460,6 @@ class _RewardTabState extends State<RewardTab> {
       ),
     );
   }
-
-  Widget _balanceMetric(String label, double amount) => SizedBox(
-        width: 120,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: TwType.meta()),
-            const SizedBox(height: 2),
-            Text(formatUsd(amount), style: TwType.value()),
-          ],
-        ),
-      );
 
   Widget _receiptRow(Map<String, dynamic> r) {
     final title = [_service(r) ?? 'Completed service', _woLabel(r)]
@@ -523,6 +537,9 @@ class _RewardTabState extends State<RewardTab> {
   int _currentBandIndex(
       List<Map<String, dynamic>> bands, double? spend, Map<String, dynamic> d) {
     if (spend != null) {
+      final cap = _number(d['annualQualifyingSpendCap']) ??
+          (bands.isEmpty ? null : _number(bands.last['ceiling']));
+      if (cap != null && spend >= cap) return -1;
       for (var i = 0; i < bands.length; i++) {
         final floor = _number(bands[i]['floor']) ?? 0;
         final ceiling = _number(bands[i]['ceiling']);
@@ -571,14 +588,14 @@ class _RewardTabState extends State<RewardTab> {
     final rate = current >= 0
         ? _rate(bands[current]['rate'])
         : _rate(d['currentMarginalRate'] ?? d['rate'] ?? d['currentBandRate']);
-    final tier = _text(d['tier']);
-    final bandLine = rate.isEmpty
-        ? tier
-        : tier != null
-            ? '$tier · $rate on new spend'
-            : current >= 0
-                ? 'Band ${current + 1} · $rate on new spend'
-                : '$rate on new spend';
+    final cap = _number(d['annualQualifyingSpendCap']) ??
+        (bands.isEmpty ? null : _number(bands.last['ceiling']));
+    final capped = cap != null && spend != null && spend >= cap;
+    final bandLine = capped
+        ? "You've reached ${NumberFormat.currency(symbol: '\$', decimalDigits: 0).format(cap)} — new spend earns credits again ${resets == null ? 'on your anniversary' : 'from ${_date(resets)}'}"
+        : rate.isEmpty
+            ? null
+            : '$rate band · $rate on new spend';
     final toNext = spend != null && nextFloor != null && nextFloor > spend
         ? '${formatUsd(nextFloor - spend)} to the ${_rate(next!['rate'])} band'
         : null;
@@ -747,7 +764,12 @@ class _RewardTabState extends State<RewardTab> {
               ],
             ),
           ),
-          if (isCurrent)
+          if (spend != null &&
+              _number(b['ceiling']) != null &&
+              spend >= _number(b['ceiling'])!)
+            const Icon(Icons.check_rounded,
+                color: AppTheme.purple, semanticLabel: 'Completed')
+          else if (isCurrent)
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [

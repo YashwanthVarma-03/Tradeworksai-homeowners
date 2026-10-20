@@ -195,6 +195,7 @@ class _LoginPageState extends State<LoginPage> {
                       const TwFieldLabel('Email address'),
                       TextFormField(
                           controller: _email,
+                          textInputAction: TextInputAction.next,
                           style: TwType.body(color: AppTheme.navy),
                           keyboardType: TextInputType.emailAddress,
                           autofillHints: const [
@@ -211,6 +212,7 @@ class _LoginPageState extends State<LoginPage> {
                       const TwFieldLabel('Password'),
                       TextFormField(
                           controller: _password,
+                          textInputAction: TextInputAction.done,
                           style: TwType.body(color: AppTheme.navy),
                           obscureText: _obscure,
                           autofillHints: const [AutofillHints.password],

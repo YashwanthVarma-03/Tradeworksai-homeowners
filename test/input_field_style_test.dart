@@ -66,7 +66,7 @@ void main() {
         isTrue);
   });
 
-  testWidgets('Service search keeps one neutral outline on focus',
+  testWidgets('Service search owns the blue outline on focus',
       (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 220);
@@ -83,7 +83,6 @@ void main() {
           controller: controller,
           focusNode: focus,
           hint: 'Search a service',
-          borderColor: AppTheme.blue,
           onSubmit: () {},
           onPhotoTap: () {},
           onVoiceTap: () {},

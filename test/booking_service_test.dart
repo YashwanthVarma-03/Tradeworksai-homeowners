@@ -10,6 +10,15 @@ import 'package:homeowners_app/services/homeowner_service.dart';
 import 'package:homeowners_app/services/stream_service.dart';
 import 'package:homeowners_app/screens/chat_screen.dart';
 import 'package:homeowners_app/screens/work_orders/no_show_reply.dart';
+import 'package:homeowners_app/screens/work_orders/leave_review.dart';
+import 'package:homeowners_app/screens/work_orders/work_order_detail.dart';
+import 'package:homeowners_app/screens/inbox_tab.dart';
+import 'package:homeowners_app/screens/book_flow.dart';
+import 'package:homeowners_app/screens/pro_profile.dart';
+import 'package:homeowners_app/screens/search_tab.dart';
+import 'package:homeowners_app/services/service_location.dart';
+import 'package:homeowners_app/widgets/capsules.dart';
+import 'package:homeowners_app/theme.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +47,7 @@ void main() {
         jsonEncode({
           'success': true,
           'ok': true,
+          'workOrderId': 9001,
           'tabs': <String, dynamic>{},
           'profile': <String, dynamic>{},
           'addresses': <dynamic>[],
@@ -92,6 +102,298 @@ void main() {
   setUp(() {
     requests.clear();
     rejectCap = false;
+  });
+
+  for (final status in [200, 409]) {
+    for (final field in ['error', 'reason', 'code']) {
+      test(
+          'calendar blocked $status $field rejects the hold without committing',
+          () async {
+        final actions = <String>[];
+        await http.runWithClient(() async {
+          await expectLater(
+            HomeownerService.instance.commitBooking(
+              contractorId: 'calendar-test',
+              action: 'commit',
+              urgency: 'standard',
+              booking: {'contractor_service_id': 246, 'address_zip': '33602'},
+              startsAt: '2026-11-01T10:00:00Z',
+              endsAt: '2026-11-01T12:00:00Z',
+            ),
+            throwsA(predicate((Object e) =>
+                HomeownerService.instance.bookingErrorMessage(e) ==
+                'That time was just taken. Pick another window.')),
+          );
+        },
+            () => MockClient((request) async {
+                  actions.add(
+                      (jsonDecode(request.body) as Map)['action'] as String);
+                  return http.Response(
+                      jsonEncode({
+                        'ok': false,
+                        'error': 'Booking rejected',
+                        field: 'CALENDAR_BLOCKED',
+                      }),
+                      status);
+                }));
+        expect(actions, ['hold']);
+      });
+    }
+  }
+
+  for (final scenario in ['search-null', 'fresh-null', 'empty', 'day']) {
+    testWidgets('availability capsule handles $scenario for signed-in search',
+        (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(600, 1400);
+      addTearDown(tester.view.reset);
+      final zip = '3370${[
+        'search-null',
+        'fresh-null',
+        'empty',
+        'day'
+      ].indexOf(scenario)}';
+      await ServiceLocation.save(zip: zip, locationName: 'Tampa');
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      final date = tomorrow.toIso8601String().substring(0, 10);
+      var availabilityCalls = 0;
+      await http.runWithClient(() async {
+        await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+              body: SearchTab(
+            initialSearchQuery: 'Plumbing',
+            onBookPro: (_) {},
+          )),
+        ));
+        await tester.pumpAndSettle();
+        expect(find.text('Calendar Test Pro'), findsOneWidget);
+        expect(find.byType(AvailabilityCapsule),
+            scenario == 'day' ? findsOneWidget : findsNothing);
+        if (scenario == 'day') {
+          expect(find.text('Next: Tomorrow'), findsOneWidget);
+          final rating = tester.getCenter(find.byType(RatingCapsule));
+          final availability =
+              tester.getCenter(find.byType(AvailabilityCapsule));
+          expect(rating.dx, lessThan(availability.dx));
+          expect(rating.dy, closeTo(availability.dy, 1));
+        }
+        if (scenario == 'search-null') expect(availabilityCalls, 0);
+        expect(find.text('Availability pending'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await ServiceLocation.clear();
+      },
+          () => MockClient((request) async {
+                if (request.url.path.endsWith('contractor-search')) {
+                  return http.Response(
+                      jsonEncode({
+                        'success': true,
+                        'covered': true,
+                        'results': [
+                          {
+                            'contractorId': 'calendar-$scenario',
+                            'contractorServiceId': '246',
+                            'businessName': 'Calendar Test Pro',
+                            'verifiedRating': 4.8,
+                            'verifiedCount': 32,
+                            'workOrderType': scenario == 'search-null'
+                                ? 'quote_request'
+                                : 'nte',
+                            'nextAvailable': scenario == 'search-null'
+                                ? null
+                                : '${date}T10:00:00Z',
+                          }
+                        ],
+                      }),
+                      200);
+                }
+                if (request.url.path.endsWith('availability-get')) {
+                  availabilityCalls++;
+                  return http.Response(
+                      jsonEncode({
+                        if (scenario == 'fresh-null') 'nextAvailable': null,
+                        'slots': scenario == 'empty'
+                            ? []
+                            : [
+                                {
+                                  'start': '${date}T10:00:00Z',
+                                  'end': '${date}T12:00:00Z',
+                                }
+                              ],
+                      }),
+                      200);
+                }
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'categories': [
+                        {'categoryName': 'Plumbing', 'proCount': 1}
+                      ],
+                    }),
+                    200);
+              }));
+    });
+  }
+
+  test('support sends topic labels to the live route and returns a reference',
+      () async {
+    await http.runWithClient(() async {
+      final result = await HomeownerService.instance.submitSupportRequest(
+          topic: 'Service credits',
+          message: 'Please check my credits.',
+          workOrderId: 24144);
+      expect(result?['reference'], 'SR-123');
+    },
+        () => MockClient((request) async {
+              expect(request.url.path, '/homeowner/support-request');
+              expect(jsonDecode(request.body),
+                  containsPair('topic', 'Service credits'));
+              return http.Response(
+                  '{"success":true,"reference":"SR-123"}', 200);
+            }));
+  });
+
+  test('unavailable canonical availability is requested only once', () async {
+    var count = 0;
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance.getContractorAvailability(
+              contractorId: 'missing-pro', forceRefresh: true),
+          throwsException);
+    },
+        () => MockClient((request) async {
+              count++;
+              expect(request.url.path, '/contractor/availability-get');
+              return http.Response(
+                  '{"success":false,"error":"not_found"}', 404);
+            }));
+    expect(count, 1);
+  });
+
+  testWidgets(
+      'review edits use the review timestamp instead of the job timestamp',
+      (tester) async {
+    Map<String, dynamic>? edit;
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          home: LeaveReviewScreen(
+        job: const {
+          'status': 'completed',
+          'updatedAt': '2026-10-19T10:00:00Z',
+          'review': {'reviewId': 84, 'updatedAt': '2026-10-16T10:00:00Z'}
+        },
+        jobId: 24044,
+        initialRating: 4,
+        hasExistingReview: true,
+        initialReviewText: 'Careful work and a clean finish.',
+      )));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+      expect(edit?['expectedUpdatedAt'], '2026-10-16T10:00:00Z');
+      expect(edit?['reviewId'], 84);
+      await tester.pumpWidget(const SizedBox());
+      await HomeownerService.instance.syncInBackground();
+    },
+        () => MockClient((request) async {
+              final body = request.body.isEmpty
+                  ? <String, dynamic>{}
+                  : jsonDecode(request.body);
+              if (body['action'] == 'edit_review')
+                edit = Map<String, dynamic>.from(body);
+              return http.Response(
+                  '{"success":true,"reviewId":84,"updatedAt":"2026-10-19T11:00:00Z","tabs":{},"addresses":[]}',
+                  200);
+            }));
+  });
+
+  testWidgets('no-show work order reads and displays the pro reply',
+      (tester) async {
+    var reads = 0;
+    await http.runWithClient(() async {
+      await tester.pumpWidget(const MaterialApp(
+          home: WorkOrderDetailScreen(job: {
+        'workOrderId': 24081,
+        'status': 'pro_no_show',
+        'proName': 'Hutchins Plumbing Co.',
+      })));
+      await tester.pumpAndSettle();
+      expect(reads, 1);
+      expect(
+          find.text(
+              'Hutchins Plumbing Co. replied: I could not enter the gate.'),
+          findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async {
+              if (request.url.path.endsWith('/no-show-case')) {
+                reads++;
+                expect(request.method, 'GET');
+                return http.Response(
+                    '{"success":true,"case":{"contractorReply":"I could not enter the gate."}}',
+                    200);
+              }
+              return http.Response('{"success":true,"tabs":{}}', 200);
+            }));
+  });
+
+  testWidgets('empty activity feed stays empty even when bookings exist',
+      (tester) async {
+    await http.runWithClient(() async {
+      await HomeownerService.instance.fetchWorkOrders(forceRefresh: true);
+      await tester.pumpWidget(
+          const MaterialApp(home: Scaffold(body: InboxActivityView())));
+      await tester.pumpAndSettle();
+      expect(find.text('Booking confirmed · HVAC tune-up'), findsNothing);
+      expect(find.text('No activity yet'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async {
+              if (request.url.path.contains('notifications')) {
+                return http.Response(
+                    '{"success":true,"notifications":[]}', 200);
+              }
+              return http.Response(
+                  jsonEncode({
+                    'success': true,
+                    'tabs': {
+                      'scheduled': [
+                        {
+                          'workOrderId': 24144,
+                          'woNumber': 'WO-24144',
+                          'status': 'accepted',
+                          'serviceName': 'HVAC tune-up',
+                          'createdAt': DateTime.now().toIso8601String(),
+                          'scheduledStart': DateTime.now()
+                              .add(const Duration(hours: 24))
+                              .toIso8601String(),
+                          'scheduledEnd': DateTime.now()
+                              .add(const Duration(hours: 26))
+                              .toIso8601String(),
+                        }
+                      ]
+                    }
+                  }),
+                  200);
+            }));
+  });
+
+  testWidgets(
+      'failed activity feed shows retry without invented work-order events',
+      (tester) async {
+    await http.runWithClient(() async {
+      await tester.pumpWidget(
+          const MaterialApp(home: Scaffold(body: InboxActivityView())));
+      await tester.pumpAndSettle();
+      expect(find.text("Couldn't load activity"), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+      expect(find.text('No activity yet'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient(
+            (request) async => http.Response('{"error":"unavailable"}', 503)));
   });
 
   test('notification APIs use the documented methods and payloads', () async {
@@ -521,14 +823,401 @@ void main() {
     expect(message, contains('maximum number of open bookings'));
     expect(message, contains('complete or cancel'));
   });
-  test('the existing quote-request booking remains supported without a slot',
+  testWidgets(
+      'profile fetches the selected offering window and keeps empty reviews',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 1200);
+    addTearDown(tester.view.reset);
+    final slotDay = DateTime.now().toUtc().add(const Duration(days: 2));
+    final date = slotDay.toIso8601String().substring(0, 10);
+    var availabilityCalls = 0;
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: const ProProfileScreen(pro: {
+            'slug': 'empty-review-test',
+            'contractorId': 264,
+            'contractorServiceId': 246,
+            'zip': '33602',
+            'businessName': 'Test Plumbing'
+          })));
+      await tester.pumpAndSettle();
+      expect(find.text('Reviews'), findsOneWidget);
+      expect(find.text('No reviews yet'), findsOneWidget);
+      expect(find.textContaining('9:15 AM – 10:45 AM'), findsOneWidget);
+      expect(availabilityCalls, 1);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+        () => MockClient((request) async {
+              if (request.url.path.endsWith('availability-get')) {
+                availabilityCalls++;
+                expect(jsonDecode(request.body), {
+                  'contractorId': '264',
+                  'serviceId': '246',
+                  'propertyZip': '33602',
+                  'urgency': 'standard'
+                });
+                return http.Response(
+                    jsonEncode({
+                      'slots': [
+                        {
+                          'start': '${date}T09:15:00-04:00',
+                          'end': '${date}T10:45:00-04:00'
+                        }
+                      ]
+                    }),
+                    200);
+              }
+              return http.Response(
+                  jsonEncode({
+                    'profile': {
+                      'business_name': 'Test Plumbing',
+                      'verifiedCount': 0,
+                      'services': [
+                        {
+                          'contractor_service_id': 246,
+                          'name': 'Pipe repair',
+                          'category': 'Plumbing',
+                          'rate_amount': 90,
+                          'work_order_type': 'rate_card'
+                        }
+                      ]
+                    }
+                  }),
+                  200);
+            }));
+  });
+  for (final scenario in [
+    (zipChanged: false, calendarBlocked: false),
+    (zipChanged: true, calendarBlocked: false),
+    (zipChanged: false, calendarBlocked: true),
+  ])
+    testWidgets(
+        'booking preserves the selected window across address changes (ZIP changed: ${scenario.zipChanged}, calendar blocked: ${scenario.calendarBlocked})',
+        (tester) async {
+      final zipChanged = scenario.zipChanged;
+      final calendarBlocked = scenario.calendarBlocked;
+      var rejectedHold = false;
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(600, 1400);
+      addTearDown(tester.view.reset);
+      final day = DateTime.now().toUtc().add(const Duration(days: 3));
+      final date = day.toIso8601String().substring(0, 10);
+      final calls = <Map<String, dynamic>>[];
+      final availabilityCalls = <Map<String, dynamic>>[];
+      await http.runWithClient(() async {
+        await HomeownerService.instance.fetchProfile(forceRefresh: true);
+        await tester.pumpWidget(MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: const BookFlowScreen(
+                initialDescription: 'Kitchen pipe leaks overnight.',
+                pro: {
+                  'slug': 'wizard-offering-test',
+                  'contractorId': 264,
+                  'contractorServiceId': 246,
+                  'zip': '33602'
+                })));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Standard'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        expect(find.text('Pick your arrival window'), findsOneWidget);
+        // The seventh real window used to be silently discarded by a four-slot cap.
+        expect(find.textContaining('2:15'), findsWidgets);
+        final last = find.textContaining('2:15').last;
+        await tester.ensureVisible(last);
+        await tester.tap(last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Close booking'));
+        await tester.pumpAndSettle();
+        expect(find.text("Your time won't be held."), findsOneWidget);
+        await tester.tap(find.text('Keep booking'));
+        await tester.pumpAndSettle();
+        final countBeforeAddress = availabilityCalls.length;
+        final addressChange = find.widgetWithText(TextButton, 'Change').last;
+        await tester.ensureVisible(addressChange);
+        await tester.tap(addressChange);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('2 Main St'));
+        await tester.pumpAndSettle();
+        expect(availabilityCalls.length,
+            zipChanged ? greaterThan(countBeforeAddress) : countBeforeAddress);
+        expect(find.textContaining('2 Main St'), findsOneWidget);
+        if (calendarBlocked) {
+          final accessField = find.byWidgetPredicate(
+              (widget) => widget is TextField && widget.maxLength == 500);
+          await tester.ensureVisible(accessField);
+          await tester.enterText(accessField, 'Side gate 2468');
+          FocusManager.instance.primaryFocus?.unfocus();
+          await tester.pumpAndSettle();
+        }
+        final beforeHold = availabilityCalls.length;
+        await tester.tap(find.text('Confirm booking'));
+        await tester.pumpAndSettle();
+        if (calendarBlocked) {
+          expect(calls.map((c) => c['action']), ['hold']);
+          expect(find.text('That time was just taken. Pick another window.'),
+              findsOneWidget);
+          expect(availabilityCalls.length, greaterThan(beforeHold));
+          await tester.tap(find.text('OK'));
+          await tester.pumpAndSettle();
+          expect(find.text('Pick your arrival window'), findsOneWidget);
+          expect(find.textContaining(RegExp(r'^2:15')), findsNothing);
+          final nextWindow = find.textContaining('1:15').last;
+          await tester.ensureVisible(nextWindow);
+          await tester.tap(nextWindow);
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Continue'));
+          await tester.pumpAndSettle();
+          expect(find.text('Kitchen pipe leaks overnight.'), findsOneWidget);
+          expect(find.text('Side gate 2468'), findsOneWidget);
+          expect(find.textContaining('2 Main St'), findsOneWidget);
+          await tester.tap(find.text('Confirm booking'));
+          await tester.pumpAndSettle();
+        }
+        expect(calls.map((c) => c['action']),
+            [if (calendarBlocked) 'hold', 'hold', 'commit']);
+        expect(calls.last['contractorServiceId'], '246');
+        expect(calls.last['startsAt'],
+            '${date}T${calendarBlocked ? '13' : '14'}:15:00Z');
+        if (calendarBlocked) {
+          expect(calls.last['booking']['service_description'],
+              'Kitchen pipe leaks overnight.');
+          expect(calls.last['booking']['access_code'], 'Side gate 2468');
+          expect(calls.last['booking']['address_id'], 2);
+        }
+        expect(
+            availabilityCalls.every((c) =>
+                c['serviceId'] == '246' &&
+                ['33602', if (zipChanged) '33578'].contains(c['propertyZip'])),
+            isTrue);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        await HomeownerService.instance.syncInBackground();
+      },
+          () => MockClient((request) async {
+                final body = request.body.isEmpty
+                    ? <String, dynamic>{}
+                    : jsonDecode(request.body) as Map<String, dynamic>;
+                if (request.url.path.endsWith('contractor-profile-get'))
+                  return http.Response(
+                      jsonEncode({
+                        'profile': {
+                          'business_name': 'Test Plumbing',
+                          'contractorId': 264,
+                          'services': [
+                            {
+                              'contractor_service_id': 999,
+                              'name': 'Other service',
+                              'work_order_type': 'rate_card',
+                              'rate_amount': 100
+                            },
+                            {
+                              'contractor_service_id': 246,
+                              'catalog_service_id': 9,
+                              'name': 'Pipe repair',
+                              'work_order_type': 'rate_card',
+                              'rate_amount': 90
+                            }
+                          ]
+                        }
+                      }),
+                      200);
+                if (request.url.path.endsWith('availability-get')) {
+                  availabilityCalls.add(body);
+                  return http.Response(
+                      jsonEncode({
+                        'slots': List.generate(
+                            rejectedHold ? 6 : 7,
+                            (i) => {
+                                  'start':
+                                      '${date}T${(8 + i).toString().padLeft(2, '0')}:15:00Z',
+                                  'end':
+                                      '${date}T${(9 + i).toString().padLeft(2, '0')}:45:00Z'
+                                })
+                      }),
+                      200);
+                }
+                if (request.url.path.endsWith('booking-commit')) {
+                  calls.add(body);
+                  if (calendarBlocked &&
+                      !rejectedHold &&
+                      body['action'] == 'hold') {
+                    rejectedHold = true;
+                    return http.Response(
+                        '{"ok":false,"error":"CALENDAR_BLOCKED"}', 409);
+                  }
+                  if (body['action'] == 'hold')
+                    return http.Response('{"ok":true,"holdId":601}', 200);
+                  return http.Response(
+                      '{"success":true,"workOrderId":9200,"woNumber":"WO-9200"}',
+                      200);
+                }
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'tabs': {},
+                      'homeProfiles': [],
+                      'profile': {},
+                      'availableBalance': 0,
+                      'addresses': [
+                        {
+                          'id': 1,
+                          'isDefault': true,
+                          'street': '1 Main St',
+                          'city': 'Tampa',
+                          'state': 'FL',
+                          'zip': '33602'
+                        },
+                        {
+                          'id': 2,
+                          'isDefault': false,
+                          'street': '2 Main St',
+                          'city': 'Tampa',
+                          'state': 'FL',
+                          'zip': zipChanged ? '33578' : '33602'
+                        }
+                      ]
+                    }),
+                    200);
+              }));
+    });
+  test('server-held urgent window and matching credit key reach commit',
       () async {
+    final calls = <Map<String, dynamic>>[];
+    await http.runWithClient(() async {
+      await HomeownerService.instance.commitBooking(
+        contractorId: '264',
+        action: 'commit',
+        urgency: 'urgent',
+        transactionId: '123e4567-e89b-42d3-a456-426614174015',
+        startsAt: '2026-12-01T10:00:00Z',
+        endsAt: '2026-12-01T11:00:00Z',
+        booking: {
+          'contractor_service_id': 246,
+          'address_zip': '33602',
+          'service_credits_applied': 10,
+          'credit_request_id': 'different-old-key'
+        },
+      );
+      await HomeownerService.instance.syncInBackground();
+    },
+        () => MockClient((request) async {
+              final body = request.body.isEmpty
+                  ? <String, dynamic>{}
+                  : jsonDecode(request.body) as Map<String, dynamic>;
+              if (request.url.path.endsWith('booking-commit')) calls.add(body);
+              if (body['action'] == 'hold')
+                return http.Response(
+                    jsonEncode({
+                      'ok': true,
+                      'holdId': 501,
+                      'startsAt': '2026-12-01T10:30:00Z',
+                      'endsAt': '2026-12-01T11:30:00Z'
+                    }),
+                    200);
+              return http.Response(
+                  '{"success":true,"workOrderId":9101,"tabs":{},"addresses":[]}',
+                  200);
+            }));
+    expect(calls.last['startsAt'], '2026-12-01T10:30:00Z');
+    expect(calls.last['endsAt'], '2026-12-01T11:30:00Z');
+    expect(calls.last['creditRequestId'], calls.last['idempotencyKey']);
+  });
+  test('an uncertain commit retries the same hold and exact body', () async {
+    final calls = <Map<String, dynamic>>[];
+    var fail = true;
+    Future<Map<String, dynamic>> book() =>
+        HomeownerService.instance.commitBooking(
+            contractorId: '264',
+            action: 'commit',
+            urgency: 'standard',
+            transactionId: '123e4567-e89b-42d3-a456-426614174016',
+            startsAt: '2026-12-01T10:00:00Z',
+            endsAt: '2026-12-01T11:00:00Z',
+            booking: {'contractor_service_id': 246, 'address_zip': '33602'});
+    await http.runWithClient(() async {
+      await expectLater(book(), throwsException);
+      fail = false;
+      expect((await book())['workOrderId'], 9102);
+      await HomeownerService.instance.syncInBackground();
+    },
+        () => MockClient((request) async {
+              final body = request.body.isEmpty
+                  ? <String, dynamic>{}
+                  : jsonDecode(request.body) as Map<String, dynamic>;
+              if (request.url.path.endsWith('booking-commit')) calls.add(body);
+              if (body['action'] == 'hold')
+                return http.Response('{"ok":true,"holdId":502}', 200);
+              if (body['action'] == 'commit' && fail)
+                throw http.ClientException('connection lost');
+              return http.Response(
+                  '{"success":true,"workOrderId":9102,"tabs":{},"addresses":[]}',
+                  200);
+            }));
+    expect(calls.where((c) => c['action'] == 'hold'), hasLength(1));
+    expect(calls[1], calls[2]);
+  });
+  test('success without a work-order receipt is not a confirmed booking',
+      () async {
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance.commitBooking(
+              contractorId: '264',
+              action: 'quote_request',
+              urgency: 'standard',
+              startsAt: '2026-10-20T08:00:00-04:00',
+              endsAt: '2026-10-20T10:00:00-04:00',
+              booking: {'contractor_service_id': 252, 'address_zip': '33602'}),
+          throwsException);
+    }, () => MockClient((_) async => http.Response('{"success":true}', 200)));
+  });
+  test(
+      'availability sends offering and ZIP and does not bypass service refusals',
+      () async {
+    var count = 0;
+    await http.runWithClient(() async {
+      await expectLater(
+          HomeownerService.instance.getContractorAvailability(
+              contractorId: '264',
+              serviceId: '246',
+              propertyZip: '33602',
+              forceRefresh: true),
+          throwsException);
+    },
+        () => MockClient((request) async {
+              count++;
+              expect(jsonDecode(request.body), {
+                'contractorId': '264',
+                'serviceId': '246',
+                'propertyZip': '33602',
+                'urgency': 'standard'
+              });
+              return http.Response(
+                  '{"success":false,"error":"service_not_found"}', 404);
+            }));
+    expect(count, 1);
+  });
+  test('free visits send the chosen two-hour reservation', () async {
     await http.runWithClient(() async {
       await HomeownerService.instance.commitBooking(
         contractorId: 'contractor-7',
         action: 'quote_request',
         urgency: 'standard',
+        startsAt: '2026-10-20T08:00:00-04:00',
+        endsAt: '2026-10-20T10:00:00-04:00',
         booking: {
+          'contractor_service_id': 252,
           'service_category': 'Roofing',
           'work_order_type': 'quote_request'
         },
@@ -536,8 +1225,8 @@ void main() {
       await HomeownerService.instance.syncInBackground();
     }, () => api);
     expect(requests.single, containsPair('action', 'quote_request'));
-    expect(requests.single.containsKey('startsAt'), isFalse);
-    expect(requests.single.containsKey('endsAt'), isFalse);
+    expect(requests.single['startsAt'], '2026-10-20T08:00:00-04:00');
+    expect(requests.single['endsAt'], '2026-10-20T10:00:00-04:00');
   });
   test('a priced booking holds its window before committing', () async {
     await http.runWithClient(() async {
@@ -624,8 +1313,7 @@ void main() {
             }));
     expect(called, isFalse);
   });
-  test('existing review details load through the legacy gateway fallback',
-      () async {
+  test('existing review details load through the canonical gateway', () async {
     final paths = <String>[];
     await http.runWithClient(() async {
       final review = await HomeownerService.instance.getReview(8765);
@@ -639,12 +1327,6 @@ void main() {
               final body = jsonDecode(request.body) as Map<String, dynamic>;
               expect(body['action'], 'get_review');
               expect(body['requesterUserId'], 'test-homeowner');
-              if (request.url.path == '/homeowner/review-action') {
-                return http.Response(
-                  '{"success":false,"error":"not_found"}',
-                  404,
-                );
-              }
               return http.Response(
                   jsonEncode({
                     'success': true,
@@ -658,8 +1340,7 @@ void main() {
                   }),
                   200);
             }));
-    expect(paths,
-        ['/homeowner/review-action', '/homeowner-review-action-v2-supabase']);
+    expect(paths, ['/homeowner/review-action']);
   });
   test('legacy home-profile success cannot claim extended fields were saved',
       () async {
@@ -1000,6 +1681,7 @@ void main() {
     expect(commit['applyServiceCredit'], true);
     expect(commit['serviceCreditAmount'], '25.50');
     expect(commit['creditRequestId'], '2337b617-b21d-4815-a2a6-a0e5a10bf784');
+    expect(commit['idempotencyKey'], commit['creditRequestId']);
     expect(commit['intakeSessionToken'], 'signed-session');
     expect((commit['booking'] as Map).containsKey('service_credits_applied'),
         false);

@@ -30,6 +30,129 @@ void main() {
     ]);
   });
 
+  testWidgets('empty reviews and live arrival windows fit the profile',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 1100);
+    addTearDown(tester.view.reset);
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          home: const ProProfileScreen(pro: {
+            'slug': 'profile-empty-visual',
+            'contractorId': 999,
+            'contractorServiceId': 777,
+            'zip': '33602',
+            'businessName': 'Example Plumbing'
+          })));
+      await tester.pumpAndSettle();
+      expect(find.text('Reviews'), findsOneWidget);
+      expect(find.text('No reviews yet'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await expectLater(find.byType(Scaffold).first,
+          matchesGoldenFile('goldens/pro-profile-no-reviews.png'));
+      tester.view.physicalSize = const Size(320, 900);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+        () => MockClient((request) async {
+              if (request.url.path.endsWith('availability-get'))
+                return http.Response(
+                    jsonEncode({
+                      'slots': [
+                        {
+                          'start': '2100-01-04T09:15:00-05:00',
+                          'end': '2100-01-04T10:45:00-05:00'
+                        }
+                      ]
+                    }),
+                    200);
+              return http.Response(
+                  jsonEncode({
+                    'profile': {
+                      'business_name': 'Example Plumbing',
+                      'verifiedCount': 0,
+                      'services': [
+                        {
+                          'contractor_service_id': 777,
+                          'name': 'Pipe repair',
+                          'category': 'Plumbing',
+                          'rate_amount': 90,
+                          'work_order_type': 'rate_card'
+                        }
+                      ]
+                    }
+                  }),
+                  200);
+            }));
+  });
+
+  testWidgets('combined reviews use server aggregates and separate sources',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 3000);
+    addTearDown(tester.view.reset);
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: const ProProfileScreen(pro: {
+            'slug': 'combined-review-test',
+            'contractorId': 7777,
+            'businessName': 'Review Plumbing',
+          })));
+      await tester.pumpAndSettle();
+      expect(find.text('4.6'), findsOneWidget);
+      expect(find.text('4 TradeWorks · 6 Google'), findsOneWidget);
+      expect(find.text('TradeWorks reviews · 4'), findsOneWidget);
+      expect(find.text('Google reviews · 6'), findsOneWidget);
+      expect(find.text('Verified jobs only'), findsOneWidget);
+      expect(find.text('See all 6 on Google ↗'), findsOneWidget);
+      expect(find.text('Verified job'), findsOneWidget);
+      expect(tester.getTopLeft(find.text('Verified jobs only')).dy,
+          lessThan(tester.getTopLeft(find.text('Google reviews · 6')).dy));
+      expect(tester.takeException(), isNull);
+      await expectLater(find.byType(Scaffold).first,
+          matchesGoldenFile('goldens/pro-profile-combined.png'));
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async => http.Response(
+            jsonEncode({
+              'profile': {
+                'business_name': 'Review Plumbing',
+                'rating_combined': 4.6,
+                'review_count_combined': 10,
+                'google_review_count': 6,
+                'tradeworks_review_count': 4,
+                'google_rating': 4.8,
+                'rating_distribution_combined': {'5': 6, '4': 4},
+                'google_review_url': 'https://maps.google.com/',
+                'reviews': [
+                  {
+                    'name': 'TW reviewer',
+                    'rating': 5,
+                    'text': 'Careful repair.',
+                    'verified': true,
+                    'service_performed': 'Pipe repair'
+                  }
+                ],
+                'google_reviews': [
+                  {
+                    'name': 'Google reviewer',
+                    'rating': 4,
+                    'text': 'Arrived on time.',
+                    'date': '2026-10-01',
+                    'verified': true
+                  }
+                ],
+              }
+            }),
+            200)));
+  });
+
   testWidgets('Hutchins pro profile follows B02b at phone width',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -231,4 +354,3 @@ void main() {
     }, () => client);
   });
 }
-

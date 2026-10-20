@@ -7,22 +7,25 @@ import 'package:homeowners_app/services/notification_routing.dart';
 void main() {
   group('notification routing contract', () {
     const cases = <String, NotificationDestination>{
-      'booking_confirmed': NotificationDestination.workOrder,
-      'en_route': NotificationDestination.workOrder,
-      'in_progress': NotificationDestination.workOrder,
+      'booking_confirmed': NotificationDestination.activity,
+      'en_route': NotificationDestination.activity,
+      'in_progress': NotificationDestination.activity,
       'cap': NotificationDestination.capApproval,
-      'estimate': NotificationDestination.workOrder,
-      'reschedule': NotificationDestination.rescheduleProposal,
-      'reschedule_answered': NotificationDestination.workOrder,
-      'booking_cancelled': NotificationDestination.workOrder,
-      'rebooked': NotificationDestination.workOrder,
-      'no_show_reply': NotificationDestination.workOrder,
-      'reminder': NotificationDestination.workOrder,
-      'receipt': NotificationDestination.rewards,
-      'completed': NotificationDestination.workOrder,
-      'expiring_soon': NotificationDestination.rewards,
+      'quote_ready': NotificationDestination.capApproval,
+      'estimate': NotificationDestination.capApproval,
+      'reschedule_proposed': NotificationDestination.rescheduleProposal,
+      'reschedule_accepted': NotificationDestination.activity,
+      'booking_cancelled': NotificationDestination.activity,
+      'reminder': NotificationDestination.activity,
+      'receipt': NotificationDestination.activity,
+      'upload_receipt': NotificationDestination.jobMoney,
+      'leave_review': NotificationDestination.leaveReview,
+      'no_show_reported': NotificationDestination.noShowReply,
+      'completed': NotificationDestination.activity,
+      'expiring_soon': NotificationDestination.activity,
       'message': NotificationDestination.chat,
-      'promo': NotificationDestination.home,
+      'promo': NotificationDestination.activity,
+      'unrecognized': NotificationDestination.activity,
     };
 
     for (final entry in cases.entries) {
@@ -90,6 +93,30 @@ void main() {
           'channel_id': 'messaging:',
         }).destination,
         NotificationDestination.activity);
+  });
+
+  test('resolved actions open the job in Activity and Activity from push', () {
+    final data = {'type': 'cap', 'work_order_id': 42, 'waiting_on_you': false};
+    expect(NotificationRouteData.fromData(data).destination,
+        NotificationDestination.activity);
+    expect(NotificationRouteData.fromData(data, fromActivity: true).destination,
+        NotificationDestination.workOrder);
+    expect(
+        notificationIsAction(
+            {'type': 'reschedule_accepted', 'waiting_on_you': true}),
+        isFalse);
+    expect(
+        notificationType(
+            {'type': 'quote_ready', 'work_order_type': 'quote_request'}),
+        'estimate');
+    expect(notificationType({'type': 'something-new'}), 'status');
+    expect(
+        NotificationRouteData.fromData({
+          'type': 'receipt',
+          'work_order_id': 42,
+          'waiting_on_you': true
+        }).destination,
+        NotificationDestination.jobMoney);
   });
 
   group('push registration contract', () {

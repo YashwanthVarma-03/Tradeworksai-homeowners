@@ -1,3 +1,6 @@
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -48,6 +51,7 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final _messageController = StreamMessageInputController();
   Channel? _channel;
   bool _isCreating = true;
   bool _isNetworkIssue = false;
@@ -63,6 +67,68 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _initChannel();
     _loadJobsWithPro();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickAttachments() async {
+    if (_messageController.attachments.length >= 10) {
+      AppNotification.showInfo(
+          context, 'Attach up to 10 photos or documents at a time.');
+      return;
+    }
+    final choice = await showModalBottomSheet<String>(
+        context: context,
+        useSafeArea: true,
+        builder: (sheetContext) =>
+            Column(mainAxisSize: MainAxisSize.min, children: [
+              for (final option in const [
+                ('Photos', Icons.photo_library_outlined),
+                ('Camera', Icons.camera_alt_outlined),
+                ('Files', Icons.description_outlined),
+              ])
+                ListTile(
+                    leading: Icon(option.$2),
+                    title: Text(option.$1),
+                    onTap: () => Navigator.pop(sheetContext, option.$1)),
+            ]));
+    if (!mounted || choice == null) return;
+    try {
+      final attachment = choice == 'Files'
+          ? await StreamAttachmentHandler.instance
+              .pickFile(type: FileType.custom, allowedExtensions: const [
+              'pdf',
+              'jpg',
+              'jpeg',
+              'png',
+              'heic',
+              'webp',
+              'doc',
+              'docx',
+              'xls',
+              'xlsx',
+              'txt',
+              'csv',
+              'rtf'
+            ])
+          : await StreamAttachmentHandler.instance.pickImage(
+              source: choice == 'Camera'
+                  ? ImageSource.camera
+                  : ImageSource.gallery);
+      if (!mounted || attachment == null) return;
+      _messageController.attachments = [
+        ..._messageController.attachments,
+        attachment
+      ];
+    } catch (error) {
+      if (mounted)
+        AppNotification.showError(context, error,
+            fallback: 'Could not attach that file. Please try again.');
+    }
   }
 
   /// Every job this homeowner has with this pro — the composer's optional
@@ -330,6 +396,19 @@ class _ChatScreenState extends State<ChatScreen> {
                   )),
                   _buildJobPicker(),
                   StreamMessageInput(
+                    messageInputController: _messageController,
+                    attachmentButtonBuilder: (context, defaultButton) =>
+                        IconButton(
+                            tooltip: 'Attach photos or files',
+                            onPressed: _pickAttachments,
+                            icon: const Icon(Icons.attach_file,
+                                color: AppTheme.navy)),
+                    showCommandsButton: false,
+                    useNativeAttachmentPickerOnMobile: true,
+                    allowedAttachmentPickerTypes: const [
+                      AttachmentPickerType.images,
+                      AttachmentPickerType.files
+                    ],
                     hintGetter: (context, type) => switch (type) {
                       HintType.writeAMessage =>
                         'Message ${widget.contractorName}',

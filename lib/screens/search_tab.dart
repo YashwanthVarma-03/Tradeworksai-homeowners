@@ -3,7 +3,6 @@ import '../widgets/loading_skeleton.dart';
 import '../utils/session_pro_order.dart';
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +12,7 @@ import '../services/auth_service.dart';
 import '../services/intake_service.dart';
 import '../services/browse_search_history.dart';
 import '../services/service_catalog.dart';
+import '../utils/booking_timing.dart';
 import '../services/service_location.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
@@ -31,7 +31,6 @@ import 'chat_screen.dart';
 import 'pro_profile.dart';
 
 enum _BrowseView {
-  browse,
   allCategories,
   searchFocused,
   typeAhead,
@@ -45,6 +44,7 @@ class SearchTab extends StatefulWidget {
   final String? initialCategory;
   final bool initialAllShowsCategories;
   final bool showSectionBackButton;
+  final bool active;
 
   const SearchTab({
     super.key,
@@ -53,6 +53,7 @@ class SearchTab extends StatefulWidget {
     this.initialCategory,
     this.initialAllShowsCategories = false,
     this.showSectionBackButton = true,
+    this.active = true,
   });
 
   @override
@@ -60,22 +61,8 @@ class SearchTab extends StatefulWidget {
 }
 
 class _SearchTabState extends State<SearchTab> {
-  static const double _railTileWidth = 96;
-  static const double _railTileGap = 8;
-
-  static const Map<String, Color> _homeCategoryBackgrounds = {
-    'HVAC': AppTheme.blueTint,
-    'Plumbing': AppTheme.blueTint,
-    'Electrical': AppTheme.amberTint,
-    'Cleaning': AppTheme.greenTint,
-    'Roofing': AppTheme.categoryRoofing,
-    'Lawn': AppTheme.greenTint,
-    'Landscaping': AppTheme.greenTint,
-    'Handyman': AppTheme.categoryHandyman,
-  };
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
-  late final ScrollController _railController;
   final TextEditingController _locationController = TextEditingController();
   final List<String> _recentSearches = [];
   final BrowseSearchHistory _searchHistory = BrowseSearchHistory();
@@ -93,7 +80,6 @@ class _SearchTabState extends State<SearchTab> {
   String? _committedQuery;
   bool _isInitializing = true;
   bool _isLoadingResults = false;
-  bool _isLoadingCoverage = false;
   bool _suppressLocationReset = false;
   String? _resultsError;
   int _availabilityHydrationToken = 0;
@@ -102,32 +88,7 @@ class _SearchTabState extends State<SearchTab> {
   bool _isLoadingMore = false;
   String? _loadMoreError;
   bool _preserveSearchViewOnUnfocus = false;
-  // No distance filter: the homeowner searched by ZIP and the platform never
-  // measures distance (decisions §11, Oct 1).
-  double? _minRatingFilter;
-  String? _priceTypeFilter;
-
-  bool get _hasActiveFilters =>
-      _minRatingFilter != null || _priceTypeFilter != null;
-
-  int get _activeFilterCount => [
-        _minRatingFilter,
-        _priceTypeFilter,
-      ].where((value) => value != null).length;
-
-  List<_BrowsePro> get _filteredLivePros {
-    if (!_hasActiveFilters) return _livePros;
-    return _livePros.where((pro) {
-      final minRating = _minRatingFilter;
-      if (minRating != null && pro.rating < minRating) return false;
-      final priceType = _priceTypeFilter;
-      if (priceType != null && pro.workOrderType != priceType) return false;
-      return true;
-    }).toList(growable: false);
-  }
-
   int get _availableProsCount {
-    if (_hasActiveFilters) return _filteredLivePros.length;
     if (_selectedCategory == 'All') {
       return _allProsCount > 0 ? _allProsCount : _livePros.length;
     }
@@ -142,7 +103,6 @@ class _SearchTabState extends State<SearchTab> {
     _searchController =
         TextEditingController(text: widget.initialSearchQuery ?? '');
     _searchFocusNode = FocusNode();
-    _railController = ScrollController();
     _searchFocusNode.addListener(_handleFocusChange);
     BrowseSearchHistory.revision.addListener(_loadRecentSearches);
     ServiceLocation.selected.addListener(_handleSharedLocationChanged);
@@ -156,25 +116,37 @@ class _SearchTabState extends State<SearchTab> {
     }
     if (widget.initialCategory == 'All') {
       _selectedCategory = 'All';
-      _view = widget.initialAllShowsCategories
-          ? _BrowseView.allCategories
-          : _BrowseView.browse;
+      _view = _BrowseView.allCategories;
     }
     if (_searchController.text.trim().isNotEmpty) {
       _committedQuery = _searchController.text.trim();
-      _view = _resolveSearchView(_committedQuery!);
+      _view = _BrowseView.results;
     }
 
     _loadLocationAndResults();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _ensureSelectedRailVisible();
+      if (mounted && widget.active && _view == _BrowseView.searchFocused)
+        _searchFocusNode.requestFocus();
     });
   }
 
   @override
   void didUpdateWidget(SearchTab oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.active != oldWidget.active) {
+      if (widget.active) {
+        _selectedCategory = 'All';
+        _committedQuery = null;
+        _searchController.clear();
+        _view = _BrowseView.searchFocused;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && widget.active) _searchFocusNode.requestFocus();
+        });
+      } else {
+        _dismissSearchKeyboard();
+      }
+    }
     if (widget.initialSearchQuery != oldWidget.initialSearchQuery) {
       _searchController.text = widget.initialSearchQuery ?? '';
       _committedQuery = _searchController.text.trim().isEmpty
@@ -186,7 +158,7 @@ class _SearchTabState extends State<SearchTab> {
         _view = _BrowseView.searchFocused;
       } else {
         _view = _selectedCategory == 'All'
-            ? _BrowseView.browse
+            ? _BrowseView.searchFocused
             : _BrowseView.results;
       }
       setState(() {});
@@ -210,9 +182,6 @@ class _SearchTabState extends State<SearchTab> {
         _runCategorySearch(widget.initialCategory!);
       }
       setState(() {});
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _ensureSelectedRailVisible();
-      });
     }
   }
 
@@ -225,7 +194,6 @@ class _SearchTabState extends State<SearchTab> {
         .removeListener(_refreshContractorCatalog);
     _searchFocusNode.removeListener(_handleFocusChange);
     _searchFocusNode.dispose();
-    _railController.dispose();
     _searchController.dispose();
     _locationController.dispose();
     if (AuthService.instance.isAuthenticated) {
@@ -280,8 +248,7 @@ class _SearchTabState extends State<SearchTab> {
       _locationController.text = normalizedCity;
       return;
     }
-    final separator = String.fromCharCode(183);
-    _locationController.text = '$normalizedCity $separator $zip';
+    _locationController.text = '$normalizedCity · $zip';
   }
 
   String _normalizeLocationText(String value) {
@@ -363,7 +330,10 @@ class _SearchTabState extends State<SearchTab> {
       );
       if (defaultAddr is! Map) return;
 
-      final city = _readText(defaultAddr['city']) ?? 'Home';
+      final city = [
+        _readText(defaultAddr['city']) ?? 'Home',
+        _readText(defaultAddr['state'])
+      ].whereType<String>().join(', ');
       final zip = _extractZip(defaultAddr['zip']) ?? _selectedZip;
       if (!mounted) {
         _selectedZip = zip;
@@ -442,7 +412,6 @@ class _SearchTabState extends State<SearchTab> {
           _categoryCounts.clear();
           _categoryCoverage.clear();
           _isLoadingResults = false;
-          _isLoadingCoverage = false;
         });
       }
       return;
@@ -484,70 +453,13 @@ class _SearchTabState extends State<SearchTab> {
     }
   }
 
-  List<_BrowseCategory> get _visibleRailCategories => _allCategories
-      .where((cat) => _categorySlugForName(cat.name) != null)
-      .toList();
-
-  List<_BrowseCategory> get _railCategoriesForCurrentSelection {
-    final visible = [..._visibleRailCategories];
-    if (_selectedCategory == 'All' ||
-        visible.any((category) => category.name == _selectedCategory)) {
-      return visible;
-    }
-    final missingIndex = _allCategories.indexWhere(
-      (category) => category.name == _selectedCategory,
-    );
-    if (missingIndex == -1) {
-      return visible;
-    }
-    return [...visible, _allCategories[missingIndex]];
-  }
-
-  void _ensureSelectedRailVisible() {
-    if (!_railController.hasClients) return;
-    final visible = _railCategoriesForCurrentSelection;
-    final categoryIndex =
-        visible.indexWhere((cat) => cat.name == _selectedCategory);
-    if (_selectedCategory != 'All' && categoryIndex == -1) return;
-    final selectedIndex = _selectedCategory == 'All' ? 0 : categoryIndex + 1;
-    if (selectedIndex < 0) return;
-    // A tile plus its separator is its complete horizontal footprint. This
-    // keeps an active category aligned with the page's left content edge,
-    // exactly like the initial All tile.
-    final targetOffset = (selectedIndex * (_railTileWidth + _railTileGap))
-        .clamp(
-          0.0,
-          _railController.position.maxScrollExtent,
-        )
-        .toDouble();
-    _railController.animateTo(
-      targetOffset,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  void _queueSelectedRailVisibility() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _ensureSelectedRailVisible();
-      Future.delayed(const Duration(milliseconds: 80), () {
-        if (mounted) {
-          _ensureSelectedRailVisible();
-        }
-      });
-    });
-  }
-
   Future<void> _refreshZipCoverage() async {
     final zip = _selectedZip.trim();
     if (zip.isEmpty) {
       return;
     }
 
-    if (mounted) {
-      setState(() => _isLoadingCoverage = true);
-    }
+    if (mounted) {}
 
     try {
       final coverage = await HomeownerService.instance.getZipCoverage(zip: zip);
@@ -613,13 +525,11 @@ class _SearchTabState extends State<SearchTab> {
           ..addAll(nextCoverage);
         _selectedZip = returnedZip;
         _applyLocationLabel(resolvedLocation, returnedZip);
-        _isLoadingCoverage = false;
       });
     } catch (_) {
       if (!mounted || zip != _selectedZip) {
         return;
       }
-      setState(() => _isLoadingCoverage = false);
     }
   }
 
@@ -649,10 +559,6 @@ class _SearchTabState extends State<SearchTab> {
     }
   }
 
-  int _proCountForCategory(_BrowseCategory category) {
-    return _categoryCounts[category.name] ?? 0;
-  }
-
   int get _allProsCount {
     if (_categoryCounts.isEmpty) {
       return 0;
@@ -660,22 +566,8 @@ class _SearchTabState extends State<SearchTab> {
     return _categoryCounts.values.fold<int>(0, (sum, value) => sum + value);
   }
 
-  String get _locationChipLabel {
-    final normalized = _normalizeLocationText(_locationController.text);
-    final parts = normalized
-        .split(String.fromCharCode(183))
-        .map((part) => part.trim())
-        .where((part) => part.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) {
-      return _selectedZip;
-    }
-    if (parts.length == 1) {
-      return parts.first;
-    }
-    final city = parts.first.replaceFirst(RegExp(r'(?:,\s*[A-Z]{2})+$'), '');
-    return '$city ${String.fromCharCode(183)} ${parts.last}';
-  }
+  String get _locationChipLabel =>
+      _locationController.text.replaceAll(' · ', ' ').trim();
 
   void _handleFocusChange() {
     if (!mounted) return;
@@ -698,9 +590,10 @@ class _SearchTabState extends State<SearchTab> {
         _view =
             _livePros.isEmpty ? _BrowseView.noCoverage : _BrowseView.results;
       } else if (_selectedCategory == 'All') {
-        _view = _BrowseView.browse;
+        if (_view != _BrowseView.allCategories)
+          _view = _BrowseView.searchFocused;
       } else {
-        _view = _BrowseView.browse;
+        _view = _BrowseView.results;
       }
     });
   }
@@ -769,7 +662,7 @@ class _SearchTabState extends State<SearchTab> {
     setState(() {
       _view = _committedQuery == null
           ? (_selectedCategory == 'All'
-              ? _BrowseView.browse
+              ? _BrowseView.searchFocused
               : _BrowseView.results)
           : _BrowseView.results;
     });
@@ -822,9 +715,6 @@ class _SearchTabState extends State<SearchTab> {
     });
     _preserveSearchViewOnUnfocus = true;
     _searchFocusNode.unfocus();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _ensureSelectedRailVisible();
-    });
   }
 
   Future<void> _returnToBrowsePage() async {
@@ -836,7 +726,7 @@ class _SearchTabState extends State<SearchTab> {
       _resultsError = null;
       _searchController.clear();
       _livePros.clear();
-      _view = _BrowseView.browse;
+      _view = _BrowseView.searchFocused;
     });
     if (AuthService.instance.isAuthenticated) {
       _suppressLocationReset = true;
@@ -856,76 +746,13 @@ class _SearchTabState extends State<SearchTab> {
     setState(() {
       _selectedCategory = category;
       _committedQuery = null;
-      _view = _BrowseView.browse;
+      _view = _BrowseView.results;
     });
     _searchFocusNode.unfocus();
     _runCategorySearch(category);
-    _queueSelectedRailVisibility();
   }
 
-  List<_BrowseCategory> get _categoriesWithLivePros {
-    final live = _allCategories
-        .where((category) =>
-            _categorySlugForName(category.name) != null &&
-            _proCountForCategory(category) > 0)
-        .toList();
-    if (live.isNotEmpty) {
-      return live;
-    }
-    return _visibleRailCategories;
-  }
-
-  Future<void> _runAllServicesSearch() async {
-    await ServiceCatalog.load();
-    if (!mounted) return;
-    if (!ServiceCatalog.loaded) {
-      setState(() {
-        _isLoadingResults = false;
-        _resultsError = ServiceCatalog.error;
-      });
-      return;
-    }
-    _bookingDescription = null;
-    _descriptionCategory = null;
-    if (_selectedZip.isEmpty && !await _requestZipIfNeeded()) return;
-    // Keep the catalogue visible while nearby-pro data refreshes. Previously,
-    // the async completion replaced this route with the default Browse view.
-    final keepAllServicesListVisible = _view == _BrowseView.allCategories;
-    final categories = SessionProOrder.instance.arrange(
-        _categoriesWithLivePros, (category) => 'category:${category.name}');
-    final requestToken = ++_prosRequestToken;
-    final requestedZip = _selectedZip;
-    if (!mounted) return;
-    setState(() {
-      _selectedCategory = 'All';
-      _committedQuery = null;
-      _searchController.clear();
-      _isLoadingResults = true;
-      _resultsError = null;
-      _view = keepAllServicesListVisible
-          ? _BrowseView.allCategories
-          : _BrowseView.browse;
-    });
-    _searchFocusNode.unfocus();
-
-    _startProPages([
-      for (final category in categories)
-        if (_categorySlugForName(category.name) != null)
-          () => _fetchProCategory(category.name,
-              _categorySlugForName(category.name)!, requestedZip, requestToken),
-    ]);
-    await _loadProPage(requestToken,
-        initial: true, keepCatalogue: keepAllServicesListVisible);
-    if (_hasActiveFilters) await _loadAllProsForFilters();
-    _queueSelectedRailVisibility();
-  }
-
-  _BrowseView _resolveSearchView(String query) {
-    if (query.trim().isEmpty) {
-      return _BrowseView.searchFocused;
-    }
-    return _livePros.isEmpty ? _BrowseView.noCoverage : _BrowseView.results;
-  }
+  Future<void> _runAllServicesSearch() async => _openAllCategories();
 
   Future<void> _runQuerySearch(String query) async {
     if (_selectedZip.isEmpty && !await _requestZipIfNeeded()) return;
@@ -1050,7 +877,7 @@ class _SearchTabState extends State<SearchTab> {
       _selectedCategory = category;
       _isLoadingResults = true;
       _resultsError = null;
-      _view = overrideQuery == null ? _BrowseView.browse : _BrowseView.results;
+      _view = overrideQuery == null ? _BrowseView.results : _BrowseView.results;
     });
 
     _startProPages([
@@ -1058,7 +885,6 @@ class _SearchTabState extends State<SearchTab> {
           urgency: urgency),
     ]);
     await _loadProPage(requestToken, initial: true);
-    if (_hasActiveFilters) await _loadAllProsForFilters();
   }
 
   Future<List<_BrowsePro>> _fetchProCategory(
@@ -1071,7 +897,7 @@ class _SearchTabState extends State<SearchTab> {
     final results = (response['results'] as List? ?? const [])
         .whereType<Map>()
         .map((item) => _BrowsePro.fromApi(Map<String, dynamic>.from(item),
-            category: category))
+            category: category, urgency: urgency))
         .toList();
     _categoryCounts[category] = response['count'] is num
         ? (response['count'] as num).toInt()
@@ -1228,29 +1054,37 @@ class _SearchTabState extends State<SearchTab> {
       return;
     }
     final token = _availabilityHydrationToken;
-    final now = DateTime.now();
-    final fromDate = DateFormat('yyyy-MM-dd').format(now);
-    final toDate =
-        DateFormat('yyyy-MM-dd').format(now.add(const Duration(days: 14)));
+    final requestedZip = _selectedZip;
     final nextLabels = <String, String>{};
 
     Future<void> loadForPro(_BrowsePro pro) async {
-      if (pro.contractorId.trim().isEmpty) {
+      if (pro.contractorId.trim().isEmpty || pro.nextAvailable == null) {
         return;
       }
       try {
         final availability =
             await HomeownerService.instance.getContractorAvailability(
           contractorId: pro.contractorId,
-          urgency: 'standard',
-          fromDate: fromDate,
-          toDate: toDate,
+          serviceId:
+              pro.contractorServiceId.isEmpty ? null : pro.contractorServiceId,
+          propertyZip: requestedZip,
+          urgency: pro.urgency,
         );
-        final slots = (availability['slots'] as List? ?? const [])
-            .whereType<Map>()
-            .map((item) => Map<String, dynamic>.from(item))
-            .toList();
+        final slots = BookingTiming.eligible(
+            availability['slots'] as List? ?? const [], pro.urgency);
+        if (availability['paused'] == true ||
+            availability['${pro.urgency}Eligible'] == false) {
+          nextLabels[_proAvailabilityKey(pro)] = '';
+          return;
+        }
+        if (availability.containsKey('nextAvailable')) {
+          nextLabels[_proAvailabilityKey(pro)] = _formatLooseAvailabilityLabel(
+                  _readText(availability['nextAvailable'])) ??
+              '';
+          return;
+        }
         if (slots.isEmpty) {
+          nextLabels[_proAvailabilityKey(pro)] = '';
           return;
         }
         final label = _formatSlotLabel(
@@ -1278,20 +1112,23 @@ class _SearchTabState extends State<SearchTab> {
   }
 
   String _proAvailabilityKey(_BrowsePro pro) {
+    final offering = '${pro.contractorServiceId}:${pro.urgency}:$_selectedZip';
     if (pro.contractorId.trim().isNotEmpty) {
-      return 'id:${pro.contractorId.trim().toLowerCase()}';
+      return 'id:${pro.contractorId.trim().toLowerCase()}:$offering';
     }
     if (pro.slug.trim().isNotEmpty) {
-      return 'slug:${pro.slug.trim().toLowerCase()}';
+      return 'slug:${pro.slug.trim().toLowerCase()}:$offering';
     }
-    return 'name:${pro.name.trim().toLowerCase()}';
+    return 'name:${pro.name.trim().toLowerCase()}:$offering';
   }
 
-  /// "Tomorrow", "Wed, Oct 14"… or null when the pro has no open slot
+  /// "Tomorrow", "Wed"… or null when the pro has no open slot
   /// (B02: no capsule then — Batch 21 Amendment 1 R3).
   String? _nextAvailableLabelFor(_BrowsePro pro) {
-    return _liveNextSlotLabels[_proAvailabilityKey(pro)] ??
+    if (pro.nextAvailable == null) return null;
+    final label = _liveNextSlotLabels[_proAvailabilityKey(pro)] ??
         _formatLooseAvailabilityLabel(pro.nextAvailable);
+    return label == null || label.isEmpty ? null : label;
   }
 
   String? _formatLooseAvailabilityLabel(String? raw) {
@@ -1300,46 +1137,23 @@ class _SearchTabState extends State<SearchTab> {
       return null;
     }
     if (RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(trimmed)) {
-      return _formatSlotLabel(trimmed, null) ?? trimmed;
+      return _formatSlotLabel(trimmed, null);
     }
-    return trimmed;
+    final day = RegExp(r'^(Today|Tomorrow|Mon|Tue|Wed|Thu|Fri|Sat|Sun)',
+            caseSensitive: false)
+        .firstMatch(trimmed);
+    return day?.group(1);
   }
 
   String? _formatSlotLabel(String? startRaw, String? endRaw) {
-    if (startRaw == null || startRaw.trim().isEmpty) {
-      return null;
-    }
-    final start = DateTime.tryParse(startRaw)?.toLocal();
-    if (start == null) {
-      return null;
-    }
-    final end = DateTime.tryParse(endRaw ?? '')?.toLocal();
+    final start = BookingTiming.wallClock(startRaw);
+    if (start == null) return null;
     final now = DateTime.now();
-    final startDate = DateTime(start.year, start.month, start.day);
+    final day = DateTime(start.year, start.month, start.day);
     final today = DateTime(now.year, now.month, now.day);
-    final daysDiff = startDate.difference(today).inDays;
-
-    final String dayLabel;
-    if (daysDiff == 0) {
-      dayLabel = 'Today';
-    } else if (daysDiff == 1) {
-      dayLabel = 'Tomorrow';
-    } else {
-      dayLabel = DateFormat('EEE').format(start);
-    }
-
-    final startHour = DateFormat('h').format(start);
-    final startMeridiem = DateFormat('a').format(start);
-    String timeLabel = '$startHour $startMeridiem';
-    if (end != null) {
-      final endHour = DateFormat('h').format(end);
-      final endMeridiem = DateFormat('a').format(end);
-      timeLabel = startMeridiem == endMeridiem
-          ? '$startHour-$endHour $endMeridiem'
-          : '$startHour $startMeridiem-$endHour $endMeridiem';
-    }
-
-    return '$dayLabel, $timeLabel';
+    if (day == today) return 'Today';
+    if (day == today.add(const Duration(days: 1))) return 'Tomorrow';
+    return DateFormat('EEE').format(start);
   }
 
   String? _resolveSearchCategory(String query) {
@@ -1707,6 +1521,10 @@ class _SearchTabState extends State<SearchTab> {
           _categoryNameForSlug(service.categorySlug) ?? service.category))
       .toList(growable: false);
 
+  List<_BrowseService> get _mainServiceCatalog => _allCategories
+      .map((category) => _BrowseService(category.name, ''))
+      .toList(growable: false);
+
   List<_BrowsePro> _matchesQuery(String query) {
     final lower = query.toLowerCase().trim();
     if (lower.isEmpty) return const [];
@@ -1731,9 +1549,12 @@ class _SearchTabState extends State<SearchTab> {
       'profileSlug': pro.slug,
       'contractorId': pro.contractorId,
       'contractor_id': pro.contractorId,
+      'contractorServiceId': pro.contractorServiceId,
+      'zip': _selectedZip,
       'userId': pro.userId,
       'businessName': pro.name,
       'business_name': pro.name,
+      ...pro.reviewFields,
       'verifiedRating': pro.rating,
       'verifiedCount': pro.reviews,
       'workOrderType':
@@ -1881,11 +1702,8 @@ class _SearchTabState extends State<SearchTab> {
     if (_view == _BrowseView.allCategories) {
       return _buildAllCategories();
     }
-    if (_selectedZip.isEmpty) {
-      return _buildZipRequired();
-    }
 
-    final visiblePros = _filteredLivePros;
+    final visiblePros = _livePros;
     final searchQuery = _searchController.text.trim();
     final activeTypeAhead = _matchesQuery(searchQuery);
 
@@ -1906,75 +1724,9 @@ class _SearchTabState extends State<SearchTab> {
       case _BrowseView.noCoverage:
         body = _buildNoCoverage();
         break;
-      case _BrowseView.browse:
-      default:
-        body = (!_hasActiveFilters &&
-                visiblePros.isEmpty &&
-                !_isLoadingResults &&
-                _resultsError == null &&
-                _loadMoreError == null &&
-                !(_proPages?.hasMore ?? false))
-            ? _buildNoCoverage()
-            : _buildBrowseDefault(visiblePros);
-        break;
     }
 
     return body;
-  }
-
-  Widget _buildZipRequired() {
-    return SingleChildScrollView(
-      child: TwPage(
-        top: TwSpace.s16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildSearchInputPill(),
-            const SizedBox(height: TwSpace.s8),
-            _buildCompactLocationChip(),
-            const SizedBox(height: TwSpace.s40),
-            // The one page-level action, so it stays the orange primary —
-            // now with the navy label (no white on orange).
-            TwEmptyState(
-              icon: Icons.location_on_outlined,
-              title: 'Enter your ZIP code',
-              message:
-                  'We use it to show services and trusted pros available near you.',
-              action: TwPrimaryButton(
-                label: 'Enter ZIP code',
-                expand: false,
-                onPressed: () async {
-                  final zip = await showServiceZipEntryDialog(
-                    context,
-                    initialZip: '',
-                  );
-                  if (zip != null) await _applyLocationInput(zip);
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBrowseDefault(List<_BrowsePro> visiblePros) {
-    return _proList(
-      pros: visiblePros,
-      emptyMessage: 'No live pros were returned for $_selectedZip.',
-      header: [
-        _buildSearchInputPill(),
-        const SizedBox(height: 8),
-        _buildCompactLocationChip(),
-        const SizedBox(height: 12),
-        _buildRail(_allCategories),
-        const SizedBox(height: 16),
-        ..._resultsHeader(_availableProsCount),
-        _buildFilterBar(),
-        const SizedBox(height: 12),
-        _compareTray(),
-      ],
-    );
   }
 
   Widget _buildCompactLocationChip() {
@@ -1982,7 +1734,6 @@ class _SearchTabState extends State<SearchTab> {
       alignment: Alignment.centerLeft,
       child: Material(
         color: AppTheme.white,
-        shape: const StadiumBorder(side: BorderSide(color: AppTheme.border)),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () async {
@@ -1994,7 +1745,7 @@ class _SearchTabState extends State<SearchTab> {
           },
           child: Padding(
             // 12 + 20 (label line) + 12 = 44 tap height (SPEC §1.3).
-            padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2041,7 +1792,7 @@ class _SearchTabState extends State<SearchTab> {
                 const SizedBox(width: TwSpace.s12),
                 Text(
                   ServiceCatalog.loaded
-                      ? '${_serviceCatalog.length} services'
+                      ? '${_mainServiceCatalog.length} services'
                       : 'Loading services…',
                   style: TwType.caption(),
                 ),
@@ -2059,20 +1810,17 @@ class _SearchTabState extends State<SearchTab> {
                   onPressed: () => ServiceCatalog.load(forceRefresh: true),
                   child: const Text('Retry')),
             ],
-            if (ServiceCatalog.loaded && _serviceCatalog.isEmpty)
+            if (ServiceCatalog.loaded && _mainServiceCatalog.isEmpty)
               Text('No services are available right now.',
                   style: TwType.bodySm()),
-            ..._serviceCatalog.map(
+            ..._mainServiceCatalog.map(
               (service) => Padding(
                 padding: const EdgeInsets.only(bottom: TwSpace.s8),
                 child: _AllServiceListRow(
                   service: service,
                   onTap: () {
-                    _searchController.text = service.name;
-                    _searchController.selection = TextSelection.collapsed(
-                      offset: service.name.length,
-                    );
-                    unawaited(_submitSearch(service.name));
+                    _searchController.clear();
+                    _selectCategory(service.name);
                   },
                 ),
               ),
@@ -2206,9 +1954,8 @@ class _SearchTabState extends State<SearchTab> {
         const SizedBox(height: TwSpace.s20),
         if (!_isLoadingResults &&
             _resultsError == null &&
-            (_livePros.isNotEmpty || _hasActiveFilters)) ...[
+            _livePros.isNotEmpty) ...[
           ..._resultsHeader(_availableProsCount),
-          _buildFilterBar(),
           const SizedBox(height: TwSpace.s12),
           _compareTray(),
         ],
@@ -2244,200 +1991,6 @@ class _SearchTabState extends State<SearchTab> {
     ];
   }
 
-  Widget _buildFilterBar() {
-    final filterCount = _activeFilterCount;
-    return Row(
-      children: [
-        OutlinedButton.icon(
-          onPressed: _showFiltersBottomSheet,
-          icon: const Icon(Icons.tune_rounded, size: 18),
-          label: Text(filterCount == 0 ? 'Filters' : 'Filters ($filterCount)'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: filterCount == 0 ? AppTheme.navy : AppTheme.blue,
-            backgroundColor:
-                filterCount == 0 ? Colors.white : AppTheme.blueTint,
-            side: BorderSide(
-              color: filterCount == 0 ? AppTheme.border : AppTheme.blue,
-              width: filterCount == 0 ? 1 : 1.5,
-            ),
-            minimumSize: const Size(0, 44),
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-          ),
-        ),
-        if (filterCount > 0) ...[
-          const SizedBox(width: 8),
-          TextButton(
-            onPressed: () => setState(() {
-              _minRatingFilter = null;
-              _priceTypeFilter = null;
-            }),
-            child: const Text('Clear'),
-          ),
-        ],
-        const Spacer(),
-        if (_isLoadingMore && filterCount > 0)
-          const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-      ],
-    );
-  }
-
-  Future<void> _showFiltersBottomSheet() async {
-    final selected = await TwSheet.show<Map<String, dynamic>>(
-      context,
-      builder: (sheetContext) {
-        double? rating = _minRatingFilter;
-        String? priceType = _priceTypeFilter;
-        final gutter = TwLayout.gutter(sheetContext);
-
-        return StatefulBuilder(
-          builder: (context, setSheetState) => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Content scrolls; the action bar stays pinned (SPEC §1.5).
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(gutter, 4, gutter, TwSpace.s16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Filter pros', style: TwType.h3()),
-                          ),
-                          TextButton(
-                            onPressed: () => setSheetState(() {
-                              rating = null;
-                              priceType = null;
-                            }),
-                            child: const Text('Reset all'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: TwSpace.s16),
-                      _filterSection(
-                        title: 'Minimum rating',
-                        children: [
-                          _filterChoice(
-                            label: 'All ratings',
-                            selected: rating == null,
-                            onSelected: () =>
-                                setSheetState(() => rating = null),
-                          ),
-                          for (final minimum in const [4.5, 4.8])
-                            _filterChoice(
-                              label: '$minimum+ stars',
-                              selected: rating == minimum,
-                              onSelected: () =>
-                                  setSheetState(() => rating = minimum),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: TwSpace.s28),
-                      _filterSection(
-                        title: 'Pricing type',
-                        children: [
-                          _filterChoice(
-                            label: 'All pricing',
-                            selected: priceType == null,
-                            onSelected: () =>
-                                setSheetState(() => priceType = null),
-                          ),
-                          // Labels use the settled type names; the filter
-                          // values are unchanged.
-                          _filterChoice(
-                            label: 'Upfront price',
-                            selected: priceType == 'rate_card',
-                            onSelected: () =>
-                                setSheetState(() => priceType = 'rate_card'),
-                          ),
-                          _filterChoice(
-                            label: 'You approve the cap',
-                            selected: priceType == 'nte',
-                            onSelected: () =>
-                                setSheetState(() => priceType = 'nte'),
-                          ),
-                          _filterChoice(
-                            label: 'Free visit',
-                            selected: priceType == 'quote_request',
-                            onSelected: () => setSheetState(
-                                () => priceType = 'quote_request'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              TwStickyBar(
-                children: [
-                  TwPrimaryButton(
-                    label: 'Apply filters',
-                    onPressed: () => Navigator.pop(sheetContext, {
-                      'rating': rating,
-                      'priceType': priceType,
-                    }),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    if (selected == null || !mounted) return;
-    setState(() {
-      _minRatingFilter = selected['rating'] as double?;
-      _priceTypeFilter = selected['priceType'] as String?;
-    });
-    if (_hasActiveFilters) await _loadAllProsForFilters();
-  }
-
-  Widget _filterSection({
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: TwType.title()),
-        const SizedBox(height: TwSpace.s12),
-        Wrap(spacing: TwSpace.s8, runSpacing: TwSpace.s8, children: children),
-      ],
-    );
-  }
-
-  Widget _filterChoice({
-    required String label,
-    required bool selected,
-    required VoidCallback onSelected,
-  }) {
-    return TwPill(
-      label: label,
-      selected: selected,
-      onTap: onSelected,
-    );
-  }
-
-  Future<void> _loadAllProsForFilters() async {
-    final pages = _proPages;
-    if (pages == null) return;
-    while (mounted && identical(pages, _proPages) && pages.hasMore) {
-      if (_isLoadingMore) {
-        await Future<void>.delayed(const Duration(milliseconds: 25));
-        continue;
-      }
-      await _loadProPage(_prosRequestToken);
-      if (_loadMoreError != null) break;
-    }
-  }
-
   Widget _buildNoCoverage() {
     final subtitle = _selectedCategory == 'All' ||
             _selectedCategory.trim().isEmpty
@@ -2454,10 +2007,6 @@ class _SearchTabState extends State<SearchTab> {
             const SizedBox(height: TwSpace.s8),
             _buildCompactLocationChip(),
             const SizedBox(height: TwSpace.s12),
-            // Keep the same service rail available in the no-results state so
-            // a homeowner can switch categories without backing out of their
-            // search.
-            _buildRail(_railCategoriesForCurrentSelection),
             const SizedBox(height: TwSpace.s40),
             TwEmptyState(
               icon: Icons.location_on_outlined,
@@ -2498,7 +2047,6 @@ class _SearchTabState extends State<SearchTab> {
       controller: _searchController,
       focusNode: _searchFocusNode,
       hint: 'Search a service or pro',
-      borderColor: _searchFocusNode.hasFocus ? AppTheme.blue : AppTheme.border,
       onTap: focusSearchField,
       // Keep suggestions mounted while dismissing the keyboard so the same
       // pointer gesture can still activate a Recent, Popular, or type-ahead
@@ -2528,72 +2076,6 @@ class _SearchTabState extends State<SearchTab> {
               : pro.apiSlug.isNotEmpty
                   ? pro.apiSlug
                   : pro.name);
-
-  Widget _buildRail(List<_BrowseCategory> categories) {
-    Color homeBackgroundFor(String name) {
-      if (name == 'All') {
-        return AppTheme.navyTint;
-      }
-      return _homeCategoryBackgrounds[name] ??
-          TradeWorksCategoryTokens.forName(name).tint;
-    }
-
-    final chips = <Widget>[
-      _RailChip(
-        label: 'All',
-        meta: _isLoadingCoverage ? '...' : '$_allProsCount pros',
-        category: 'All',
-        fallbackIcon: Icons.grid_view_rounded,
-        accent: AppTheme.navy700,
-        tint: homeBackgroundFor('All'),
-        selected: _selectedCategory == 'All',
-        enabled: !_isLoadingCoverage && _allProsCount > 0,
-        onTap: _runAllServicesSearch,
-      ),
-      ...categories.map(
-        (category) {
-          final token = TradeWorksCategoryTokens.forName(category.name);
-          return _RailChip(
-            label: category.name,
-            meta: _isLoadingCoverage
-                ? '...'
-                : '${_proCountForCategory(category)} pros',
-            category: category.name,
-            fallbackIcon: token.icon,
-            accent: token.color,
-            tint: homeBackgroundFor(category.name),
-            selected: _selectedCategory == category.name,
-            enabled: !_isLoadingCoverage && _proCountForCategory(category) > 0,
-            onTap: () => _selectCategory(category.name),
-          );
-        },
-      ),
-    ];
-
-    return SizedBox(
-      // Padding 16 + icon 28 + gap 4 (+2 spare) fixed; two caption lines
-      // (13/18) grow with the text scale.
-      height: 50 + MediaQuery.textScalerOf(context).scale(36),
-      child: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(
-          dragDevices: const {
-            PointerDeviceKind.touch,
-            PointerDeviceKind.mouse,
-            PointerDeviceKind.stylus,
-          },
-        ),
-        child: ListView.separated(
-          controller: _railController,
-          clipBehavior: Clip.none,
-          padding: EdgeInsets.zero,
-          scrollDirection: Axis.horizontal,
-          itemBuilder: (context, index) => chips[index],
-          separatorBuilder: (_, __) => const SizedBox(width: _railTileGap),
-          itemCount: chips.length,
-        ),
-      ),
-    );
-  }
 
   Widget _buildSectionHeader(String title) {
     return TwSectionHeader(title);
@@ -2759,18 +2241,23 @@ class _SearchTabState extends State<SearchTab> {
             ],
           ),
           const SizedBox(height: TwSpace.s12),
-          Wrap(
-            spacing: TwSpace.s8,
-            runSpacing: TwSpace.s8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              if (pro.reviews > 0)
-                RatingCapsule(rating: pro.rating, count: pro.reviews)
-              else
-                Text('No reviews yet', style: TwType.meta()),
-              if (slot != null) AvailabilityCapsule(label: 'Next: $slot'),
-            ],
-          ),
+          Row(children: [
+            Flexible(
+                child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: pro.reviews > 0
+                        ? RatingCapsule(rating: pro.rating, count: pro.reviews)
+                        : Text('New to TradeWorks', style: TwType.meta()))),
+            const SizedBox(width: TwSpace.s8),
+            const Spacer(),
+            if (slot != null)
+              Flexible(
+                  child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: AvailabilityCapsule(label: 'Next: $slot'))),
+          ]),
           const SizedBox(height: TwSpace.s12),
           const Divider(
             height: 1,
@@ -2831,7 +2318,7 @@ class _SearchTabState extends State<SearchTab> {
               ),
               TextButton(
                 onPressed: () => _openProProfile(pro),
-                child: const Text('View profile'),
+                child: Text('View profile', style: TwType.link()),
               ),
             ],
           ),
@@ -2908,6 +2395,8 @@ class _BrowseService {
 
 class _BrowsePro {
   final String contractorId;
+  final String contractorServiceId;
+  final String urgency;
   final String userId;
   final String apiSlug;
   final String name;
@@ -2915,6 +2404,7 @@ class _BrowsePro {
   final String initials;
   final String category;
   final String trade;
+  final Map<String, dynamic> reviewFields;
   final double rating;
   final int reviews;
   final double distanceMiles;
@@ -2933,6 +2423,8 @@ class _BrowsePro {
 
   const _BrowsePro({
     this.contractorId = '',
+    this.contractorServiceId = '',
+    this.urgency = 'standard',
     this.userId = '',
     this.apiSlug = '',
     required this.name,
@@ -2940,6 +2432,7 @@ class _BrowsePro {
     required this.initials,
     required this.category,
     required this.trade,
+    this.reviewFields = const {},
     required this.rating,
     required this.reviews,
     required this.distanceMiles,
@@ -2958,6 +2451,7 @@ class _BrowsePro {
   factory _BrowsePro.fromApi(
     Map<String, dynamic> map, {
     required String category,
+    String urgency = 'standard',
   }) {
     String read(dynamic value, [String fallback = '']) {
       final text = value?.toString().trim() ?? '';
@@ -3003,8 +2497,12 @@ class _BrowsePro {
         .take(2)
         .map((part) => part[0].toUpperCase())
         .join();
-    final rating = readDouble(map['verifiedRating'], 0);
-    final reviews = readInt(map['verifiedCount'], 0);
+    final combined =
+        map['rating_combined'] != null && map['review_count_combined'] != null;
+    final rating = readDouble(
+        combined ? map['rating_combined'] : map['verifiedRating'], 0);
+    final reviews = readInt(
+        combined ? map['review_count_combined'] : map['verifiedCount'], 0);
     final distance = readDouble(map['distanceMiles'], 0);
     final price = readDouble(map['fromPrice'], 0);
     final workOrderType =
@@ -3034,6 +2532,9 @@ class _BrowsePro {
 
     return _BrowsePro(
       contractorId: read(map['contractorId'], read(map['id'])),
+      contractorServiceId:
+          read(map['contractorServiceId'], read(map['contractor_service_id'])),
+      urgency: urgency,
       userId: read(map['userId']),
       apiSlug: read(map['slug']),
       name: businessName,
@@ -3053,6 +2554,17 @@ class _BrowsePro {
       initials: initials.isEmpty ? 'SP' : initials,
       category: category,
       trade: trade,
+      reviewFields: {
+        for (final key in [
+          'rating_combined',
+          'review_count_combined',
+          'google_review_count',
+          'review_count_google',
+          'tradeworks_review_count',
+          'review_count_tradeworks'
+        ])
+          if (map.containsKey(key)) key: map[key]
+      },
       rating: rating,
       reviews: reviews,
       distanceMiles: distance,
@@ -3108,87 +2620,6 @@ class _BrowsePro {
     if (tradeText.isNotEmpty && tradeText != categoryText) return tradeText;
     if (categoryText.isNotEmpty) return '$categoryText pro';
     return 'View pro details';
-  }
-}
-
-class _RailChip extends StatelessWidget {
-  final String label;
-  final String meta;
-  final String category;
-  final IconData fallbackIcon;
-  final Color accent;
-  final Color tint;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  const _RailChip({
-    required this.label,
-    required this.meta,
-    required this.category,
-    required this.fallbackIcon,
-    required this.accent,
-    required this.tint,
-    required this.selected,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final active = selected && enabled;
-    final foreground = enabled ? AppTheme.navy : AppTheme.textTertiary;
-    return Semantics(
-      button: enabled,
-      enabled: enabled,
-      selected: active,
-      label: '$label, $meta${enabled ? '' : ', unavailable'}',
-      child: Material(
-        color: active ? AppTheme.blueTint : AppTheme.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-          side: BorderSide(
-            color: active ? AppTheme.blue : AppTheme.cardBorder,
-            width: active ? 1.5 : 1,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          child: Container(
-            width: _SearchTabState._railTileWidth,
-            padding: const EdgeInsets.all(TwSpace.s8),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ServiceCategoryIcon(
-                  category: category,
-                  size: 28,
-                  fallbackIcon: fallbackIcon,
-                  fallbackColor:
-                      enabled ? AppTheme.navy : AppTheme.textTertiary,
-                ),
-                const SizedBox(height: TwSpace.s4),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TwType.caption(color: foreground)
-                      .copyWith(fontWeight: FontWeight.w600),
-                ),
-                Text(
-                  meta,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TwType.caption(),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 

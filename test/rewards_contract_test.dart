@@ -34,6 +34,33 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('annual cap completes all bands and suppresses the legacy tier',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: RewardTab(
+                onBookTap: () {},
+                loadRewards: ({bool forceRefresh = false}) async => {
+                      'balance': 10,
+                      'periodSpend': 31000,
+                      'annualQualifyingSpendCap': 30000,
+                      'tier': 'diamond',
+                      'currentMarginalRate': 0,
+                      'resetDate': '2027-03-02',
+                      'bands': [
+                        {'floor': 0, 'ceiling': 15000, 'rate': 3},
+                        {'floor': 15000, 'ceiling': 30000, 'rate': 8}
+                      ],
+                      'ledger': [],
+                    }))));
+    await tester.pumpAndSettle();
+    expect(find.textContaining("You've reached"), findsOneWidget);
+    expect(find.textContaining('from Mar 2, 2027'), findsOneWidget);
+    expect(find.text('Your band'), findsNothing);
+    expect(find.textContaining('diamond'), findsNothing);
+    expect(find.byIcon(Icons.check_rounded), findsNWidgets(2));
+  });
+
   testWidgets('missing backend program data stays visible as unavailable',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
@@ -239,16 +266,17 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(find.text(r'$1,302.00'), findsOneWidget);
-    expect(find.text('Ledger total'), findsOneWidget);
-    expect(find.text(r'$1,357.00'), findsOneWidget);
-    expect(find.text('Reserved'), findsOneWidget);
-    expect(find.text(r'$40.00'), findsOneWidget);
-    expect(find.text('Locked'), findsOneWidget);
-    expect(find.text(r'$15.00'), findsOneWidget);
-    expect(find.text('Bronze · 2% on new spend'), findsOneWidget);
+    expect(find.text('Ledger total'), findsNothing);
+    expect(find.text('Reserved'), findsNothing);
+    expect(find.text('Locked'), findsNothing);
+    expect(
+        find.text(r'$40.00 set aside for upcoming bookings'), findsOneWidget);
+    expect(find.text(r'$15.00 waiting on your receipt'), findsOneWidget);
+    expect(find.text('2% band · 2% on new spend'), findsOneWidget);
+    expect(find.textContaining('Bronze'), findsNothing);
     expect(find.text('Mar 10, 2026 – Mar 9, 2027'), findsOneWidget);
-    expect(find.text(r'Earliest expiry: $20.00 on Nov 1, 2026'),
-        findsOneWidget);
+    expect(
+        find.text(r'Earliest expiry: $20.00 on Nov 1, 2026'), findsOneWidget);
 
     await tester.scrollUntilVisible(
       find.text('Service credits ledger'),
@@ -259,5 +287,4 @@ void main() {
     expect(find.text(r'$90.00 paid · 2% · Oct 1, 2026'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
-
 }

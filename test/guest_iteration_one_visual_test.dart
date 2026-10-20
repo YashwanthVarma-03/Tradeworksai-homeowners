@@ -90,8 +90,8 @@ void main() {
     );
 
     expect(find.text('What do you need done?'), findsOneWidget);
-    expect(find.text('See all 164'), findsOneWidget);
-    expect(find.text('All 164'), findsOneWidget);
+    expect(find.text('See all 31'), findsOneWidget);
+    expect(find.text('All 31'), findsOneWidget);
     expect(find.text('CREATE YOUR ACCOUNT'), findsNothing);
     expect(tester.takeException(), isNull);
 
@@ -140,16 +140,33 @@ void main() {
       withNavigation: true,
     );
 
-    final ticker = tester.widget<PageView>(find.byType(PageView));
-    final start = ticker.controller!.page!;
+    final overlay =
+        find.descendant(of: find.byType(HomeTab), matching: find.byType(Text));
+    List<String?> labels() =>
+        tester.widgetList<Text>(overlay).map((t) => t.data).toList();
+    final initial = labels();
     await tester.pump(const Duration(seconds: 3));
-    await tester.pump(const Duration(milliseconds: 750));
-    expect(ticker.controller!.page, closeTo(start + 1, 0.01));
+    final second = labels();
+    expect(second, isNot(equals(initial)));
     expect(find.text('TV Mounting'), findsOneWidget);
+    await tester.tap(find.byType(TextField).first);
+    await tester.pump();
+    final focused = labels();
+    await tester.pump(const Duration(seconds: 6));
+    expect(labels(), focused);
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    expect(labels(), isNot(equals(second)));
+    await tester.pump(const Duration(seconds: 3));
+    final last = labels();
+    expect(last, isNot(equals(second)));
 
     await tester.tap(find.byIcon(Icons.arrow_forward_rounded).first);
     await tester.pump();
-    expect(submitted, 'TV Mounting');
+    expect(submitted, isNotEmpty);
+    expect(last, contains(submitted));
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('bookings gate matches the iteration one surface',

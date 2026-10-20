@@ -2,6 +2,7 @@ import '../widgets/loading_skeleton.dart';
 import 'dart:io';
 import 'package:intl/intl.dart';
 import '../utils/booking_timing.dart';
+import '../utils/booking_identity.dart';
 import '../services/intake_service.dart';
 
 import 'package:flutter/material.dart';
@@ -68,14 +69,13 @@ class BookFlowScreen extends StatefulWidget {
 }
 
 class _BookFlowScreenState extends State<BookFlowScreen> {
-
   late final PageController _pageController;
   final _issueController = TextEditingController();
   final _creditAmountController = TextEditingController();
   final _accessCodeController = TextEditingController();
   final _picker = ImagePicker();
   late final String _bookingTransactionId = TransactionId.uuid();
-  late final String _creditRequestId = TransactionId.uuid();
+  String get _creditRequestId => _bookingTransactionId;
 
   final List<XFile> _selectedPhotos = [];
   final List<dynamic> _addresses = [];
@@ -100,6 +100,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   int _pageIndex = 0;
   int _selectedServiceIndex = 0;
+  bool _servicePicked = false;
+  bool _confirmingExit = false;
   int _selectedPricingIndex = 0;
   int _selectedUrgencyIndex = -1;
   int _availabilityGeneration = 0;
@@ -203,7 +205,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       final option = item is Map
           ? _ServiceOption.fromMap(Map<String, dynamic>.from(item))
           : _ServiceOption.fromString(item.toString(), trade: _proTrade);
-      final key =
+      final key = option.serviceId ??
           '${option.title.toLowerCase()}|${option.priceLabel.toLowerCase()}';
       if (option.title.trim().isNotEmpty && seen.add(key)) {
         parsed.add(option);
@@ -249,6 +251,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
     return _ServiceOption(
       title: title,
+      serviceId: BookingIdentity.offering(_mergedPro),
       subtitle: _backendDescription,
       amount: price,
       priceLabel: priceText,
@@ -283,6 +286,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       'bookable',
       'is_bookable',
       'isBookable',
+      'is_book_now_enabled',
     ]) {
       if (item[key] == false) return false;
     }
@@ -515,6 +519,10 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       feeLabel: _urgencyAvailabilityPrices[key],
       available: _urgencyAvailabilityStates[key],
     );
+    if (_selectedPricingChoice.workOrderType == 'quote_request' &&
+        key != 'standard') {
+      return live.copyWith(available: false);
+    }
     if (key == 'standard') return live;
     // Urgent and Emergency need a fee to be offered (Oct 1). No fee, or no
     // answer yet from the pro's availability, means not available — never
@@ -565,6 +573,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       return !_isLoadingSlots && _selectedTime != null;
     if (page == _BookingPage.review)
       return _selectedUrgencyIndex >= 0 &&
+          !_isLoadingSlots &&
           (!_picksOwnTime || _selectedTime != null);
     return true;
   }
@@ -611,10 +620,21 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
             _contractorProfileResponse = data;
             _contractorProfile = profile;
             _contractorId = resolvedId;
+            final selectedId = BookingIdentity.offering(widget.pro);
+            final selectedName =
+                _string(widget.pro['selectedService'])?.toLowerCase();
+            final index = _serviceOptions.indexWhere((service) =>
+                selectedId != null
+                    ? service.serviceId == selectedId
+                    : selectedName != null &&
+                        service.title.toLowerCase() == selectedName);
+            if (index >= 0) _selectedServiceIndex = index;
           });
         }
       } else {
-        if (mounted) setState(() {});
+        if (mounted)
+          setState(
+              () => _contractorId = BookingIdentity.contractor(widget.pro));
       }
       await _refreshAvailability();
       await _hydrateUrgencySummaries();
@@ -723,22 +743,24 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           _readList(profileResp['profile']?['addresses']) ??
           [];
       if (mounted) {
-        final shouldRefreshAvailability =
-            _contractorId != null && _contractorId!.isNotEmpty;
+        final oldZip = _bookingZip;
+        final selectedId = _selectedAddressObj?['id']?.toString();
         setState(() {
           _addresses
             ..clear()
             ..addAll(addressList);
           if (_addresses.isNotEmpty) {
             _selectedAddressObj = _addresses.firstWhere(
-              (a) => a['isDefault'] == true || a['isDefault'] == 'true',
-              orElse: () => _addresses.first,
+              (a) => selectedId != null && '${a['id']}' == selectedId,
+              orElse: () => _addresses.firstWhere(
+                  (a) => a['isDefault'] == true || a['isDefault'] == 'true',
+                  orElse: () => _addresses.first),
             );
           }
         });
         _prefillAccessCode();
-        if (shouldRefreshAvailability) {
-          await _refreshAvailability();
+        if (oldZip != _bookingZip && _contractorId != null) {
+          await _refreshAvailability(preserveSelection: true);
           await _hydrateUrgencySummaries();
         }
       }
@@ -747,7 +769,13 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     }
   }
 
-  Future<void> _refreshAvailability() async {
+  Future<void> _refreshAvailability({bool preserveSelection = false}) async {
+    final previousDate = _selectedDate;
+    final previousTime = _selectedTime;
+    final previousSlots = _slotsByDate[previousDate];
+    final previousSlot = previousSlots
+        ?.where((s) => s['label'] == previousTime)
+        .firstOrNull?['slot'] as Map?;
     final contractorId = _contractorId;
     if (contractorId == null || contractorId.isEmpty) {
       if (mounted) {
@@ -765,18 +793,18 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       _isLoadingSlots = true;
       _slotsError = null;
       _selectedAvailability = null;
+      _urgencyAvailabilityDetails.remove(selectedUrgencyKey);
+      _urgencyAvailabilityPrices.remove(selectedUrgencyKey);
       _buildSlots(const []);
     });
 
     try {
-      final range = _availabilityDateRange();
-
       final data = await HomeownerService.instance.getContractorAvailability(
         contractorId: contractorId,
         serviceId: _selectedService.serviceId,
         urgency: _selectedUrgency.urgencySlug,
-        fromDate: range.$1,
-        toDate: range.$2,
+        propertyZip: _bookingZip,
+        forceRefresh: true,
       );
 
       final slotsList = BookingTiming.eligible(
@@ -799,7 +827,27 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         _urgencyAvailabilityStates[selectedUrgencyKey] =
             _availabilityCanBook(data, slotsList, selectedUrgencyKey);
         _buildSlots(slotsList);
+        if (preserveSelection && previousSlot != null) {
+          for (final entry in _slotsByDate.entries) {
+            for (final candidate in entry.value) {
+              final slot = candidate['slot'] as Map;
+              if (_slotDateTime(slot, 'start') ==
+                      _slotDateTime(previousSlot, 'start') &&
+                  _slotDateTime(slot, 'end') ==
+                      _slotDateTime(previousSlot, 'end')) {
+                _selectedDate = entry.key;
+                _selectedTime = candidate['label'] as String;
+              }
+            }
+          }
+        }
       });
+      if (preserveSelection && previousTime != null && _selectedTime == null) {
+        AppNotification.showInfo(
+            context, 'That time is no longer open — pick another');
+        final schedule = _pages.indexOf(_BookingPage.schedule);
+        if (schedule >= 0) _goToPage(schedule);
+      }
     } catch (e) {
       if (!mounted || generation != _availabilityGeneration) return;
       setState(() {
@@ -816,7 +864,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     final contractorId = _contractorId;
     if (contractorId == null || contractorId.isEmpty || !mounted) return;
 
-    final range = _availabilityDateRange();
+    final generation = _availabilityGeneration;
+    final serviceId = _selectedService.serviceId;
+    final propertyZip = _bookingZip;
     final options = _urgencyOptions;
     final details = <String, String>{};
     final prices = <String, String>{};
@@ -827,10 +877,10 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       try {
         final data = await HomeownerService.instance.getContractorAvailability(
           contractorId: contractorId,
-          serviceId: _selectedService.serviceId,
+          serviceId: serviceId,
           urgency: option.urgencySlug,
-          fromDate: range.$1,
-          toDate: range.$2,
+          propertyZip: propertyZip,
+          forceRefresh: true,
         );
         final slotsList =
             BookingTiming.eligible(_readList(data['slots']) ?? [], key);
@@ -847,8 +897,9 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       }
     }));
 
-    if (!mounted || (details.isEmpty && prices.isEmpty && states.isEmpty))
-      return;
+    if (!mounted ||
+        generation != _availabilityGeneration ||
+        (details.isEmpty && prices.isEmpty && states.isEmpty)) return;
     setState(() {
       _urgencyAvailabilityDetails.addAll(details);
       _urgencyAvailabilityPrices.addAll(prices);
@@ -856,22 +907,18 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     });
   }
 
-  (String, String) _availabilityDateRange() {
-    // Matches the website's UTC Y-M-D request window exactly.
-    final now = DateTime.now().toUtc();
-    final from = DateTime.utc(now.year, now.month, now.day);
-    final to = from.add(const Duration(days: 14));
-    String format(DateTime value) =>
-        '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
-    return (format(from), format(to));
-  }
+  String? get _bookingZip =>
+      _string(_selectedAddressObj?['zip']) ??
+      _string(widget.pro['zip']) ??
+      _string(widget.pro['address_zip']);
 
   bool _availabilityCanBook(
     Map<String, dynamic> data,
     List<dynamic> slots,
     String urgency,
   ) {
-    if (data['paused'] == true) return false;
+    if (data['paused'] == true || data['${urgency}Eligible'] == false)
+      return false;
     if (urgency == 'emergency' && data['emergencyEligible'] == false) {
       return false;
     }
@@ -978,7 +1025,6 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
       if (!seenSlotKeys.add(slotKey)) continue;
       _dates.add(dateKey);
       _slotsByDate.putIfAbsent(dateKey, () => []);
-      if (_slotsByDate[dateKey]!.length >= 4) continue;
       _slotsByDate[dateKey]!.add({
         'label': timeLabel,
         'slot': Map<String, dynamic>.from(slot),
@@ -1087,17 +1133,37 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     if (_pageIndex > 0) {
       _goToPage(_pageIndex - 1);
     } else {
-      Navigator.pop(context);
+      _closeFlow();
     }
   }
 
-  void _closeFlow() {
+  Future<void> _closeFlow() async {
+    if (_confirmingExit || _exitRequested) return;
     if (_isSubmitting) {
       AppNotification.showInfo(
         context,
         'Please wait while your booking is being confirmed.',
       );
       return;
+    }
+    if (_servicePicked || _pageIndex > 0 || _selectedTime != null) {
+      _confirmingExit = true;
+      final leave = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+                title: const Text('Leave this booking?'),
+                content: const Text("Your time won't be held."),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('Keep booking')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      child: const Text('Leave')),
+                ],
+              ));
+      _confirmingExit = false;
+      if (!mounted || leave != true) return;
     }
     setState(() => _exitRequested = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1130,8 +1196,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           _string(widget.pro['contractorId']) ??
           _string(widget.pro['contractor_id']);
       if (contractorId == null || contractorId.isEmpty) {
-        throw Exception(
-            'This pro is missing booking details right now.');
+        throw Exception('This pro is missing booking details right now.');
       }
       final service = _selectedService;
       final selectedPricing = _selectedPricingChoice;
@@ -1151,26 +1216,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           endsAt = _string(slot?['end']);
         }
       }
-      if (!_picksOwnTime) {
-        final range = _availabilityDateRange();
-        final live = await HomeownerService.instance.getContractorAvailability(
-            contractorId: contractorId,
-            serviceId: service.serviceId,
-            urgency: _selectedUrgency.urgencySlug,
-            fromDate: range.$1,
-            toDate: range.$2,
-            forceRefresh: true);
-        final slots = BookingTiming.eligible(
-            live['slots'] as List? ?? [], _selectedUrgency.urgencySlug);
-        if (slots.isEmpty)
-          throw Exception(
-              'This pro has no availability within the response deadline. Choose another response time or pro.');
-        startsAt = BookingTiming.start(slots.first)!.toIso8601String();
-        endsAt = BookingTiming.end(slots.first)!.toIso8601String();
-      }
-      if ((startsAt == null || endsAt == null) &&
-          selectedPricing.workOrderType != 'quote_request') {
-        throw Exception('Select an available calendar slot before booking.');
+      if (_picksOwnTime && (startsAt == null || endsAt == null)) {
+        throw Exception('Pick a time before booking.');
       }
 
       final address = _selectedAddressObj;
@@ -1294,6 +1341,18 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         _showVerificationDialog();
       } else if (mounted) {
         final message = HomeownerService.instance.bookingErrorMessage(e);
+        if (message ==
+                'That time is no longer available. Pick another window.' ||
+            message == 'That time was just taken. Pick another window.') {
+          _returnToReviewAfterEdit = false;
+          await _refreshAvailability();
+          if (!mounted) return;
+          final schedulePage = _pages.indexOf(_BookingPage.schedule);
+          await _goToPage(schedulePage >= 0
+              ? schedulePage
+              : _pages.indexOf(_BookingPage.urgency));
+          if (!mounted) return;
+        }
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
@@ -1337,7 +1396,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                   const Icon(Icons.shield_outlined,
                       color: AppTheme.navy, size: 24),
                   const SizedBox(width: TwSpace.s8),
-                  Expanded(child: Text('Verify your email', style: TwType.h3())),
+                  Expanded(
+                      child: Text('Verify your email', style: TwType.h3())),
                 ],
               ),
               content: Column(
@@ -1446,7 +1506,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
     final minStrip = media.size.height * 0.08;
     final gutter = TwLayout.gutter(context);
     return PopScope(
-      canPop: _exitRequested || (!_isSubmitting && _pageIndex == 0),
+      canPop: _exitRequested,
       onPopInvoked: (didPop) {
         if (didPop) return;
         _goBack();
@@ -1494,8 +1554,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                               },
                               itemBuilder: (context, index) {
                                 return SingleChildScrollView(
-                                  padding:
-                                      EdgeInsets.fromLTRB(gutter, 0, gutter, 24),
+                                  padding: EdgeInsets.fromLTRB(
+                                      gutter, 0, gutter, 24),
                                   child: _buildStepFor(_pages[index]),
                                 );
                               },
@@ -1536,6 +1596,12 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           padding: EdgeInsets.fromLTRB(gutter, 14, gutter, 12),
           child: Row(
             children: [
+              IconButton(
+                  onPressed: _goBack,
+                  tooltip: 'Back',
+                  constraints:
+                      const BoxConstraints(minWidth: 44, minHeight: 44),
+                  icon: const Icon(Icons.arrow_back, color: AppTheme.ink)),
               Expanded(
                 child: Text(
                   'Book Pro: $pro',
@@ -1544,11 +1610,17 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                   style: TwType.h3(),
                 ),
               ),
-              const SizedBox(width: TwSpace.s12),
+              const SizedBox(width: TwSpace.s4),
               Text(
                 'Step $_currentStepNumber of $total',
                 style: TwType.label(color: AppTheme.blue),
               ),
+              IconButton(
+                  onPressed: _closeFlow,
+                  tooltip: 'Close booking',
+                  constraints:
+                      const BoxConstraints(minWidth: 44, minHeight: 44),
+                  icon: const Icon(Icons.close, color: AppTheme.ink)),
             ],
           ),
         ),
@@ -1597,47 +1669,23 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         top: false,
         child: Padding(
           padding: EdgeInsets.fromLTRB(gutter, 14, gutter, 14),
-          child: Row(
-            children: [
-              if (_pageIndex > 0) ...[
-                SizedBox(
-                  width: 104,
-                  height: 52,
-                  child: OutlinedButton(
-                    onPressed: _isSubmitting ? null : _goBack,
-                    child: const Text('Back'),
-                  ),
-                ),
-                const SizedBox(width: TwSpace.s12),
-              ],
-              Expanded(
-                child: SizedBox(
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: canContinue
-                        ? () {
-                            if (_isLastPage) {
-                              _submitBooking();
-                            } else {
-                              _goToNext();
-                            }
-                          }
-                        : null,
-                    child: _isSubmitting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppTheme.onOrange,
-                            ),
-                          )
-                        : Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ),
-                ),
-              ),
-            ],
-          ),
+          child: TwButtonPair(children: [
+            if (_pageIndex > 0)
+              TwSecondaryButton(
+                  label: 'Back', onPressed: _isSubmitting ? null : _goBack),
+            TwPrimaryButton(
+                label: label,
+                loading: _isSubmitting,
+                onPressed: canContinue
+                    ? () {
+                        if (_isLastPage) {
+                          _submitBooking();
+                        } else {
+                          _goToNext();
+                        }
+                      }
+                    : null),
+          ]),
         ),
       ),
     );
@@ -1780,8 +1828,10 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
 
   void _selectBookingService(int index, _ServiceOption service) {
     setState(() {
+      _servicePicked = true;
       _selectedServiceIndex = index;
       _selectedPricingIndex = 0;
+      _selectedUrgencyIndex = -1;
       _urgencyAvailabilityDetails.clear();
       _urgencyAvailabilityPrices.clear();
       _urgencyAvailabilityStates.clear();
@@ -1794,8 +1844,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   Widget? _servicePriceWidget(_ServiceOption service) {
     final text = _servicePriceText(service);
     if (text.isEmpty) return null;
-    final amountStyle =
-        TwType.title(color: AppTheme.navy).copyWith(fontWeight: FontWeight.w700);
+    final amountStyle = TwType.title(color: AppTheme.navy)
+        .copyWith(fontWeight: FontWeight.w700);
     if (_serviceType(service) == 'nte' && text.endsWith(' diagnostic')) {
       return Text.rich(
         TextSpan(
@@ -2010,17 +2060,16 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           SizedBox(
             width: double.infinity,
             child: TwFactPanel(
-              child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.info_outline_rounded,
-                        color: AppTheme.navy, size: 20),
-                    const SizedBox(width: TwSpace.s12),
-                    Expanded(
-                        child: Text(
-                            'The Urgent or Emergency fee goes to $_proName. TradeWorks adds no markup and no platform fee.',
-                            style: TwType.meta(color: AppTheme.body))),
-                  ]),
+              child:
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.info_outline_rounded,
+                    color: AppTheme.navy, size: 20),
+                const SizedBox(width: TwSpace.s12),
+                Expanded(
+                    child: Text(
+                        'The Urgent or Emergency fee goes to $_proName. TradeWorks adds no markup and no platform fee.',
+                        style: TwType.meta(color: AppTheme.body))),
+              ]),
             ),
           ),
         ],
@@ -2044,9 +2093,12 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
         if (_isLoadingSlots)
           const LoadingSkeleton(
               layout: SkeletonLayout.form, label: 'Loading arrival windows')
-        else if (_slotsError != null)
-          Text(_slotsError!, style: TwType.bodySm(color: AppTheme.error))
-        else if (_selectedAvailability?['paused'] == true)
+        else if (_slotsError != null) ...[
+          Text(_slotsError!, style: TwType.bodySm(color: AppTheme.error)),
+          TextButton(
+              onPressed: _refreshAvailability,
+              child: const Text('Retry availability')),
+        ] else if (_selectedAvailability?['paused'] == true)
           Text(
             'This pro has paused new bookings. Try another pro.',
             style: TwType.bodySm(color: AppTheme.textSecondary),
@@ -2114,7 +2166,7 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           ),
           const SizedBox(height: TwSpace.s12),
           Text(
-            'The window you pick is booked on $_proName’s calendar.',
+            'The window you pick is reserved for you when you book.',
             style: TwType.caption(),
           ),
         ],
@@ -2352,14 +2404,11 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
                       ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Edit address',
+                  TextButton(
                     onPressed: _openManageAddresses,
-                    constraints:
-                        const BoxConstraints.tightFor(width: 44, height: 44),
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.edit_outlined,
-                        color: AppTheme.navy, size: 20),
+                    style:
+                        TextButton.styleFrom(minimumSize: const Size(44, 44)),
+                    child: Text('Change', style: TwType.link()),
                   ),
                 ],
               ),
@@ -2563,12 +2612,56 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
   }
 
   Future<void> _openManageAddresses() async {
-    final navigator = Navigator.of(context);
-    await navigator.push(
-      MaterialPageRoute(builder: (_) => const ManageAddressesScreen()),
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .55,
+        minChildSize: .3,
+        maxChildSize: .85,
+        builder: (_, controller) => ListView(controller: controller, children: [
+          Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text('Address for this booking', style: TwType.h2())),
+          for (final raw in _addresses.whereType<Map>())
+            RadioListTile<String>(
+              value: '${raw['id']}',
+              groupValue: '${_selectedAddressObj?['id']}',
+              title: Text('${raw['street'] ?? raw['label'] ?? 'Address'}'),
+              subtitle: Text(
+                  '${raw['city'] ?? ''}, ${raw['state'] ?? ''} ${raw['zip'] ?? ''}'),
+              onChanged: (_) =>
+                  Navigator.pop(sheetContext, Map<String, dynamic>.from(raw)),
+            ),
+          ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Add an address'),
+              onTap: () async {
+                final added = await Navigator.push<Map<String, dynamic>>(
+                    sheetContext,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            const EditAddressScreen(forBooking: true)));
+                if (sheetContext.mounted && added != null)
+                  Navigator.pop(sheetContext, added);
+              }),
+        ]),
+      ),
     );
-    if (!mounted) return;
-    await _loadAddresses();
+    if (!mounted || selected == null) return;
+    final oldZip = _bookingZip;
+    setState(() {
+      _selectedAddressObj = selected;
+      if (!_addresses.any((a) => '${a['id']}' == '${selected['id']}'))
+        _addresses.add(selected);
+    });
+    _prefillAccessCode();
+    if (oldZip != _bookingZip) {
+      await _refreshAvailability(preserveSelection: true);
+      await _hydrateUrgencySummaries();
+    }
   }
 
   String _formatDate(DateTime dt) {
@@ -2867,6 +2960,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           workOrder['starts_at'] ??
           response['scheduledStart'] ??
           response['scheduled_start'] ??
+          response['startsAt'] ??
+          response['start'] ??
           startsAt,
       'scheduledEnd': workOrder['scheduledEnd'] ??
           workOrder['scheduled_end'] ??
@@ -2874,6 +2969,8 @@ class _BookFlowScreenState extends State<BookFlowScreen> {
           workOrder['ends_at'] ??
           response['scheduledEnd'] ??
           response['scheduled_end'] ??
+          response['endsAt'] ??
+          response['end'] ??
           endsAt,
       'serviceCategory': workOrder['serviceCategory'] ??
           workOrder['service_category'] ??
@@ -3183,15 +3280,7 @@ class _ServiceOption {
           _string(source['rate_unit']) ??
           choices.first.detail,
       durationMinutes: durationMinutes,
-      serviceId: _string(
-        source['contractorServiceId'] ??
-            source['contractor_service_id'] ??
-            source['serviceOptionId'] ??
-            source['service_option_id'] ??
-            source['serviceId'] ??
-            source['service_id'] ??
-            source['id'],
-      ),
+      serviceId: BookingIdentity.offering(source, offeringRecord: true),
       pricingChoices: choices,
       detailChips: detailChips,
     );
@@ -3705,4 +3794,3 @@ class _UrgencyDateParts {
 
   int get weekday => DateTime.utc(year, month, day).weekday - 1;
 }
-

@@ -12,7 +12,6 @@ import '../widgets/offline_state.dart';
 import 'account/home_profile.dart';
 import 'account/manage_addresses.dart';
 import 'account/notification_settings.dart';
-import 'account/payment_methods.dart';
 import 'account/personal_info.dart';
 import 'support_page.dart';
 
@@ -206,10 +205,10 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                     onTap: _manageAddresses,
                   ),
                   _settingsCard(
-                    icon: Icons.credit_card_outlined,
-                    title: 'Payment methods',
-                    subtitle: 'Pay your booked pro directly',
-                    onTap: _managePayments,
+                    icon: Icons.card_giftcard_outlined,
+                    title: 'Rewards',
+                    subtitle: 'Your service credits and earning bands',
+                    onTap: widget.onRewardsTap,
                     last: true,
                   ),
                   _sectionLabel('Your home'),
@@ -515,8 +514,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
           style: TextButton.styleFrom(
             foregroundColor: AppTheme.red,
             minimumSize: const Size(44, 44),
-            textStyle:
-                const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            textStyle: TwType.label(),
           ),
           child: const Text('Delete account'),
         ),
@@ -656,15 +654,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _managePayments() async {
-    final changed = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const PaymentMethodsScreen()),
-    );
-    if (changed == true) {
-      _fetchProfileData(showLoading: false);
-    }
-  }
+
 
   Future<void> _openHomeProfileScreen() async {
     final changed = await Navigator.push(

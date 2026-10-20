@@ -22,9 +22,13 @@ import '../../widgets/transaction_guard.dart';
 class WorkOrderDetailScreen extends StatefulWidget {
   final Map<String, dynamic> job;
   final bool focusMoney;
+  final bool openReview;
 
   const WorkOrderDetailScreen(
-      {super.key, required this.job, this.focusMoney = false});
+      {super.key,
+      required this.job,
+      this.focusMoney = false,
+      this.openReview = false});
 
   @override
   State<WorkOrderDetailScreen> createState() => _WorkOrderDetailScreenState();
@@ -33,12 +37,15 @@ class WorkOrderDetailScreen extends StatefulWidget {
 class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
   late Map<String, dynamic> _job;
   bool _refreshingJob = false;
+  Map<String, dynamic>? _noShowCase;
+  bool _loadingNoShowCase = false;
   Map<String, dynamic>? _review;
   bool _isReviewLoading = true;
   bool _isCancelling = false;
   bool _uploadingReceipt = false;
   int? _receiptDocumentId;
   final _moneyKey = GlobalKey();
+  final _receiptKey = GlobalKey();
 
   @override
   void initState() {
@@ -46,11 +53,15 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     _job = Map<String, dynamic>.from(widget.job);
     HomeownerService.instance.syncVersion.addListener(_refreshFromSharedSync);
     unawaited(_refreshJob(forceRefresh: true));
-    _fetchReview();
+    unawaited(_fetchNoShowCase());
+    _fetchReview().then((_) {
+      if (mounted && widget.openReview) _openReviewPage();
+    });
     if (widget.focusMoney) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _moneyKey.currentContext != null) {
-          Scrollable.ensureVisible(_moneyKey.currentContext!,
+        final target = _receiptKey.currentContext ?? _moneyKey.currentContext;
+        if (mounted && target != null) {
+          Scrollable.ensureVisible(target,
               duration: const Duration(milliseconds: 250));
         }
       });
@@ -78,6 +89,7 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
       final wasCompleted =
           WorkOrderStatus.fromJob(_job).state == WorkOrderState.completed;
       setState(() => _job = latest);
+      unawaited(_fetchNoShowCase());
       if (!wasCompleted &&
           WorkOrderStatus.fromJob(latest).state == WorkOrderState.completed) {
         unawaited(_fetchReview());
@@ -122,6 +134,35 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     } finally {
       if (mounted) setState(() => _isReviewLoading = false);
     }
+  }
+
+  Future<void> _fetchNoShowCase() async {
+    final state = WorkOrderStatus.fromJob(_job).state;
+    if (_loadingNoShowCase ||
+        (state != WorkOrderState.noShowCustomer &&
+            state != WorkOrderState.noShowPro)) return;
+    final id = int.tryParse('${_job['workOrderId'] ?? _job['id']}');
+    if (id == null || id <= 0) return;
+    _loadingNoShowCase = true;
+    try {
+      final record = await HomeownerService.instance.getNoShowCase(id);
+      if (mounted) setState(() => _noShowCase = record);
+    } catch (_) {
+      // Keep the work order usable if the private case is unavailable.
+    } finally {
+      _loadingNoShowCase = false;
+    }
+  }
+
+  String? get _proNoShowReply {
+    final record = _noShowCase ?? _job['noShowCase'] ?? _job['no_show_case'];
+    if (record is! Map) return null;
+    final reply = record['proReply'] ??
+        record['pro_reply'] ??
+        record['contractorReply'] ??
+        record['contractor_reply'];
+    return _readString(
+        reply is Map ? reply['replyText'] ?? reply['text'] : reply);
   }
 
   String _formatDateTime(dynamic dateTimeStr) {
@@ -288,6 +329,16 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                 Text(woId, style: TwType.meta()),
                 const SizedBox(height: 10),
                 _statusChip(),
+                if (_proNoShowReply != null) ...[
+                  const SizedBox(height: TwSpace.s12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TwFactPanel(
+                      child: Text('$displayPro replied: $_proNoShowReply',
+                          style: TwType.bodySm()),
+                    ),
+                  ),
+                ],
                 if (resolved.state == WorkOrderState.noShowCustomer)
                   Padding(
                       padding: const EdgeInsets.only(top: 14),
@@ -990,7 +1041,8 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
                       style: meta),
                 ],
                 if (WorkOrderStatus.capPending(_job)) _capBlock(),
-                if (completed && _receiptOwed) _receiptBlock(),
+                if (completed && _receiptOwed)
+                  KeyedSubtree(key: _receiptKey, child: _receiptBlock()),
                 if (completed && paid != 0 && _receiptUploaded) ...[
                   const SizedBox(height: 10),
                   Text('Paid receipt uploaded.', style: meta),
@@ -1166,6 +1218,20 @@ class _WorkOrderDetailScreenState extends State<WorkOrderDetailScreen> {
     final woId = int.tryParse(
             _job['id']?.toString() ?? _job['workOrderId']?.toString() ?? '0') ??
         0;
+    if (_review != null) {
+      try {
+        final review = await HomeownerService.instance.getReview(woId);
+        if (review == null || review['updatedAt'] == null) {
+          throw Exception(
+              'Your review could not be loaded. Please try again before editing.');
+        }
+        if (!mounted) return;
+        setState(() => _review = review);
+      } catch (e) {
+        if (mounted) AppNotification.showError(context, e);
+        return;
+      }
+    }
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(

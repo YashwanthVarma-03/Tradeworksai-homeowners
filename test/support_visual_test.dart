@@ -52,10 +52,8 @@ void main() {
       matchesGoldenFile('goldens/support-f09.png'),
     );
 
-    await tester.enterText(find.byType(TextField).first, 'credits expire');
-    await tester.pump();
-    expect(find.text('Do my service credits expire?'), findsOneWidget);
-    expect(find.text('How are contractors vetted?'), findsNothing);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('How do I pay?'), findsOneWidget);
 
     for (final (size, scale) in [
       (const Size(320, 640), 1.3),

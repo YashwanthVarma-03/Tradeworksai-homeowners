@@ -16,7 +16,6 @@ class SupportPage extends StatefulWidget {
 
 class _SupportPageState extends State<SupportPage> {
   int _viewIndex = 0; // 0: FAQ, 1: Contact Form, 2: Success
-  String _searchQuery = '';
 
   // Contact form (F09): only real values — the homeowner's own work orders
   // and account email. Nothing is shown as sent unless the server took it.
@@ -100,15 +99,7 @@ class _SupportPageState extends State<SupportPage> {
       );
       if (!mounted) return;
       if (result == null) {
-        // The support inbox isn't live in the app yet: hand the same
-        // request to the phone's email app rather than pretend it was sent.
-        final subject = [_topic, _relatedLabel].whereType<String>().join(' · ');
-        await _openSupportLink(
-          'mailto:support@tradeworksai.com'
-              '?subject=${Uri.encodeComponent(subject)}'
-              '&body=${Uri.encodeComponent(message)}',
-          'write an email',
-        );
+        await _emailRequest(message);
         return;
       }
       final reference = '${result['reference'] ?? result['id'] ?? ''}'.trim();
@@ -125,18 +116,35 @@ class _SupportPageState extends State<SupportPage> {
           fallback:
               'We couldn’t send your request. Email support@tradeworksai.com instead.',
         );
+        await _emailRequest(message);
       }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
   }
 
+  Future<void> _emailRequest(String message) async {
+    final subject = [_topic, _relatedLabel].whereType<String>().join(' · ');
+    await _openSupportLink(
+      'mailto:support@tradeworksai.com'
+          '?subject=${Uri.encodeComponent(subject)}'
+          '&body=${Uri.encodeComponent(message)}',
+      'write an email',
+    );
+  }
+
   final List<Map<String, String>> _faqs = [
+    {
+      'cat': 'Payments & credits',
+      'q': 'How do I pay?',
+      'a':
+          'You pay your pro directly, the way they accept (shown on their profile). TradeWorks never charges you.'
+    },
     {
       'cat': 'Home & search',
       'q': 'How does the TradeWorks One network work?',
       'a':
-          'You join for free and book vetted, insured home service professionals who serve your ZIP. Each service shows how it\'s priced: a fixed price you see before you book; a diagnostic fee, after which the pro sends a not-to-exceed cap you approve before any repair starts; or a free visit, after which the pro sends an estimate you accept or decline. You book a 2-hour window on the pro\'s calendar, pay your pro directly, and earn 3–8% back in service credits on what you pay.'
+          'You join for free and book vetted, insured home service professionals who serve your ZIP. Each service shows how it\'s priced: a fixed price you see before you book; a diagnostic fee, after which the pro sends a not-to-exceed cap you approve before any repair starts; or a free visit, after which the pro sends an estimate you accept or decline. You pick a 2-hour window that works for you, pay your pro directly, and earn 3–8% back in service credits on what you pay.'
     },
     {
       'cat': 'Home & search',
@@ -244,38 +252,7 @@ class _SupportPageState extends State<SupportPage> {
   }
 
   /// F09 search: a grey pill, 48 high, search icon at 16.
-  Widget _searchField() {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppTheme.subtle,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppTheme.cardBorder),
-      ),
-      padding: const EdgeInsets.only(left: TwSpace.s16, right: TwSpace.s16),
-      child: Row(
-        children: [
-          const Icon(Icons.search_rounded, color: AppTheme.navy, size: 20),
-          const SizedBox(width: TwSpace.s8),
-          Expanded(
-            child: TextField(
-              style: TwType.body(color: AppTheme.navy),
-              textAlignVertical: TextAlignVertical.center,
-              decoration: TwInputs.borderless(hint: 'Search help articles'),
-              onChanged: (val) {
-                setState(() {
-                  _searchQuery = val.toLowerCase();
-                });
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  /// F09 contact tile: hairline card radius 14, padding 16, a grey round
-  /// icon well with a navy icon, title, blue value, optional caption.
   Widget _contactTile({
     required IconData icon,
     required String title,
@@ -343,8 +320,6 @@ class _SupportPageState extends State<SupportPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _searchField(),
-        const SizedBox(height: TwSpace.s16),
         _contactTiles(),
         const SizedBox(height: TwSpace.s12),
         Text(
@@ -354,11 +329,7 @@ class _SupportPageState extends State<SupportPage> {
         const SizedBox(height: TwSpace.s28),
         Text('Common questions', style: TwType.h2()),
         ...(() {
-          final filtered = _faqs
-              .where((faq) =>
-                  faq['q']!.toLowerCase().contains(_searchQuery) ||
-                  faq['a']!.toLowerCase().contains(_searchQuery))
-              .toList();
+          final filtered = _faqs;
           final Map<String, List<Map<String, String>>> grouped = {};
           for (var faq in filtered) {
             final cat = faq['cat'] ?? 'General';

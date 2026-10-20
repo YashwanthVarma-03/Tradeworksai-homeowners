@@ -31,8 +31,9 @@ void main() {
           onManageHomeTap: () {},
         ))));
     await tester.pumpAndSettle();
-    expect(find.text('All 164'), findsOneWidget);
-    expect(find.text('See all 164'), findsOneWidget);
+    expect(ServiceCatalog.mainServices, hasLength(31));
+    expect(find.text('All 31'), findsOneWidget);
+    expect(find.text('See all 31'), findsOneWidget);
     await tester.pumpWidget(MaterialApp(
         theme: AppTheme.lightTheme,
         home: Scaffold(
@@ -42,10 +43,10 @@ void main() {
           onBookPro: (_) {},
         ))));
     await tester.pumpAndSettle();
-    expect(find.text('164 services'), findsOneWidget);
-    for (final service in ServiceCatalog.items) {
-      expect(find.text(service.name), findsWidgets, reason: service.name);
-    }
+    expect(find.text('31 services'), findsOneWidget);
+    expect(find.text('AC Repair or Maintenance'), findsNothing);
+    expect(find.text('Plumbing'), findsWidgets);
+    expect(find.text('HVAC'), findsWidgets);
     await tester.pumpWidget(const SizedBox.shrink());
   });
   testWidgets('Home service count fits narrow screens with large text',

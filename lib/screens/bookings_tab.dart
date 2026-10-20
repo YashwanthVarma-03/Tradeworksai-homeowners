@@ -427,7 +427,9 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
     if (_jobHasReview(job)) {
       try {
         localReview = await HomeownerService.instance.getReview(jobId);
-        if (localReview == null || localReview['detailsAvailable'] == false)
+        if (localReview == null ||
+            localReview['detailsAvailable'] == false ||
+            localReview['updatedAt'] == null)
           throw Exception(
               'Your review could not be loaded. Please try again before editing.');
       } catch (e) {
@@ -553,6 +555,8 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text('Bookings', style: TwType.h1(context)),
+          const SizedBox(height: TwSpace.s16),
           TwUnderlineTabs(
             labels: const ['Upcoming', 'History'],
             index: _activeSegment,
@@ -1166,29 +1170,16 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       );
     }
 
-    return Row(
-      children: [
-        Expanded(
-          child: primary
-              ? _buildPrimaryAction(
-                  label: 'Leave a review',
-                  onPressed: () => _openReviewWhenEligible(job),
-                )
-              : _buildOutlineAction(
-                  label: 'Leave a review',
-                  onPressed: () => _openReviewWhenEligible(job),
-                ),
-        ),
-        const SizedBox(width: TwSpace.s12),
-        Expanded(
-          child: _buildOutlineAction(
-            label: 'Book again',
-            onPressed: widget.onBookNowTap,
-            height: primary ? 52 : 50,
-          ),
-        ),
-      ],
-    );
+    return TwButtonPair(children: [
+      primary
+          ? TwPrimaryButton(
+              label: 'Leave a review',
+              onPressed: () => _openReviewWhenEligible(job))
+          : TwSecondaryButton(
+              label: 'Leave a review',
+              onPressed: () => _openReviewWhenEligible(job)),
+      TwSecondaryButton(label: 'Book again', onPressed: widget.onBookNowTap),
+    ]);
   }
 
   /// The orange call to action: navy label on orange, 52 high (SPEC §4).

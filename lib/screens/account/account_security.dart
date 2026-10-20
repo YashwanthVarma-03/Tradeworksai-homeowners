@@ -85,12 +85,15 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                       const TwFieldLabel('Type CLOSE to confirm'),
                       TextField(
                           controller: confirmation,
+                          textInputAction: TextInputAction.next,
                           style: TwType.body(color: AppTheme.navy),
                           decoration: TwInputs.decoration()),
                       const SizedBox(height: TwSpace.s16),
-                      const TwFieldLabel('Current password (password accounts)'),
+                      const TwFieldLabel(
+                          'Current password (password accounts)'),
                       TextField(
                           controller: password,
+                          textInputAction: TextInputAction.done,
                           obscureText: true,
                           autocorrect: false,
                           enableSuggestions: false,
@@ -104,13 +107,13 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(context, false),
-                      style: TextButton.styleFrom(
-                          foregroundColor: AppTheme.navy),
+                      style:
+                          TextButton.styleFrom(foregroundColor: AppTheme.navy),
                       child: const Text('Keep account')),
                   TextButton(
                       onPressed: () => Navigator.pop(context, true),
-                      style: TextButton.styleFrom(
-                          foregroundColor: AppTheme.red),
+                      style:
+                          TextButton.styleFrom(foregroundColor: AppTheme.red),
                       child: const Text('Request deletion'))
                 ],
               ));
@@ -183,6 +186,9 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                         TwFieldLabel(field.$2),
                         TextField(
                             controller: field.$1,
+                            textInputAction: field.$1 == _confirm
+                                ? TextInputAction.done
+                                : TextInputAction.next,
                             enabled: !_busy,
                             obscureText: true,
                             autocorrect: false,

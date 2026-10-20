@@ -131,19 +131,7 @@ void main() {
       // Only cards near the viewport exist, even though the API returned 100.
       expect(find.textContaining('Test Pro').evaluate().length, lessThan(12));
 
-      await tester.tap(find.text('Filters'));
-      await tester.pumpAndSettle();
-      expect(find.text('Within 5 miles'), findsNothing);
-      expect(find.text('4.8+ stars'), findsOneWidget);
-      await tester.tap(find.text('Free visit'));
-      await tester.tap(find.text('Apply filters'));
-      await tester.pumpAndSettle();
-      expect(searchCalls, 1);
-      expect(find.text('0 pros'), findsOneWidget);
-      expect(find.textContaining('Test Pro'), findsNothing);
-
-      await tester.tap(find.text('Clear'));
-      await tester.pumpAndSettle();
+      expect(find.text('Filters'), findsNothing);
       expect(find.text('100 pros'), findsWidgets);
       final scroll = find.byType(CustomScrollView);
       for (var i = 0; i < 12; i++) {
@@ -158,6 +146,24 @@ void main() {
       scrollable.position.jumpTo(0);
       await tester.pumpAndSettle();
       expect(find.textContaining('pros'), findsWidgets);
+      for (final active in [false, true]) {
+        await tester.pumpWidget(MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: Scaffold(
+              body: SearchTab(active: active, onBookPro: (_) {}),
+              bottomNavigationBar: MainBottomNavigation(
+                  currentIndex: active ? 1 : 0, onTap: (_) {}),
+            )));
+        await tester.pumpAndSettle();
+      }
+      expect(find.text('Popular services'), findsOneWidget);
+      expect(find.text('Filters'), findsNothing);
+      expect(
+          tester
+              .widget<TextField>(find.byType(TextField).first)
+              .focusNode!
+              .hasFocus,
+          isTrue);
       await tester.pumpWidget(const SizedBox());
       await ServiceLocation.clear();
     }, () => client);

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -660,13 +661,31 @@ class PushNotificationService with WidgetsBindingObserver {
     if (generation != _sessionGeneration ||
         _activeUserId != userId ||
         AuthService.instance.userId != userId) return;
-    final tokenId = await HomeownerService.instance.registerPushDevice(
-      token: token,
-      platform: pushPlatformName(
-        isWeb: kIsWeb,
-        platform: defaultTargetPlatform,
-      ),
+    final platform = pushPlatformName(
+      isWeb: kIsWeb,
+      platform: defaultTargetPlatform,
     );
+    final timer = Stopwatch()..start();
+    String? tokenId;
+    try {
+      tokenId = await HomeownerService.instance.registerPushDevice(
+        token: token,
+        platform: platform,
+      );
+      developer.log(
+        'POST homeowner/push-tokens platform=$platform '
+        'registered=${tokenId != null && tokenId.isNotEmpty} '
+        'durationMs=${timer.elapsedMilliseconds}',
+        name: 'PERF',
+      );
+    } catch (_) {
+      developer.log(
+        'POST homeowner/push-tokens platform=$platform registered=false '
+        'durationMs=${timer.elapsedMilliseconds}',
+        name: 'PERF',
+      );
+      rethrow;
+    }
     if (tokenId == null || tokenId.isEmpty) {
       throw StateError('The server did not return a push token ID.');
     }

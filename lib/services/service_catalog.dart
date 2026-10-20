@@ -18,6 +18,17 @@ class ServiceCatalog {
   static final revision = ValueNotifier<int>(0);
   static List<ServiceCatalogItem> _items = const [];
   static List<ServiceCatalogItem> get items => _items;
+
+  /// Main services are unique categories; items retains subservices for search.
+  static List<ServiceCatalogItem> get mainServices {
+    final seen = <String>{};
+    return items
+        .where((item) => seen.add(item.categorySlug))
+        .map((item) => ServiceCatalogItem(item.category, item.category,
+            categorySlug: item.categorySlug, slug: item.categorySlug))
+        .toList(growable: false);
+  }
+
   static List<String> get names => items.map((s) => s.name).toList();
   static bool loaded = false;
   static bool loading = false;

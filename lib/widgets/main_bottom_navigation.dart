@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../ui/tw.dart';
+import '../services/homeowner_service.dart';
+import '../services/stream_service.dart';
+import 'app_keyboard.dart';
 
 class AppTabNavigation {
   AppTabNavigation._();
@@ -29,9 +32,9 @@ class MainBottomNavigation extends StatelessWidget {
 
   static const _items = <(IconData, IconData, String)>[
     (Icons.home_outlined, Icons.home_rounded, 'Home'),
-    (Icons.search_rounded, Icons.search_rounded, 'Search'),
+    (Icons.grid_view_outlined, Icons.grid_view_rounded, 'Browse'),
     (Icons.calendar_today_outlined, Icons.calendar_today_rounded, 'Bookings'),
-    (Icons.card_giftcard_outlined, Icons.card_giftcard_rounded, 'Rewards'),
+    (Icons.mail_outline_rounded, Icons.mail_rounded, 'Inbox'),
     (Icons.person_outline_rounded, Icons.person_rounded, 'Profile'),
   ];
 
@@ -62,7 +65,11 @@ class MainBottomNavigation extends StatelessWidget {
                       selectedIcon: _items[index].$2,
                       label: _items[index].$3,
                       selected: index == currentIndex,
-                      onTap: () => onTap(index),
+                      onTap: () {
+                        dismissAppKeyboard();
+                        onTap(index);
+                      },
+                      inbox: index == 3,
                     ),
                   ),
               ],
@@ -81,6 +88,7 @@ class _NavigationItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.inbox = false,
   });
 
   final IconData icon;
@@ -88,6 +96,7 @@ class _NavigationItem extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final bool inbox;
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -110,11 +119,12 @@ class _NavigationItem extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        selected ? selectedIcon : icon,
-                        size: 22,
-                        color: selected ? AppTheme.blue : AppTheme.body,
-                      ),
+                      if (inbox)
+                        InboxUnreadIcon(selected: selected)
+                      else
+                        Icon(selected ? selectedIcon : icon,
+                            size: 22,
+                            color: selected ? AppTheme.blue : AppTheme.body),
                       const SizedBox(height: 2),
                       // The label shrinks rather than clipping at 1.3× text.
                       FittedBox(
@@ -133,4 +143,57 @@ class _NavigationItem extends StatelessWidget {
           ),
         ),
       );
+}
+
+class InboxUnreadIcon extends StatelessWidget {
+  const InboxUnreadIcon({super.key, this.selected = false});
+  final bool selected;
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+        listenable: StreamService.instance,
+        builder: (context, _) {
+          final chat = StreamService.instance.client?.state;
+          return StreamBuilder<int>(
+            stream: chat?.totalUnreadCountStream,
+            initialData: chat?.totalUnreadCount ?? 0,
+            builder: (context, snapshot) => ValueListenableBuilder<int>(
+              valueListenable:
+                  HomeownerService.instance.notificationUnreadCount,
+              builder: (context, activity, _) {
+                final count = (snapshot.data ?? 0) + activity;
+                return Semantics(
+                    label: '$count unread',
+                    child: Stack(clipBehavior: Clip.none, children: [
+                      Icon(
+                          selected
+                              ? Icons.mail_rounded
+                              : Icons.mail_outline_rounded,
+                          size: 22,
+                          color: selected ? AppTheme.blue : AppTheme.body),
+                      if (count > 0)
+                        Positioned(
+                            top: -8,
+                            right: -12,
+                            child: Container(
+                              constraints: const BoxConstraints(
+                                  minWidth: 20, minHeight: 20),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              decoration: BoxDecoration(
+                                  color: AppTheme.blue,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: Colors.white, width: 2)),
+                              child: Text(count > 99 ? '99+' : '$count',
+                                  style: TwType.caption(color: Colors.white)
+                                      .copyWith(fontSize: 10),
+                                  textAlign: TextAlign.center),
+                            )),
+                    ]));
+              },
+            ),
+          );
+        });
+  }
 }

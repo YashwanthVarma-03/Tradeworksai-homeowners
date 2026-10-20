@@ -1,3 +1,5 @@
+import '../screens/work_orders/no_show_reply.dart';
+import 'work_order_status.dart';
 import 'package:flutter/material.dart';
 
 import '../screens/chat_screen.dart';
@@ -34,13 +36,16 @@ Future<bool> openNotificationRoute(
 
   final workOrderId = route.workOrderId;
   if (workOrderId == null) return false;
-  final job = await HomeownerService.instance.findWorkOrder(workOrderId);
+  final job = await HomeownerService.instance
+      .findWorkOrder(workOrderId, forceRefresh: true);
   if (!context.mounted) return false;
 
   Widget screen;
   switch (route.destination) {
     case NotificationDestination.capApproval:
-      screen = CapApprovalScreen(job: job);
+      screen = WorkOrderStatus.capPending(job)
+          ? CapApprovalScreen(job: job)
+          : WorkOrderDetailScreen(job: job);
     case NotificationDestination.rescheduleProposal:
       final proposal = WaitingOnYou.rescheduleProposal(job);
       screen = proposal == null
@@ -48,6 +53,10 @@ Future<bool> openNotificationRoute(
           : RescheduleProposalScreen(job: job, proposal: proposal);
     case NotificationDestination.jobMoney:
       screen = WorkOrderDetailScreen(job: job, focusMoney: true);
+    case NotificationDestination.leaveReview:
+      screen = WorkOrderDetailScreen(job: job, openReview: true);
+    case NotificationDestination.noShowReply:
+      screen = NoShowReplyScreen(job: job);
     case NotificationDestination.workOrder:
       screen = WorkOrderDetailScreen(job: job);
     case NotificationDestination.rewards:

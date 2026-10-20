@@ -60,6 +60,7 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
       // Approval remains available without credit if rewards cannot load.
     }
   }
+
   Map<String, dynamic> get _quote => _asMap(widget.job['quote']);
   Map<String, dynamic> get _pro => _asMap(widget.job['pro']);
 
@@ -135,6 +136,9 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
   }
 
   String? get _diagnosis =>
+      _readString(widget.job['capScope']) ??
+      _readString(widget.job['cap_scope']) ??
+      _readString(widget.job['capNote']) ??
       _readString(widget.job['quoteScope']) ??
       _readString(widget.job['quote_scope']) ??
       _readString(_quote['diagnosis']) ??
@@ -142,12 +146,15 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
 
   /// Line items as the pro entered them. Never synthesised.
   List<Map<String, dynamic>> get _lineItems {
-    final raw = _quote['items'] ?? widget.job['capItems'];
+    final raw =
+        widget.job['capItems'] ?? widget.job['capLineItems'] ?? _quote['items'];
     if (raw is! List) return const [];
     return raw
         .whereType<Map>()
         .map(_asMap)
-        .where((item) => _readString(item['label'] ?? item['name']) != null)
+        .where((item) =>
+            _readString(item['description'] ?? item['label'] ?? item['name']) !=
+            null)
         .toList();
   }
 
@@ -310,8 +317,7 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
                 style: TwType.bodySm(),
               )
             : Text(
-                'Declining the cap cancels this booking. The pro will be told '
-                'you didn\'t approve it.',
+                'The pro will be told you declined the cap. Your booking stays as it is.',
                 style: TwType.bodySm(),
               ),
         actions: [
@@ -399,38 +405,41 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
     final items = _lineItems;
 
     return SingleChildScrollView(
-      child: TwPage(top: TwSpace.s20, child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _infoBanner(),
-          const SizedBox(height: TwSpace.s28),
-          if (_diagnosis != null || _proName != null) ...[
-            _sectionLabel('What your pro found'),
-            const SizedBox(height: TwSpace.s12),
-            _diagnosisCard(),
-            const SizedBox(height: TwSpace.s16),
-          ],
-          _capCard(cap),
-          if (items.isNotEmpty) ...[
-            const SizedBox(height: TwSpace.s28),
-            _sectionLabel('Breakdown'),
-            const SizedBox(height: TwSpace.s4),
-            for (final item in items)
-              _lineItem(
-                _readString(item['label'] ?? item['name'])!,
-                _amountOrNull(item['amount'] ?? item['total']),
+      child: TwPage(
+          top: TwSpace.s20,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _infoBanner(),
+              const SizedBox(height: TwSpace.s28),
+              if (_diagnosis != null || _proName != null) ...[
+                _sectionLabel('What your pro found'),
+                const SizedBox(height: TwSpace.s12),
+                _diagnosisCard(),
+                const SizedBox(height: TwSpace.s16),
+              ],
+              _capCard(cap),
+              if (items.isNotEmpty) ...[
+                const SizedBox(height: TwSpace.s28),
+                _sectionLabel('Breakdown'),
+                const SizedBox(height: TwSpace.s4),
+                for (final item in items)
+                  _lineItem(
+                    _readString(
+                        item['description'] ?? item['label'] ?? item['name'])!,
+                    _amountOrNull(item['amount'] ?? item['total']),
+                  ),
+              ],
+              const SizedBox(height: TwSpace.s28),
+              CreditApplyCard(
+                total: cap,
+                balance: _balance,
+                estimate: _isEstimate,
+                enabled: !_isProcessing && !_isChoosingSlot,
+                onChanged: (value) => setState(() => _creditToApply = value),
               ),
-          ],
-          const SizedBox(height: TwSpace.s28),
-          CreditApplyCard(
-            total: cap,
-            balance: _balance,
-            estimate: _isEstimate,
-            enabled: !_isProcessing && !_isChoosingSlot,
-            onChanged: (value) => setState(() => _creditToApply = value),
-          ),
-        ],
-      )),
+            ],
+          )),
     );
   }
 
@@ -590,7 +599,8 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
 
   Widget _capCard(double cap) {
     return TwCard(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: TwSpace.s20),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 18, vertical: TwSpace.s20),
       child: SizedBox(
         width: double.infinity,
         child: Column(
@@ -639,4 +649,3 @@ class _CapApprovalScreenState extends State<CapApprovalScreen> {
     );
   }
 }
-

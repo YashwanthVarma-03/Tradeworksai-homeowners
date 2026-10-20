@@ -36,18 +36,17 @@ void main() {
       'id': 12,
       'quoteAmount': r'$1,250.50',
       'proName': 'Test  Plumbing',
-      'quote': {
-        'diagnosis': 'Leaking fitting',
-        'items': [
-          {'label': 'Replace fitting', 'amount': 1250.50},
-          {'name': 'Inspection'},
-          {'amount': 999},
-        ]
-      },
+      'capScope': 'Leaking fitting',
+      'capItems': [
+        {'description': 'Replace fitting', 'amount': 1250.50},
+        {'name': 'Inspection'},
+        {'amount': 999},
+      ],
     });
     expect(find.text(r'$1,250.50'), findsAtLeastNWidgets(2));
     expect(find.text(r'$1250.50'), findsNothing);
     expect(find.text('Replace fitting'), findsOneWidget);
+    expect(find.text('Leaking fitting'), findsOneWidget);
     expect(find.text('Inspection'), findsOneWidget);
     expect(find.text('TP'), findsOneWidget);
     expect(find.textContaining('Anode'), findsNothing);
@@ -67,7 +66,7 @@ void main() {
     await tester.tap(find.text('Decline this cap'));
     await tester.pumpAndSettle();
     expect(find.text('Decline this cap?'), findsOneWidget);
-    expect(find.textContaining('cancels this booking'), findsOneWidget);
+    expect(find.textContaining('Your booking stays as it is.'), findsOneWidget);
     await tester.tap(find.text('Keep reviewing'));
     await tester.pumpAndSettle();
     expect(find.text('Approve cap'), findsOneWidget);

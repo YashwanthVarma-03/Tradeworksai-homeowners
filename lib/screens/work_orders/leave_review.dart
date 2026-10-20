@@ -96,8 +96,7 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
             .toList(),
         hasExistingReview: widget.hasExistingReview,
         reviewId: widget.hasExistingReview ? _reviewId : null,
-        expectedUpdatedAt:
-            widget.hasExistingReview ? _reviewUpdatedAt : null,
+        expectedUpdatedAt: widget.hasExistingReview ? _reviewUpdatedAt : null,
       );
 
       if (mounted) {
@@ -191,12 +190,12 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
   }
 
   int? get _reviewId => int.tryParse(
-      '${widget.job['reviewId'] ?? widget.job['review_id'] ?? widget.job['review']?['id']}');
+      '${widget.job['review']?['reviewId'] ?? widget.job['review']?['id'] ?? widget.job['reviewId'] ?? widget.job['review_id']}');
 
-  String? get _reviewUpdatedAt => (widget.job['updatedAt'] ??
-          widget.job['updated_at'] ??
-          widget.job['review']?['updatedAt'] ??
-          widget.job['review']?['updated_at'])
+  String? get _reviewUpdatedAt => (widget.job['review']?['updatedAt'] ??
+          widget.job['review']?['updated_at'] ??
+          widget.job['reviewUpdatedAt'] ??
+          widget.job['review_updated_at'])
       ?.toString();
 
   @override
@@ -207,7 +206,8 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: TwAppBar(
-          title: widget.hasExistingReview ? 'Edit your review' : 'Leave a review',
+          title:
+              widget.hasExistingReview ? 'Edit your review' : 'Leave a review',
           onBack: () => Navigator.pop(context),
         ),
         body: Column(
@@ -429,4 +429,3 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     );
   }
 }
-

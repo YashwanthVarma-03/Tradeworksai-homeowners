@@ -36,6 +36,8 @@ class DashboardShell extends StatefulWidget {
 class _DashboardShellState extends State<DashboardShell>
     with WidgetsBindingObserver {
   int _currentIndex = 0;
+  int _inboxInitialTab = 0;
+  Key _inboxTabKey = UniqueKey();
   int _bookingsInitialSegment = 0;
   Key _bookingsTabKey = UniqueKey();
 
@@ -96,7 +98,7 @@ class _DashboardShellState extends State<DashboardShell>
     }
     NotificationNavigation.requestedRoute.value = null;
     if (route.destination == NotificationDestination.rewards) {
-      _selectTab(3);
+      _openRewards();
       return;
     }
     if (route.destination == NotificationDestination.home) {
@@ -112,10 +114,24 @@ class _DashboardShellState extends State<DashboardShell>
 
   void _openActivity() {
     if (!mounted) return;
-    unawaited(Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const InboxScreen(initialTab: 1)),
-    ));
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _inboxInitialTab = 1;
+      _inboxTabKey = UniqueKey();
+      _currentIndex = 3;
+    });
+  }
+
+  void _openRewards() {
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => RewardsScreen(
+                  onBookTap: () {
+                    Navigator.pop(context);
+                    _selectTab(1);
+                  },
+                )));
   }
 
   Future<void> _openRequestedRoute(NotificationRouteData route) async {
@@ -133,6 +149,7 @@ class _DashboardShellState extends State<DashboardShell>
   }
 
   void _selectTab(int index) {
+    FocusManager.instance.primaryFocus?.unfocus();
     if (index == _currentIndex) return;
     if (AuthService.instance.isAuthenticated) {
       unawaited(ServiceLocation.clear());
@@ -201,6 +218,17 @@ class _DashboardShellState extends State<DashboardShell>
           onBookTap: () => openBrowse(),
           onJobTap: (_) {},
           onInboxTap: () {},
+          onRewardsTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => Scaffold(
+                      appBar: TwAppBar(title: 'Rewards'),
+                      body: GuestGateTab(
+                          icon: Icons.card_giftcard_outlined,
+                          title: 'Sign in to earn rewards',
+                          message: 'Create an account to earn service credits.',
+                          onCreateAccount: openSignup,
+                          onSignIn: openLogin)))),
           onHelpTap: () {
             Navigator.push(
               context,
@@ -214,7 +242,7 @@ class _DashboardShellState extends State<DashboardShell>
           onCreateAccount: openSignup,
           onSignIn: openLogin,
         ),
-        const BrowseScreen(),
+        BrowseScreen(active: _currentIndex == 1),
         GuestGateTab(
           icon: Icons.calendar_today_outlined,
           title: 'Sign in to view bookings',
@@ -224,10 +252,10 @@ class _DashboardShellState extends State<DashboardShell>
           onSignIn: openLogin,
         ),
         GuestGateTab(
-          icon: Icons.card_giftcard_outlined,
-          title: 'Sign in to earn rewards',
+          icon: Icons.mail_outline_rounded,
+          title: 'Sign in to view your inbox',
           message:
-              'Create an account to earn 3–8% back as service credits on what you spend.',
+              'Create an account to message your pros and see your activity.',
           onCreateAccount: openSignup,
           onSignIn: openLogin,
         ),
@@ -235,7 +263,7 @@ class _DashboardShellState extends State<DashboardShell>
           icon: Icons.person_outline,
           title: 'Sign in to your account',
           message:
-              'Create an account to manage your profile, payment methods, home details, and preferences.',
+              'Create an account to manage your profile, home details, and preferences.',
           onCreateAccount: openSignup,
           onSignIn: openLogin,
         ),
@@ -243,7 +271,10 @@ class _DashboardShellState extends State<DashboardShell>
       return Scaffold(
         backgroundColor: AppTheme.pageBackground,
         body: SafeArea(
-            child: IndexedStack(index: _currentIndex, children: guestTabs)),
+            child: IndexedStack(index: _currentIndex, children: [
+          for (var i = 0; i < guestTabs.length; i++)
+            TickerMode(enabled: i == _currentIndex, child: guestTabs[i])
+        ])),
         bottomNavigationBar: MainBottomNavigation(
           currentIndex: _currentIndex,
           onTap: _selectTab,
@@ -276,6 +307,7 @@ class _DashboardShellState extends State<DashboardShell>
             _bookingsTabKey = UniqueKey();
           });
         },
+        onRewardsTap: _openRewards,
         onInboxTap: () {
           Navigator.push(
             context,
@@ -346,7 +378,7 @@ class _DashboardShellState extends State<DashboardShell>
           );
         },
       ),
-      const BrowseScreen(),
+      BrowseScreen(active: _currentIndex == 1),
       BookingsTab(
         key: _bookingsTabKey,
         initialSegment: _bookingsInitialSegment,
@@ -367,25 +399,7 @@ class _DashboardShellState extends State<DashboardShell>
           }
         },
       ),
-      RewardTab(
-        active: _currentIndex == 3,
-        onBookTap: () async {
-          final booked = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const BrowseScreen(showAppBar: true),
-            ),
-          );
-          await _resetAuthenticatedLocation();
-          if (booked == true) {
-            setState(() {
-              _bookingsInitialSegment = 0;
-              _currentIndex = 2;
-              _bookingsTabKey = UniqueKey();
-            });
-          }
-        },
-      ),
+      InboxTab(key: _inboxTabKey, initialTab: _inboxInitialTab),
       ProfileTab(
         onLogout: () async {
           await ServiceLocation.clear();
@@ -398,12 +412,7 @@ class _DashboardShellState extends State<DashboardShell>
             );
           }
         },
-        onRewardsTap: () {
-          unawaited(ServiceLocation.clear());
-          setState(() {
-            _currentIndex = 3; // Rewards Tab
-          });
-        },
+        onRewardsTap: _openRewards,
       ),
     ];
 
@@ -426,7 +435,10 @@ class _DashboardShellState extends State<DashboardShell>
                 Expanded(
                   child: IndexedStack(
                     index: _currentIndex,
-                    children: tabs,
+                    children: [
+                      for (var i = 0; i < tabs.length; i++)
+                        TickerMode(enabled: i == _currentIndex, child: tabs[i])
+                    ],
                   ),
                 ),
               ],
@@ -447,6 +459,7 @@ class BrowseScreen extends StatelessWidget {
   final String? initialCategory;
   final bool initialAllShowsCategories;
   final bool showAppBar;
+  final bool active;
 
   const BrowseScreen({
     super.key,
@@ -454,6 +467,7 @@ class BrowseScreen extends StatelessWidget {
     this.initialCategory,
     this.initialAllShowsCategories = false,
     this.showAppBar = false,
+    this.active = true,
   });
 
   @override
@@ -470,6 +484,7 @@ class BrowseScreen extends StatelessWidget {
         child: SafeArea(
           top: !showAppBar,
           child: SearchTab(
+            active: active,
             onBookPro: (pro) async {
               final result = await Navigator.push<Object?>(
                 context,

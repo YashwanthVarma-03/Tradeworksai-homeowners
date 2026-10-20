@@ -549,6 +549,8 @@ class TwPrimaryButton extends StatelessWidget {
                 child: Text(
                   label,
                   textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TwType.button(
                     color: onPressed == null
                         ? AppTheme.navy.withOpacity(0.6)
@@ -634,6 +636,8 @@ class TwSecondaryButton extends StatelessWidget {
             child: Text(
               label,
               textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TwType.button(
                 color:
                     onPressed == null ? AppTheme.textTertiary : AppTheme.navy,
@@ -682,6 +686,60 @@ class TwTextAction extends StatelessWidget {
   }
 }
 
+/// Equal 52px card actions, stacking when either label cannot fit.
+class TwButtonPair extends StatelessWidget {
+  const TwButtonPair({super.key, required this.children});
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) =>
+      LayoutBuilder(builder: (context, constraints) {
+        final available =
+            (constraints.maxWidth - (children.length - 1) * TwSpace.s12) /
+                children.length;
+        bool fits(Widget child) {
+          final label = child is TwPrimaryButton
+              ? child.label
+              : child is TwSecondaryButton
+                  ? child.label
+                  : '';
+          final icon = child is TwPrimaryButton
+              ? child.icon
+              : child is TwSecondaryButton
+                  ? child.icon
+                  : null;
+          final painter = TextPainter(
+              text: TextSpan(text: label, style: TwType.button()),
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+              maxLines: 1)
+            ..layout();
+          return painter.width + 40 + (icon == null ? 0 : 28) <= available;
+        }
+
+        final stack = children.any((child) => !fits(child));
+        final buttons = children
+            .map((child) =>
+                SizedBox(height: 52, width: double.infinity, child: child))
+            .toList();
+        if (stack)
+          return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < buttons.length; i++) ...[
+                  if (i > 0) const SizedBox(height: TwSpace.s8),
+                  buttons[i]
+                ],
+              ]);
+        return Row(children: [
+          for (var i = 0; i < buttons.length; i++) ...[
+            if (i > 0) const SizedBox(width: TwSpace.s12),
+            Expanded(child: buttons[i])
+          ]
+        ]);
+      });
+}
+
 /// Sticky action bar (§1.6): white, `floatShadow`, gutter left/right, 12 top,
 /// 12 + bottom safe-area inset. Two buttons sit side by side at Regular/Wide
 /// and default text size; on Compact or at text scale > 1.15 they stack
@@ -708,39 +766,12 @@ class TwStickyBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final gutter = TwLayout.gutter(context);
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    final stacked = children.length > 1 && TwLayout.stackRows(context);
-
-    Widget buttons;
-    if (children.isEmpty) {
-      buttons = const SizedBox.shrink();
-    } else if (children.length == 1) {
-      buttons = SizedBox(width: double.infinity, child: children.first);
-    } else if (stacked) {
-      final ordered = [
-        ...children.where((w) => w is TwPrimaryButton),
-        ...children.where((w) => w is! TwPrimaryButton),
-      ];
-      buttons = Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < ordered.length; i++) ...[
-            if (i > 0) const SizedBox(height: TwSpace.s8),
-            ordered[i],
-          ],
-        ],
-      );
-    } else {
-      buttons = Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            if (i > 0) const SizedBox(width: TwSpace.s12),
-            Expanded(child: children[i]),
-          ],
-        ],
-      );
-    }
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final Widget buttons = children.isEmpty
+        ? const SizedBox.shrink()
+        : children.length == 1
+            ? SizedBox(width: double.infinity, child: children.first)
+            : TwButtonPair(children: children);
 
     final noteText = note?.trim() ?? '';
     final Widget? noteWidget = noteText.isEmpty
@@ -756,7 +787,8 @@ class TwStickyBar extends StatelessWidget {
         color: AppTheme.white,
         boxShadow: AppTheme.floatShadow,
       ),
-      padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 12 + bottomInset),
+      padding: EdgeInsets.fromLTRB(
+          gutter, 12, gutter, 12 + bottomInset + keyboardInset),
       child: Align(
         alignment: Alignment.topCenter,
         heightFactor: 1,
@@ -1494,4 +1526,3 @@ class TwEmptyState extends StatelessWidget {
     );
   }
 }
-

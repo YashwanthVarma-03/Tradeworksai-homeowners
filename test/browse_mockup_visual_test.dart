@@ -42,7 +42,7 @@ void main() {
     await history.save('Drain clearing');
     await history.save('Outlet repair');
     await history.save('HVAC tune-up');
-    await ServiceLocation.save(zip: '33578', locationName: 'Riverview');
+    await ServiceLocation.save(zip: '33578', locationName: 'Riverview, FL');
     final client = MockClient((request) async => http.Response(
           jsonEncode({
             'success': true,
@@ -73,7 +73,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Recent searches'), findsOneWidget);
-      expect(find.text('Riverview · 33578'), findsOneWidget);
+      expect(find.text('Riverview, FL 33578'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await expectLater(
           find.byType(Scaffold), matchesGoldenFile('goldens/browse-b01.png'));

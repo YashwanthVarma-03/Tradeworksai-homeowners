@@ -159,8 +159,8 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
                           else
                             ..._addresses.map(
                               (dynamic item) => Padding(
-                                padding: const EdgeInsets.only(
-                                    bottom: TwSpace.s16),
+                                padding:
+                                    const EdgeInsets.only(bottom: TwSpace.s16),
                                 child: _addressCard(_asMap(item)),
                               ),
                             ),
@@ -329,7 +329,9 @@ class _ManageAddressesScreenState extends State<ManageAddressesScreen> {
 class EditAddressScreen extends StatefulWidget {
   final Map<String, dynamic>? addressToEdit;
 
-  const EditAddressScreen({super.key, this.addressToEdit});
+  final bool forBooking;
+  const EditAddressScreen(
+      {super.key, this.addressToEdit, this.forBooking = false});
 
   @override
   State<EditAddressScreen> createState() => _EditAddressScreenState();
@@ -389,7 +391,40 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
     };
     try {
       if (widget.addressToEdit == null) {
-        await HomeownerService.instance.addAddress(payload);
+        final result = await HomeownerService.instance.addAddress(payload);
+        if (widget.forBooking) {
+          final raw = result['address'] ?? result['data'] ?? result;
+          var saved =
+              raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+          var id = saved['id'] ?? saved['addressId'] ?? result['addressId'];
+          if (id == null) {
+            final profile = await HomeownerService.instance.fetchProfile();
+            final addresses = (result['addresses'] ??
+                    profile['addresses'] ??
+                    (profile['profile'] is Map
+                        ? profile['profile']['addresses']
+                        : null)) as List? ??
+                [];
+            final matches = addresses
+                .whereType<Map>()
+                .where((a) => ['street', 'unit', 'city', 'state', 'zip'].every(
+                    (key) =>
+                        '${a[key] ?? ''}'.trim().toLowerCase() ==
+                        '${payload[key] ?? ''}'.toLowerCase()))
+                .toList();
+            if (matches.length == 1) {
+              saved = Map<String, dynamic>.from(matches.single);
+              id = saved['id'];
+            }
+          }
+          if (id == null)
+            throw Exception(
+                'Address saved. Please reopen the address picker to select it.');
+          if (mounted)
+            Navigator.pop(
+                context, <String, dynamic>{...payload, ...saved, 'id': id});
+          return;
+        }
       } else {
         await HomeownerService.instance.updateAddress(
           addressId: int.parse(widget.addressToEdit!['id'].toString()),
@@ -452,7 +487,7 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
                     const SizedBox(height: TwSpace.s16),
                     _field('ZIP code', _zipCtrl,
                         required: true, keyboardType: TextInputType.number),
-                    if (!editing) ...[
+                    if (!editing && !widget.forBooking) ...[
                       const SizedBox(height: TwSpace.s16),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -503,6 +538,9 @@ class _EditAddressScreenState extends State<EditAddressScreen> {
         TextFormField(
           controller: controller,
           keyboardType: keyboardType,
+          textInputAction: controller == _zipCtrl
+              ? TextInputAction.done
+              : TextInputAction.next,
           validator: required
               ? (value) {
                   final text = value?.trim() ?? '';

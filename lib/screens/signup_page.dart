@@ -197,6 +197,7 @@ class _SignupPageState extends State<SignupPage> {
                                 const TwFieldLabel('Full name'),
                                 TextFormField(
                                     controller: _name,
+                                    textInputAction: TextInputAction.next,
                                     style: TwType.body(color: AppTheme.navy),
                                     enabled: !_loading,
                                     textCapitalization:
@@ -211,6 +212,7 @@ class _SignupPageState extends State<SignupPage> {
                                 const TwFieldLabel('Email address'),
                                 TextFormField(
                                     controller: _email,
+                                    textInputAction: TextInputAction.next,
                                     style: TwType.body(color: AppTheme.navy),
                                     enabled: !_loading,
                                     keyboardType: TextInputType.emailAddress,
@@ -225,6 +227,7 @@ class _SignupPageState extends State<SignupPage> {
                                 const TwFieldLabel('Password'),
                                 TextFormField(
                                     controller: _password,
+                                    textInputAction: TextInputAction.done,
                                     style: TwType.body(color: AppTheme.navy),
                                     enabled: !_loading,
                                     obscureText: _obscure,

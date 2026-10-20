@@ -1,3 +1,5 @@
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -22,6 +24,16 @@ class HomeProfileScreen extends StatefulWidget {
 class _HomeProfileScreenState extends State<HomeProfileScreen> {
   List<Map<String, dynamic>> _addresses = [];
   final Map<String, Map<String, dynamic>> _profiles = {};
+  String? _selectedId;
+  String get _selectionKey =>
+      'home_profile_property_${AuthService.instance.userId ?? 'guest'}';
+  Map<String, dynamic> get _selectedAddress =>
+      _addresses.firstWhere((a) => '${a['id']}' == _selectedId,
+          orElse: () => _addresses.first);
+  bool _isDefault(Map address) =>
+      address['isDefault'] == true ||
+      address['isDefault'] == 'true' ||
+      address['is_default'] == true;
   bool _loading = true, _saving = false;
   Object? _error;
   @override
@@ -43,6 +55,12 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
       final profiles = (data['homeProfiles'] as List? ?? []).whereType<Map>();
+      final stored =
+          (await SharedPreferences.getInstance()).getString(_selectionKey);
+      if (addresses.isNotEmpty) {
+        _selectedId =
+            '${addresses.firstWhere((a) => '${a['id']}' == stored, orElse: () => addresses.firstWhere(_isDefault, orElse: () => addresses.first))['id']}';
+      }
       if (!mounted) return;
       setState(() {
         _addresses = addresses;
@@ -96,7 +114,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
     if (_saving) return;
     setState(() => _saving = true);
     try {
-      for (final profile in _profiles.values) {
+      for (final profile in [_profiles[_selectedId]!]) {
         final details = profile['propertyDetails'] as Map;
         for (final key in details.keys) {
           final raw = (key == 'squareFootage'
@@ -259,8 +277,58 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              for (final address in _addresses)
-                                _address(address)
+                              if (_addresses.length > 1) ...[
+                                Text('${_addresses.length} properties',
+                                    style: TwType.meta()),
+                                const SizedBox(height: 12),
+                                SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(children: [
+                                      for (final address in _addresses)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(right: 8),
+                                          child: ChoiceChip(
+                                            avatar: const Icon(
+                                                Icons.home_outlined,
+                                                size: 18),
+                                            label: Text(
+                                                '${address['street'] ?? address['label'] ?? 'Home'}'),
+                                            selected: '${address['id']}' ==
+                                                _selectedId,
+                                            showCheckmark: false,
+                                            selectedColor: AppTheme.blueTint,
+                                            side: BorderSide(
+                                                color: '${address['id']}' ==
+                                                        _selectedId
+                                                    ? AppTheme.blue
+                                                    : AppTheme.border,
+                                                width: '${address['id']}' ==
+                                                        _selectedId
+                                                    ? 1.5
+                                                    : 1),
+                                            onSelected: _saving
+                                                ? null
+                                                : (_) async {
+                                                    FocusManager
+                                                        .instance.primaryFocus
+                                                        ?.unfocus();
+                                                    setState(() => _selectedId =
+                                                        '${address['id']}');
+                                                    await (await SharedPreferences
+                                                            .getInstance())
+                                                        .setString(
+                                                            _selectionKey,
+                                                            _selectedId!);
+                                                  },
+                                          ),
+                                        ),
+                                    ])),
+                                const SizedBox(height: 24),
+                              ],
+                              KeyedSubtree(
+                                  key: ValueKey(_selectedId),
+                                  child: _address(_selectedAddress))
                             ],
                           ),
                         ),
@@ -270,7 +338,9 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
             : TwStickyBar(
                 children: [
                   TwPrimaryButton(
-                    label: 'Save home profile',
+                    label: _addresses.length > 1
+                        ? 'Save ${_selectedAddress['street'] ?? 'home'}'
+                        : 'Save home profile',
                     loading: _saving,
                     onPressed: _saving ? null : _save,
                   ),
@@ -290,6 +360,9 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
                   ? _squareFootageLabel(details[key])
                   : '${details[key] ?? ''}',
               enabled: !_saving,
+              textInputAction: key == 'bathrooms'
+                  ? TextInputAction.done
+                  : TextInputAction.next,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               style: TwType.body(color: AppTheme.navy),
@@ -395,7 +468,7 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
     final type = _text(details['propertyType'] ??
         address['propertyType'] ??
         address['homeType']);
-    final line = [place, type]
+    final line = [_addresses.length > 1 ? cityLine : place, type]
         .whereType<String>()
         .where((part) => part.isNotEmpty)
         .join(' · ');
@@ -411,7 +484,12 @@ class _HomeProfileScreenState extends State<HomeProfileScreen> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_text(address['label']) ?? 'Home', style: TwType.h2()),
+                    Text(_addresses.length > 1 ? street ?? 'Home' : 'Home',
+                        style: TwType.h2()),
+                    if (_addresses.length > 1 && _isDefault(address))
+                      Chip(
+                          label: Text('Default', style: TwType.caption()),
+                          backgroundColor: AppTheme.subtle),
                     if (line.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(line, style: TwType.meta()),
@@ -755,4 +833,3 @@ String _servicedLabel(dynamic raw) {
   final date = DateTime.tryParse(text);
   return date == null ? text : DateFormat('MMM d, yyyy').format(date.toLocal());
 }
-

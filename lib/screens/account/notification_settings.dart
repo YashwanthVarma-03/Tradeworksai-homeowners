@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 
@@ -24,6 +25,13 @@ class _NotificationSettingsScreenState
   static const Color _lineSoft = AppTheme.cardBorder;
 
   bool _isLoading = true;
+  Map<String, dynamic> _supported = {};
+  bool _loadFailed = false;
+  bool _supports(String group, String key) =>
+      _supported[group] is Map && (_supported[group] as Map).containsKey(key);
+  bool get _showPush =>
+      PushNotificationService.instance.isConfigured &&
+      _supported['push'] is Map;
   bool _pushStatus = true;
   bool _pushMessages = true;
   bool _pushCredits = true;
@@ -87,8 +95,12 @@ class _NotificationSettingsScreenState
           );
         }
       }
-      await HomeownerService.instance
-          .updateNotificationPreferences(next.toApiPayload());
+      final payload = next.toApiPayload();
+      for (final group in ['push', 'email']) {
+        (payload[group] as Map).removeWhere((key, _) => !_supports(group, key));
+        if ((payload[group] as Map).isEmpty) payload.remove(group);
+      }
+      await HomeownerService.instance.updateNotificationPreferences(payload);
       await next.cache();
       await PushNotificationService.instance.updatePreferences(
         userId: userId,
@@ -110,7 +122,7 @@ class _NotificationSettingsScreenState
       AppNotification.showInfo(
         context,
         error.message == 'push_not_configured'
-            ? 'Phone notifications are not configured for this app build yet.'
+            ? 'Notifications are unavailable right now. Please try again later.'
             : 'Allow notifications in your device settings to receive alerts.',
       );
     } catch (error) {
@@ -137,13 +149,18 @@ class _NotificationSettingsScreenState
     setState(() => _isLoading = true);
     NotificationPreferences preferences;
     try {
-      preferences = NotificationPreferences.fromAccount(
-        await HomeownerService.instance.fetchAccount(),
-      );
+      final account = await HomeownerService.instance.fetchAccount();
+      final root = account['account'] ?? account['data'] ?? account;
+      dynamic raw = root is Map ? root['preferences'] : null;
+      if (raw is String) raw = jsonDecode(raw);
+      _supported = raw is Map ? Map<String, dynamic>.from(raw) : {};
+      _loadFailed = false;
+      preferences = NotificationPreferences.fromAccount(account);
       await preferences.cache();
     } catch (_) {
-      preferences = await NotificationPreferences.loadCached() ??
-          const NotificationPreferences();
+      _supported = {};
+      _loadFailed = true;
+      preferences = const NotificationPreferences();
     }
     if (!mounted) return;
     setState(() {
@@ -183,121 +200,136 @@ class _NotificationSettingsScreenState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _sectionLabel(
-                            PushNotificationService.instance.isConfigured
-                                ? 'Push notifications'
-                                : 'Alerts while the app is open',
-                          ),
-                          _toggleTile(
-                            title: 'Work-order status updates',
-                            subtitle:
-                                'Booked, en route, in progress, completed',
-                            value: _pushStatus,
-                            onChanged: _isSaving
-                                ? null
-                                : (value) => _savePreferences(
-                                      NotificationPreferences(
-                                        pushStatus: value,
-                                        pushMessages: _pushMessages,
-                                        pushCredits: _pushCredits,
-                                        pushPromos: _pushPromos,
-                                        emailReceipts: _emailReceipts,
-                                        emailPromos: _emailPromos,
+                          if (_loadFailed)
+                            TwEmptyState(
+                                icon: Icons.cloud_off_outlined,
+                                title: "Couldn't load notification settings",
+                                action: TwSecondaryButton(
+                                    label: 'Try again',
+                                    onPressed: _loadSettings)),
+                          if (!_loadFailed && _supported.isEmpty)
+                            Text(
+                                'No notification preferences are available right now.',
+                                style: TwType.bodySm()),
+                          if (_showPush) _sectionLabel('Push notifications'),
+                          if (_showPush && _supports('push', 'status'))
+                            _toggleTile(
+                              title: 'Work-order status updates',
+                              subtitle:
+                                  'Booked, en route, in progress, completed',
+                              value: _pushStatus,
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) => _savePreferences(
+                                        NotificationPreferences(
+                                          pushStatus: value,
+                                          pushMessages: _pushMessages,
+                                          pushCredits: _pushCredits,
+                                          pushPromos: _pushPromos,
+                                          emailReceipts: _emailReceipts,
+                                          emailPromos: _emailPromos,
+                                        ),
                                       ),
-                                    ),
-                          ),
-                          _toggleTile(
-                            title: 'Messages from your pro',
-                            subtitle: 'New messages from your pros',
-                            value: _pushMessages,
-                            onChanged: _isSaving
-                                ? null
-                                : (value) => _savePreferences(
-                                      NotificationPreferences(
-                                        pushStatus: _pushStatus,
-                                        pushMessages: value,
-                                        pushCredits: _pushCredits,
-                                        pushPromos: _pushPromos,
-                                        emailReceipts: _emailReceipts,
-                                        emailPromos: _emailPromos,
+                            ),
+                          if (_showPush && _supports('push', 'messages'))
+                            _toggleTile(
+                              title: 'Messages from your pro',
+                              subtitle: 'New messages from your pros',
+                              value: _pushMessages,
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) => _savePreferences(
+                                        NotificationPreferences(
+                                          pushStatus: _pushStatus,
+                                          pushMessages: value,
+                                          pushCredits: _pushCredits,
+                                          pushPromos: _pushPromos,
+                                          emailReceipts: _emailReceipts,
+                                          emailPromos: _emailPromos,
+                                        ),
                                       ),
-                                    ),
-                          ),
-                          _toggleTile(
-                            title: 'Service credits & rewards',
-                            subtitle:
-                                'When credits are ready, and before they expire',
-                            value: _pushCredits,
-                            onChanged: _isSaving
-                                ? null
-                                : (value) => _savePreferences(
-                                      NotificationPreferences(
-                                        pushStatus: _pushStatus,
-                                        pushMessages: _pushMessages,
-                                        pushCredits: value,
-                                        pushPromos: _pushPromos,
-                                        emailReceipts: _emailReceipts,
-                                        emailPromos: _emailPromos,
+                            ),
+                          if (_showPush && _supports('push', 'credits'))
+                            _toggleTile(
+                              title: 'Service credits & rewards',
+                              subtitle:
+                                  'When credits are ready, and before they expire',
+                              value: _pushCredits,
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) => _savePreferences(
+                                        NotificationPreferences(
+                                          pushStatus: _pushStatus,
+                                          pushMessages: _pushMessages,
+                                          pushCredits: value,
+                                          pushPromos: _pushPromos,
+                                          emailReceipts: _emailReceipts,
+                                          emailPromos: _emailPromos,
+                                        ),
                                       ),
-                                    ),
-                          ),
-                          _toggleTile(
-                            title: 'Promotions & offers',
-                            subtitle:
-                                'Occasional offers · Off unless you turn it on',
-                            last: true,
-                            value: _pushPromos,
-                            onChanged: _isSaving
-                                ? null
-                                : (value) => _savePreferences(
-                                      NotificationPreferences(
-                                        pushStatus: _pushStatus,
-                                        pushMessages: _pushMessages,
-                                        pushCredits: _pushCredits,
-                                        pushPromos: value,
-                                        emailReceipts: _emailReceipts,
-                                        emailPromos: _emailPromos,
+                            ),
+                          if (_showPush && _supports('push', 'promos'))
+                            _toggleTile(
+                              title: 'Promotions & offers',
+                              subtitle:
+                                  'Occasional offers · Off unless you turn it on',
+                              last: true,
+                              value: _pushPromos,
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) => _savePreferences(
+                                        NotificationPreferences(
+                                          pushStatus: _pushStatus,
+                                          pushMessages: _pushMessages,
+                                          pushCredits: _pushCredits,
+                                          pushPromos: value,
+                                          emailReceipts: _emailReceipts,
+                                          emailPromos: _emailPromos,
+                                        ),
                                       ),
-                                    ),
-                          ),
+                            ),
                           const SizedBox(height: TwSpace.s28),
-                          _sectionLabel('Email'),
-                          _toggleTile(
-                            title: 'Booking receipts',
-                            subtitle: 'A receipt after each completed job',
-                            value: _emailReceipts,
-                            onChanged: _isSaving
-                                ? null
-                                : (value) => _savePreferences(
-                                      NotificationPreferences(
-                                        pushStatus: _pushStatus,
-                                        pushMessages: _pushMessages,
-                                        pushCredits: _pushCredits,
-                                        pushPromos: _pushPromos,
-                                        emailReceipts: value,
-                                        emailPromos: _emailPromos,
+                          if (_supported['email'] is Map)
+                            _sectionLabel('Email'),
+                          if (_supports('email', 'receipts'))
+                            _toggleTile(
+                              title: 'Job summaries',
+                              subtitle:
+                                  'After each completed job: what was done, what you paid, credits earned.',
+                              value: _emailReceipts,
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) => _savePreferences(
+                                        NotificationPreferences(
+                                          pushStatus: _pushStatus,
+                                          pushMessages: _pushMessages,
+                                          pushCredits: _pushCredits,
+                                          pushPromos: _pushPromos,
+                                          emailReceipts: value,
+                                          emailPromos: _emailPromos,
+                                        ),
                                       ),
-                                    ),
-                          ),
-                          _toggleTile(
-                            title: 'Promotions & offers',
-                            subtitle:
-                                'Occasional offers · Off unless you turn it on',
-                            last: true,
-                            value: _emailPromos,
-                            onChanged: _isSaving
-                                ? null
-                                : (value) => _savePreferences(
-                                      NotificationPreferences(
-                                        pushStatus: _pushStatus,
-                                        pushMessages: _pushMessages,
-                                        pushCredits: _pushCredits,
-                                        pushPromos: _pushPromos,
-                                        emailReceipts: _emailReceipts,
-                                        emailPromos: value,
+                            ),
+                          if (_supports('email', 'promos'))
+                            _toggleTile(
+                              title: 'Promotions & offers',
+                              subtitle:
+                                  'Occasional offers · Off unless you turn it on',
+                              last: true,
+                              value: _emailPromos,
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) => _savePreferences(
+                                        NotificationPreferences(
+                                          pushStatus: _pushStatus,
+                                          pushMessages: _pushMessages,
+                                          pushCredits: _pushCredits,
+                                          pushPromos: _pushPromos,
+                                          emailReceipts: _emailReceipts,
+                                          emailPromos: value,
+                                        ),
                                       ),
-                                    ),
-                          ),
+                            ),
                           const SizedBox(height: TwSpace.s20),
                           _infoCallout(),
                         ],
@@ -374,11 +406,7 @@ class _NotificationSettingsScreenState
           const SizedBox(width: TwSpace.s12),
           Expanded(
             child: Text(
-              PushNotificationService.instance.isConfigured
-                  ? 'Push alerts open the message or work order they’re about.'
-                  : 'New chat messages can alert you while this app is open. '
-                      'Activity refreshes when you reopen it. Alerts while '
-                      'the app is closed need a push service.',
+              'Alerts that need you open the screen to act on them.',
               style: TwType.bodySm(),
             ),
           ),

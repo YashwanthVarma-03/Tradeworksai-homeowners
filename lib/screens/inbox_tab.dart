@@ -1,3 +1,4 @@
+import '../widgets/app_notification.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -9,15 +10,10 @@ import '../services/homeowner_service.dart';
 import '../services/notification_routing.dart';
 import '../services/stream_service.dart';
 import '../theme.dart';
-import '../utils/credit_rules.dart';
-import '../utils/display_format.dart';
 import '../utils/notification_route_launcher.dart';
-import '../utils/waiting_on_you.dart';
 import '../utils/work_order_labels.dart' as labels;
-import '../utils/work_order_status.dart';
 import '../widgets/loading_skeleton.dart';
 import '../widgets/offline_state.dart';
-import '../widgets/main_bottom_navigation.dart';
 import 'chat_screen.dart';
 
 /// Inbox (settled Oct 1, G-52): two tabs — Messages (one thread per pro) and
@@ -158,6 +154,7 @@ class _InboxTabState extends State<InboxTab> {
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: TwLayout.maxContent + gutter * 2),
         child: DefaultTabController(
+          key: ValueKey(widget.initialTab),
           length: 2,
           initialIndex: widget.initialTab,
           child: Column(
@@ -323,8 +320,7 @@ class _UnreadDot extends StatelessWidget {
       );
 }
 
-/// One Activity row (A08b). Read from the notifications feed when it has rows;
-/// otherwise derived from the work-order list so the tab remains useful.
+/// One Activity row (A08b), from the server notifications feed.
 ///
 /// Feed row: `{id, type, title, work_order_id, wo_number,
 /// pro_name, waiting_on_you, created_at, read_at}` where `type` is one of
@@ -342,8 +338,8 @@ class ActivityItem {
     this.waitingOnYou = false,
     this.unread = false,
     this.targetId = '',
-    this.job,
     this.body = '',
+    this.data = const {},
   });
 
   final String id;
@@ -357,11 +353,15 @@ class ActivityItem {
   final bool unread;
   final String targetId;
 
-  /// Present on derived rows, so the tap needs no lookup.
-  final Map<String, dynamic>? job;
-
   /// Supporting notification copy. Empty hides the line.
   final String body;
+  final Map<String, dynamic> data;
+  bool get actionable =>
+      notificationIsAction(data) &&
+      (waitingOnYou ||
+          type == 'message' ||
+          (!data.containsKey('waiting_on_you') &&
+              !data.containsKey('waitingOnYou')));
 
   factory ActivityItem.fromApi(Map<String, dynamic> row) {
     String text(dynamic v) {
@@ -372,7 +372,8 @@ class ActivityItem {
     final woId = text(row['work_order_id'] ?? row['workOrderId']);
     return ActivityItem(
       id: text(row['id']),
-      type: text(row['type']).toLowerCase(),
+      type: notificationType(row),
+      data: row,
       title: text(row['title']),
       date: DateTime.tryParse(text(row['created_at'] ?? row['createdAt']))
               ?.toLocal() ??
@@ -383,8 +384,7 @@ class ActivityItem {
         'workOrderId': woId,
       }),
       proName: text(row['pro_name'] ?? row['proName']),
-      waitingOnYou:
-          row['waiting_on_you'] == true || row['waitingOnYou'] == true,
+      waitingOnYou: notificationWaiting(row),
       // The timestamp is authoritative; a boolean alias is not required.
       unread:
           (row.containsKey('read_at') ? row['read_at'] : row['readAt']) == null,
@@ -392,8 +392,7 @@ class ActivityItem {
           row['channelId'] ??
           row['work_order_id'] ??
           row['workOrderId']),
-      // The mobile feed is intentionally title-only: its response omits body.
-      // Locally derived events can still supply their own supporting copy.
+      body: text(row['body']),
     );
   }
 }
@@ -430,13 +429,11 @@ class _InboxActivityViewState extends State<InboxActivityView> {
   Future<void> _load({bool refresh = false}) async {
     try {
       final feed = await HomeownerService.instance.fetchNotifications();
-      final items = feed != null
-          ? feed
-              .map(ActivityItem.fromApi)
-              .where((i) => i.title.isNotEmpty)
-              .toList()
-          : _derive(await HomeownerService.instance
-              .fetchWorkOrders(forceRefresh: refresh));
+      if (feed == null) throw StateError('Activity feed unavailable');
+      final items = feed
+          .map(ActivityItem.fromApi)
+          .where((i) => i.title.isNotEmpty)
+          .toList();
       items.sort((a, b) => b.date.compareTo(a.date));
       if (mounted) {
         setState(() {
@@ -472,145 +469,28 @@ class _InboxActivityViewState extends State<InboxActivityView> {
     }
   }
 
-  /// Until the feed exists: what is waiting on the homeowner (A2), a
-  /// reminder for a visit in the next 48 hours, and the status steps the pro
-  /// has tapped. Never a message attributed to a pro.
-  List<ActivityItem> _derive(Map<String, dynamic> data) {
-    final jobs = <Map<String, dynamic>>[];
-    final seen = <String>{};
-    final tabs = data['tabs'];
-    if (tabs is Map) {
-      for (final list in tabs.values.whereType<List>()) {
-        for (final raw in list.whereType<Map>()) {
-          final job = Map<String, dynamic>.from(raw);
-          if (seen.add('${job['workOrderId'] ?? job['id']}')) jobs.add(job);
-        }
-      }
-    }
-    final now = DateTime.now();
-    final items = <ActivityItem>[];
-    for (final job in jobs) {
-      final wo = labels.workOrderLabel(job);
-      final service = labels.jobServiceName(job);
-      final pro = labels.jobProName(job, '');
-      ActivityItem item(String type, String title, DateTime date,
-              {bool waiting = false, String body = ''}) =>
-          ActivityItem(
-            id: '$wo:$type:${date.toIso8601String()}',
-            type: type,
-            title: title,
-            date: date,
-            workOrderId: labels.workOrderDbId(job),
-            workOrderLabel: wo,
-            proName: pro,
-            waitingOnYou: waiting,
-            job: job,
-            body: body,
-          );
-
-      final waiting = WaitingOnYou.itemFor(job);
-      if (waiting != null) {
-        items.add(item(waiting.kind.name, waiting.activityTitle,
-            (waiting.since ?? now).toLocal(),
-            waiting: true));
-      }
-
-      final status = WorkOrderStatus.fromJob(job);
-      final start = labels.jobVisitStart(job)?.toLocal();
-      if (status.state == WorkOrderState.booked &&
-          start != null &&
-          start.isAfter(now) &&
-          start.difference(now) < const Duration(hours: 48)) {
-        final when = labels.visitPhrase(
-          start,
-          labels.jobVisitEnd(job),
-          relativeDay: true,
-        );
-        items.add(item(
-          'reminder',
-          'Reminder: $service ${when[0].toLowerCase()}${when.substring(1)}',
-          DateTime(now.year, now.month, now.day),
-        ));
-      }
-
-      final timeline = job['timeline'] is Map
-          ? Map<String, dynamic>.from(job['timeline'] as Map)
-          : const <String, dynamic>{};
-      final who = pro.isEmpty ? 'Your pro' : pro;
-      for (final step in [
-        ('status', '$who marked $service en route', timeline['enRouteAt']),
-        (
-          'status',
-          '$who marked $service in progress',
-          timeline['inProgressAt']
-        ),
-        (
-          'completed',
-          '$who marked $service completed',
-          timeline['completedAt']
-        ),
-      ]) {
-        final date = DateTime.tryParse('${step.$3}');
-        if (date != null) items.add(item(step.$1, step.$2, date.toLocal()));
-      }
-
-      final cancelledAt = DateTime.tryParse(
-          '${timeline['cancelledAt'] ?? timeline['cancelled_at'] ?? job['cancelledAt'] ?? job['cancelled_at']}');
-      if (cancelledAt != null && status.isTerminalWithoutProgress) {
-        final returned = CreditRules.returnedOnCancel(job);
-        items.add(item(
-          'booking_cancelled',
-          '${status.label} · $service',
-          cancelledAt.toLocal(),
-          body: returned > 0
-              ? 'Credits returned to your balance: ${formatUsd(returned)}'
-              : '',
-        ));
-      }
-
-      final rebookedAt = DateTime.tryParse(
-          '${timeline['rebookedAt'] ?? timeline['rebooked_at'] ?? job['rebookedAt'] ?? job['rebooked_at']}');
-      if (rebookedAt != null &&
-          start != null &&
-          !status.isTerminalWithoutProgress) {
-        items.add(item(
-          'rebooked',
-          'TradeWorks moved your visit',
-          rebookedAt.toLocal(),
-          body:
-              '$service · ${labels.visitPhrase(start, labels.jobVisitEnd(job))} with $who',
-        ));
-      }
-    }
-    return items;
-  }
-
   Future<void> _open(ActivityItem item) async {
-    if (item.unread && item.job == null && item.id.isNotEmpty) {
-      unawaited(HomeownerService.instance.markNotificationRead(item.id));
+    if (item.unread && item.id.isNotEmpty) {
+      try {
+        await HomeownerService.instance.markNotificationRead(item.id);
+      } catch (_) {
+        if (mounted)
+          AppNotification.showInfo(
+              context, 'Could not mark this activity as read.');
+      }
+      if (!mounted) return;
     }
-    final route = NotificationRouteData.fromData({
-      'type': item.type,
-      'id': item.targetId.isNotEmpty
-          ? item.targetId
-          : item.workOrderId?.toString() ?? '',
-      'contractor_name': item.proName,
-    });
-    if (route.destination == NotificationDestination.rewards) {
-      Navigator.popUntil(context, (candidate) => candidate.isFirst);
-      AppTabNavigation.request(3);
+    if (!notificationIsAction(item.data)) {
+      await _load();
       return;
     }
-    if (route.destination == NotificationDestination.home) {
-      Navigator.popUntil(context, (candidate) => candidate.isFirst);
-      AppTabNavigation.request(0);
-      return;
-    }
+    final route = NotificationRouteData.fromData(item.data, fromActivity: true);
     try {
       await openNotificationRoute(context, route);
     } catch (_) {
-      // Keep the feed usable during backend rollout; the refresh below will
-      // reconcile stale or removed work-order rows.
+      if (mounted)
+        AppNotification.showInfo(
+            context, 'This item is unavailable right now. Please try again.');
     }
     if (mounted) {
       _load(refresh: true);
@@ -621,7 +501,14 @@ class _InboxActivityViewState extends State<InboxActivityView> {
   Widget build(BuildContext context) {
     if (_loading) return const SkeletonPage(layout: SkeletonLayout.inbox);
     if (_error != null) {
-      return OfflineState(onRetry: () => _load(refresh: true));
+      return Center(
+          child: TwEmptyState(
+              icon: Icons.cloud_off_outlined,
+              title: "Couldn't load activity",
+              action: TwSecondaryButton(
+                  label: 'Try again',
+                  expand: false,
+                  onPressed: () => _load(refresh: true))));
     }
     final now = DateTime.now();
     bool isToday(DateTime d) =>
@@ -636,7 +523,7 @@ class _InboxActivityViewState extends State<InboxActivityView> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(gutter, 0, gutter, TwSpace.s28),
         children: [
-          if (_items.any((item) => item.unread && item.job == null))
+          if (_items.any((item) => item.unread))
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
@@ -706,13 +593,13 @@ class _ActivityRow extends StatelessWidget {
             AppTheme.subtle,
             AppTheme.textSecondary
           ),
-        'cap' || 'estimate' => (
+        'cap' || 'estimate' || 'no_show' || 'review' => (
             Icons.description_outlined,
             AppTheme.amberTint,
             AppTheme.amber
           ),
         'reschedule' => (
-            Icons.event_repeat_outlined,
+            Icons.description_outlined,
             AppTheme.amberTint,
             AppTheme.amber
           ),
@@ -726,7 +613,12 @@ class _ActivityRow extends StatelessWidget {
             AppTheme.greenTint,
             AppTheme.greenMark
           ),
-        _ => (Icons.build_outlined, AppTheme.blueTint, AppTheme.blue),
+        'message' => (
+            Icons.chat_bubble_outline,
+            AppTheme.blueTint,
+            AppTheme.blue
+          ),
+        _ => (Icons.event_outlined, AppTheme.blueTint, AppTheme.blue),
       };
 
   @override
@@ -772,7 +664,7 @@ class _ActivityRow extends StatelessWidget {
                   const SizedBox(height: TwSpace.s4),
                   Text.rich(
                     TextSpan(children: [
-                      if (item.waitingOnYou) ...[
+                      if (item.actionable && item.waitingOnYou) ...[
                         const WidgetSpan(
                           alignment: PlaceholderAlignment.middle,
                           child: Padding(
@@ -812,8 +704,9 @@ class _ActivityRow extends StatelessWidget {
               const _UnreadDot(),
               const SizedBox(width: TwSpace.s8),
             ],
-            const Icon(Icons.chevron_right_rounded,
-                color: AppTheme.textTertiary, size: 18),
+            if (item.actionable)
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppTheme.textTertiary, size: 18),
           ],
         ),
       ),

@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:homeowners_app/screens/reward_tab.dart';
 import 'package:homeowners_app/theme.dart';
-import 'package:homeowners_app/widgets/main_bottom_navigation.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -36,21 +35,17 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.lightTheme,
-      home: Scaffold(
-        body: RewardTab(
-          onBookTap: () {},
-          loadRewards: ({bool forceRefresh = false}) async => _seed,
-        ),
-        bottomNavigationBar: MainBottomNavigation(
-          currentIndex: 3,
-          onTap: (_) {},
-        ),
+      home: RewardsScreen(
+        onBookTap: () {},
+        loadRewards: ({bool forceRefresh = false}) async => _seed,
       ),
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('Rewards'), findsOneWidget); // Only the navigation label.
+    expect(find.text('Rewards'), findsOneWidget);
     expect(find.text('Available service credits'), findsOneWidget);
+    expect(
+        find.text(r'Earliest expiry: $59.73 on May 18, 2028'), findsOneWidget);
     expect(find.text('Upload your paid receipt'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await expectLater(
@@ -72,16 +67,10 @@ void main() {
           ),
           child: child!,
         ),
-        home: Scaffold(
-          body: RewardTab(
-            key: ValueKey(size.width),
-            onBookTap: () {},
-            loadRewards: ({bool forceRefresh = false}) async => _seed,
-          ),
-          bottomNavigationBar: MainBottomNavigation(
-            currentIndex: 3,
-            onTap: (_) {},
-          ),
+        home: RewardsScreen(
+          key: ValueKey(size.width),
+          onBookTap: () {},
+          loadRewards: ({bool forceRefresh = false}) async => _seed,
         ),
       ));
       await tester.pump(const Duration(milliseconds: 500));
@@ -103,7 +92,10 @@ void main() {
 
 final _seed = <String, dynamic>{
   'balance': 64.20,
-  'earliestExpiry': {'amount': 59.73, 'expiresAt': '2028-05-18'},
+  'earliestExpiry': '2028-05-18',
+  'expiringCredits': [
+    {'sourceAmount': 59.73, 'expiresAt': '2028-05-18'}
+  ],
   'pendingReceipts': [
     {
       'workOrderId': 24120,

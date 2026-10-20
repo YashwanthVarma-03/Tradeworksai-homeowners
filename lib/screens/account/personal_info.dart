@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import '../../utils/us_phone.dart';
 import '../../widgets/loading_skeleton.dart';
 import 'package:flutter/material.dart';
 
@@ -83,10 +85,10 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
       if (!mounted) return;
       setState(() {
         _originalName = name;
-        _originalPhone = phone;
+        _originalPhone = formatUsPhone(phone);
         _originalEmail = email;
         _nameController.text = name;
-        _phoneController.text = phone;
+        _phoneController.text = formatUsPhone(phone);
         _emailController.text = email;
         _isLoading = false;
       });
@@ -108,7 +110,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
       final parts = _nameController.text.trim().split(RegExp(r'\s+'));
       final givenName = parts.isEmpty ? '' : parts.first;
       final familyName = parts.length > 1 ? parts.skip(1).join(' ') : '';
-      final phone = _phoneController.text.trim();
+      final phone = usPhoneE164(_phoneController.text)!;
       final email = _emailController.text.trim();
       final userName = _nameController.text.trim();
 
@@ -196,6 +198,9 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
                 _textField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
+                  validator: (value) => usPhoneE164(value ?? '') == null
+                      ? 'Enter a US phone number'
+                      : null,
                 ),
                 const SizedBox(height: TwSpace.s8),
                 Text(
@@ -253,6 +258,31 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
+      inputFormatters: controller == _phoneController
+          ? [
+              TextInputFormatter.withFunction((oldValue, newValue) {
+                final display = formatUsPhone(newValue.text);
+                return display == newValue.text
+                    ? newValue
+                    : newValue.copyWith(
+                        text: display,
+                        selection:
+                            TextSelection.collapsed(offset: display.length),
+                        composing: TextRange.empty);
+              })
+            ]
+          : null,
+      textInputAction: controller == _phoneController
+          ? TextInputAction.done
+          : TextInputAction.next,
+      onEditingComplete: () {
+        if (controller == _phoneController) {
+          controller.text = formatUsPhone(controller.text);
+          FocusManager.instance.primaryFocus?.unfocus();
+        } else {
+          FocusScope.of(context).nextFocus();
+        }
+      },
       validator: validator,
       style: TwType.body(color: AppTheme.navy),
       decoration: TwInputs.decoration(),

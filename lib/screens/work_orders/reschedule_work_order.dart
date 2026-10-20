@@ -300,8 +300,7 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: TwAppBar(
-          title:
-              widget.selectSlotOnly ? 'Choose a time' : 'Reschedule booking',
+          title: widget.selectSlotOnly ? 'Choose a time' : 'Reschedule booking',
         ),
         body: SafeArea(
           top: false,
@@ -403,7 +402,7 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
       _windowGrid(slots),
       const SizedBox(height: TwSpace.s12),
       Text(
-        'Times come from $_pro’s calendar. Pick another day to see more.',
+        'Pick a 2-hour window that works for you. Pick another day to see more.',
         style: TwType.caption(),
       ),
       const SizedBox(height: TwSpace.s28),
@@ -502,7 +501,7 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
       const SizedBox(height: TwSpace.s20),
       Text(
         'Pick a 2-hour window for the ${widget.isEstimate ? 'work' : 'repair'}. '
-        'It’s booked on $_pro’s calendar.',
+        'The window you pick is reserved for you when you book.',
         style: TwType.bodySm(),
       ),
       const SizedBox(height: TwSpace.s20),
@@ -552,8 +551,8 @@ class _RescheduleWorkOrderScreenState extends State<RescheduleWorkOrderScreen> {
     final rows = <Widget>[];
     for (var i = 0; i < slots.length; i += perRow) {
       rows.add(Padding(
-        padding: EdgeInsets.only(
-            bottom: i + perRow < slots.length ? TwSpace.s8 : 0),
+        padding:
+            EdgeInsets.only(bottom: i + perRow < slots.length ? TwSpace.s8 : 0),
         child: Row(
           children: [
             Expanded(child: _windowTile(slots[i])),
