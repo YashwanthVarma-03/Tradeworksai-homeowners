@@ -555,8 +555,6 @@ class _BookingsTabState extends State<BookingsTab> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Bookings', style: TwType.h1(context)),
-          const SizedBox(height: TwSpace.s16),
           TwUnderlineTabs(
             labels: const ['Upcoming', 'History'],
             index: _activeSegment,

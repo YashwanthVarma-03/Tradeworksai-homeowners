@@ -20,6 +20,9 @@ class ChatScreen extends StatefulWidget {
   /// Stream user ID, used only to find this pro's work orders.
   final String contractorId;
   final String contractorName;
+
+  /// Backend contractor profile ID; distinct from the Stream user ID above.
+  final String? contractorProfileId;
   final String? channelId;
   final int? workOrderId;
 
@@ -32,6 +35,7 @@ class ChatScreen extends StatefulWidget {
     super.key,
     required this.contractorId,
     required this.contractorName,
+    this.contractorProfileId,
     this.jobReference,
     this.existingChannel,
     this.workOrderId,
@@ -42,6 +46,7 @@ class ChatScreen extends StatefulWidget {
     required this.channelId,
     this.contractorName = 'Messages',
   })  : contractorId = '',
+        contractorProfileId = null,
         workOrderId = null,
         jobReference = null,
         existingChannel = null;
@@ -61,6 +66,13 @@ class _ChatScreenState extends State<ChatScreen> {
   /// message (null = "No work order").
   List<Map<String, dynamic>> _jobsWithPro = const [];
   Map<String, dynamic>? _selectedJob;
+  Future<Map<String, dynamic>>? _jobsRequest;
+
+  Future<Map<String, dynamic>> _loadWorkOrders({bool forceRefresh = false}) {
+    if (forceRefresh) _jobsRequest = null;
+    return _jobsRequest ??=
+        HomeownerService.instance.fetchWorkOrders(forceRefresh: forceRefresh);
+  }
 
   @override
   void initState() {
@@ -135,10 +147,13 @@ class _ChatScreenState extends State<ChatScreen> {
   /// work-order list (decisions §8). Nothing is pre-selected, even when chat
   /// was opened from a work order: a message is never auto-assigned.
   Future<void> _loadJobsWithPro() async {
-    if (widget.contractorId.isEmpty) return;
+    if (widget.contractorId.isEmpty && widget.contractorProfileId == null) {
+      return;
+    }
     try {
-      final data = await HomeownerService.instance.fetchWorkOrders();
-      final jobs = chatWorkOrders(data, widget.contractorId);
+      final data = await _loadWorkOrders();
+      final jobs = chatWorkOrders(data, widget.contractorId,
+          contractorProfileId: widget.contractorProfileId);
       if (mounted) setState(() => _jobsWithPro = jobs);
     } catch (_) {
       // Without the list the picker is hidden; messaging still works.
@@ -256,15 +271,20 @@ class _ChatScreenState extends State<ChatScreen> {
       if (widget.existingChannel == null &&
           widget.channelId == null &&
           workOrderId == null) {
-        final data = await HomeownerService.instance.fetchWorkOrders(
-          forceRefresh: true,
-        );
-        final jobs = chatWorkOrders(data, widget.contractorId);
-        if (jobs.isEmpty) {
+        Map<String, dynamic> data = const {};
+        try {
+          data = await _loadWorkOrders(forceRefresh: forceReconnect);
+        } catch (_) {
+          // A profile enquiry does not require the work-order list to succeed.
+          if (widget.contractorProfileId == null) rethrow;
+        }
+        final jobs = chatWorkOrders(data, widget.contractorId,
+            contractorProfileId: widget.contractorProfileId);
+        if (jobs.isEmpty && widget.contractorProfileId == null) {
           throw Exception(
               'Book a service with this pro before starting a conversation.');
         }
-        workOrderId = workOrderDbId(jobs.first);
+        if (jobs.isNotEmpty) workOrderId = workOrderDbId(jobs.first);
       }
       final channel = widget.existingChannel ??
           (widget.channelId != null
@@ -273,7 +293,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   forceReconnect: forceReconnect,
                 )
               : await StreamService.instance.openWorkOrderChannel(
-                  workOrderId: workOrderId!,
+                  workOrderId: workOrderId,
+                  contractorProfileId: widget.contractorProfileId,
                   forceReconnect: forceReconnect,
                 ));
 
@@ -447,6 +468,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String _chatErrorMessage(Object error) {
     final raw = error.toString().toLowerCase();
+    if (raw.contains('work_order_required')) {
+      return 'You can message this pro after booking a service. '
+          'Contact support if you already have a booking.';
+    }
     if (raw.contains('getorcreatechannel') ||
         raw.contains("users are involved in channel create operation") ||
         raw.contains("don't exist")) {
@@ -603,6 +628,17 @@ StreamChatThemeData get twStreamChatTheme {
       createdAtStyle: timestamp,
     ),
     messageInputTheme: StreamMessageInputThemeData(
+      // The SDK paints the outer rounded outline. Prevent the app's global
+      // filled TextField theme from painting a second, square inner surface.
+      inputDecoration: const InputDecoration(
+        filled: false,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        focusedErrorBorder: InputBorder.none,
+      ),
       inputBackgroundColor: AppTheme.subtle,
       inputTextStyle: TwType.body(color: AppTheme.navy),
       borderRadius: BorderRadius.circular(22),
@@ -610,7 +646,7 @@ StreamChatThemeData get twStreamChatTheme {
         colors: [AppTheme.cardBorder, AppTheme.cardBorder],
       ),
       activeBorderGradient: const LinearGradient(
-        colors: [AppTheme.cardBorder, AppTheme.cardBorder],
+        colors: [AppTheme.blue, AppTheme.blue],
       ),
       actionButtonColor: AppTheme.navy,
       actionButtonIdleColor: AppTheme.navy,

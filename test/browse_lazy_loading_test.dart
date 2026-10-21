@@ -126,7 +126,11 @@ void main() {
       await tester.tap(find.text('Furniture Assembly'));
       await tester.pumpAndSettle();
       expect(searchCalls, 1);
-      expect(find.text('100 pros'), findsWidgets);
+      expect(find.text('100 pros'), findsWidgets,
+          reason: tester
+              .widgetList<Text>(find.byType(Text))
+              .map((text) => text.data)
+              .join(' | '));
       expect(find.text('12+ pros'), findsNothing);
       // Only cards near the viewport exist, even though the API returned 100.
       expect(find.textContaining('Test Pro').evaluate().length, lessThan(12));

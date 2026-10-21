@@ -75,6 +75,12 @@ class HomeownerService {
       {};
   final Map<String, Map<String, dynamic>> _searchProsCache = {};
   final Map<String, DateTime> _searchProsCacheAt = {};
+  final Map<String, Future<Map<String, dynamic>>> _searchProsInFlight = {};
+  // One connection pool per async context also respects http.runWithClient
+  // in tests; production requests reuse sockets instead of a new TLS handshake.
+  final Expando<http.Client> _httpClients = Expando<http.Client>();
+
+  http.Client get _httpClient => _httpClients[Zone.current] ??= http.Client();
   final Map<String, Map<String, dynamic>> _zipCoverageCache = {};
   final Map<String, DateTime> _zipCoverageCacheAt = {};
   final Map<String, Map<String, dynamic>> _availabilityCache = {};
@@ -804,15 +810,17 @@ class HomeownerService {
     );
     switch (method) {
       case 'GET':
-        return http.get(uri, headers: headers).timeout(_requestTimeout);
+        return _httpClient.get(uri, headers: headers).timeout(_requestTimeout);
       case 'PATCH':
-        return http
+        return _httpClient
             .patch(uri, headers: headers, body: jsonEncode(body))
             .timeout(_requestTimeout);
       case 'DELETE':
-        return http.delete(uri, headers: headers).timeout(_requestTimeout);
+        return _httpClient
+            .delete(uri, headers: headers)
+            .timeout(_requestTimeout);
       default:
-        return http
+        return _httpClient
             .post(uri, headers: headers, body: jsonEncode(body))
             .timeout(_requestTimeout);
     }
@@ -1133,11 +1141,18 @@ class HomeownerService {
 
   /// The server validates ownership and creates/resolves the canonical thread.
   /// Do not send a Stream user ID as the optional contractor profile ID.
-  Future<String> resolveChatThread({required int workOrderId}) async {
+  Future<String> resolveChatThread(
+      {int? workOrderId, String? contractorProfileId}) async {
     if (_userId == null) throw Exception('User is not authenticated');
-    if (workOrderId <= 0) throw ArgumentError('A work order is required.');
+    if (workOrderId != null && workOrderId <= 0) {
+      throw ArgumentError('Invalid work order.');
+    }
+    if (workOrderId == null && (contractorProfileId?.trim().isEmpty ?? true)) {
+      throw ArgumentError('A contractor or work order is required.');
+    }
     final result = await _post('shared/chat-threads', {
-      'workOrderId': workOrderId,
+      if (workOrderId != null) 'workOrderId': workOrderId,
+      if (contractorProfileId != null) 'contractorId': contractorProfileId,
     });
     final id = result['channelId'];
     final type = result['channelType'] ?? 'messaging';
@@ -2263,6 +2278,21 @@ class HomeownerService {
     required String zip,
     required String categorySlug,
     String urgency = 'standard',
+  }) {
+    final identity = '${zip.trim()}|${categorySlug.trim()}|${urgency.trim()}';
+    return _searchProsInFlight.putIfAbsent(
+        identity,
+        () => _searchProsRequest(
+                    zip: zip, categorySlug: categorySlug, urgency: urgency)
+                .whenComplete(() {
+              _searchProsInFlight.remove(identity);
+            }));
+  }
+
+  Future<Map<String, dynamic>> _searchProsRequest({
+    required String zip,
+    required String categorySlug,
+    required String urgency,
   }) async {
     final identity =
         '${zip.trim().toLowerCase()}|${categorySlug.trim().toLowerCase()}|${urgency.trim().toLowerCase()}';

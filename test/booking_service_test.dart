@@ -169,7 +169,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Calendar Test Pro'), findsOneWidget);
         expect(find.byType(AvailabilityCapsule),
-            scenario == 'day' ? findsOneWidget : findsNothing);
+            scenario == 'search-null' ? findsNothing : findsOneWidget);
         if (scenario == 'day') {
           expect(find.text('Next: Tomorrow'), findsOneWidget);
           final rating = tester.getCenter(find.byType(RatingCapsule));
@@ -178,7 +178,8 @@ void main() {
           expect(rating.dx, lessThan(availability.dx));
           expect(rating.dy, closeTo(availability.dy, 1));
         }
-        if (scenario == 'search-null') expect(availabilityCalls, 0);
+        expect(availabilityCalls, 0,
+            reason: 'Search already supplies availability; no per-card calls.');
         expect(find.text('Availability pending'), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -647,6 +648,22 @@ void main() {
     }
   });
 
+  test('a profile enquiry resolves a server thread using the profile ID',
+      () async {
+    await http.runWithClient(() async {
+      final channel = await HomeownerService.instance
+          .resolveChatThread(contractorProfileId: '900');
+      expect(channel, 'messaging:tw-10-77');
+    },
+        () => MockClient((request) async {
+              expect(request.url.path, '/shared/chat-threads');
+              expect(jsonDecode(request.body), {'contractorId': '900'});
+              return http.Response(
+                  '{"success":true,"channelType":"messaging","channelId":"tw-10-77"}',
+                  201);
+            }));
+  });
+
   testWidgets('no-show screen sends replyText and returns confirmed success',
       (tester) async {
     bool? sent;
@@ -845,7 +862,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Reviews'), findsOneWidget);
       expect(find.text('No reviews yet'), findsOneWidget);
-      expect(find.textContaining('9:15 AM – 10:45 AM'), findsOneWidget);
+      expect(find.byType(AvailabilityCapsule), findsOneWidget);
+      expect(find.textContaining('9:15 AM – 10:45 AM'), findsNothing);
       expect(availabilityCalls, 1);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

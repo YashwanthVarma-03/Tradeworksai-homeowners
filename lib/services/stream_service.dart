@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
@@ -93,6 +94,7 @@ class StreamService extends ChangeNotifier {
     if (userId == null && (email == null || email.isEmpty)) {
       return;
     }
+    if (!forceReconnect && isReady && _connectInFlight == null) return;
 
     if (!forceReconnect &&
         _lastFailureAt != null &&
@@ -124,23 +126,27 @@ class StreamService extends ChangeNotifier {
           headers['Authorization'] = 'Bearer $accessToken';
         }
 
-        final response = await http.post(
-          Uri.parse('${ApiConfig.baseUrl}$_streamTokenPath'),
-          headers: headers,
-          body: jsonEncode({
-            if (userId != null) 'userId': userId,
-            if (email != null && email.isNotEmpty) 'email': email,
-          }),
-        );
+        final response = await http
+            .post(
+              Uri.parse('${ApiConfig.baseUrl}$_streamTokenPath'),
+              headers: headers,
+              body: jsonEncode({
+                if (userId != null) 'userId': userId,
+                if (email != null && email.isNotEmpty) 'email': email,
+              }),
+            )
+            .timeout(const Duration(seconds: 15));
         final resolvedResponse = response.statusCode == 404
-            ? await http.post(
-                Uri.parse('${ApiConfig.baseUrl}$_legacyStreamTokenPath'),
-                headers: headers,
-                body: jsonEncode({
-                  if (userId != null) 'userId': userId,
-                  if (email != null && email.isNotEmpty) 'email': email,
-                }),
-              )
+            ? await http
+                .post(
+                  Uri.parse('${ApiConfig.baseUrl}$_legacyStreamTokenPath'),
+                  headers: headers,
+                  body: jsonEncode({
+                    if (userId != null) 'userId': userId,
+                    if (email != null && email.isNotEmpty) 'email': email,
+                  }),
+                )
+                .timeout(const Duration(seconds: 15))
             : response;
 
         if (response.statusCode == 404 && resolvedResponse.statusCode == 404) {
@@ -207,7 +213,8 @@ class StreamService extends ChangeNotifier {
           );
           _registeredPushToken = null;
         }
-        await _syncPushDeviceFromCache();
+        // Push registration must never hold up opening a conversation.
+        unawaited(_syncPushDeviceFromCache());
         _lastError = null;
         _lastFailureAt = null;
       } catch (e) {
@@ -299,11 +306,13 @@ class StreamService extends ChangeNotifier {
   }
 
   Future<Channel> openWorkOrderChannel({
-    required int workOrderId,
+    int? workOrderId,
+    String? contractorProfileId,
     bool forceReconnect = false,
   }) async {
     final channelId = await HomeownerService.instance.resolveChatThread(
       workOrderId: workOrderId,
+      contractorProfileId: contractorProfileId,
     );
     return openChannelById(
       channelId,

@@ -868,6 +868,12 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           itemBuilder: (context, index) {
             final isAll = index == _homeCategories.length;
             final label = isAll ? _allServicesLabel : _homeCategories[index];
+            if (!isAll) {
+              return ServiceCategoryTile(
+                label: label,
+                onTap: () => widget.onCategorySelected(label),
+              );
+            }
             return Material(
               color: isAll ? AppTheme.subtle : AppTheme.white,
               clipBehavior: Clip.antiAlias,

@@ -363,20 +363,9 @@ class _FigmaProfileSurface extends StatelessWidget {
   }
 
   Widget _priceCard(BuildContext context) {
-    final detailedWindow = nextSlot.contains(':');
-    final stack = TwLayout.stackRows(context) || detailedWindow;
-    final Widget? capsule = nextSlot.isEmpty
-        ? null
-        : detailedWindow
-            ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Icon(Icons.schedule_outlined,
-                    size: 18, color: AppTheme.green),
-                const SizedBox(width: TwSpace.s8),
-                Expanded(
-                    child: Text('Next: $nextSlot',
-                        style: TwType.bodySm(color: AppTheme.green))),
-              ])
-            : AvailabilityCapsule(label: 'Next: $nextSlot');
+    final stack = TwLayout.stackRows(context);
+    final Widget? capsule =
+        nextSlot.isEmpty ? null : AvailabilityCapsule(label: 'Next: $nextSlot');
     // B02b: "$89.00" in display type, "diagnostic" after it in value type.
     final Widget amount = price.isEmpty
         ? const SizedBox.shrink()
@@ -1194,7 +1183,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
   void _handleAuthChanged() {
     if (mounted) {
       setState(() {});
-      unawaited(_refreshAvailability());
     }
   }
 
@@ -1208,7 +1196,6 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         contractorId: contractorId,
         serviceId: serviceId,
         propertyZip: _requestZip.isEmpty ? null : _requestZip,
-        forceRefresh: true,
       );
       final slots =
           BookingTiming.eligible(data['slots'] as List? ?? [], 'standard');
@@ -1217,17 +1204,12 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
         _availabilityResolved = true;
         _liveNextSlot = slots.isEmpty || data['paused'] == true
             ? ''
-            : BookingTiming.label(slots.first['start']?.toString(),
-                    slots.first['end']?.toString()) ??
-                '';
+            : _availabilityDay(slots.first['start']?.toString() ?? '');
       });
     } catch (_) {
       if (!mounted || generation != _availabilityGeneration) return;
-      // An old search label is not proof of a currently bookable window.
-      setState(() {
-        _availabilityResolved = true;
-        _liveNextSlot = '';
-      });
+      // A failed enrichment request must not erase the search snapshot.
+      // Booking revalidates the actual window at hold.
     }
   }
 
@@ -1235,24 +1217,26 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
     try {
       final slug = _profileSlug(widget.pro);
       if (slug.isEmpty) {
-        setState(() => _isLoading = false);
-        await _refreshAvailability();
+        if (!widget.pro.containsKey('nextAvailable')) {
+          await _refreshAvailability();
+        }
         return;
       }
 
       final data = await HomeownerService.instance.getContractorProfile(slug);
       if (!mounted) return;
       final profile = _extractProfilePayload(data);
-      setState(() {
-        _profile = profile.isEmpty ? null : profile;
-        _isLoading = false;
-      });
-      await _refreshAvailability();
+      _profile = profile.isEmpty ? null : profile;
+      // Search supplies a recent availability snapshot. Do not launch another
+      // request that changes an already visible profile several seconds later.
+      if (!widget.pro.containsKey('nextAvailable') &&
+          !profile.containsKey('nextAvailable')) {
+        await _refreshAvailability();
+      }
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -1661,13 +1645,26 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
 
   String get _nextSlot {
     if (_availabilityResolved) return _liveNextSlot;
-    final raw = _text(_displayPro['nextAvailable']);
+    final raw = _text(widget.pro.containsKey('nextAvailable')
+        ? widget.pro['nextAvailable']
+        : _displayPro['nextAvailable']);
+    return _availabilityDay(raw);
+  }
+
+  String _availabilityDay(String raw) {
     if (raw.isEmpty || raw == 'Availability pending') return '';
     final lower = raw.toLowerCase();
     if (lower.contains('today')) return 'Today';
     if (lower.contains('tomorrow')) return 'Tomorrow';
-    final label = BookingTiming.label(raw);
-    if (label != null) return label;
+    final date = BookingTiming.wallClock(raw);
+    if (date != null) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final day = DateTime(date.year, date.month, date.day);
+      if (day == today) return 'Today';
+      if (day == today.add(const Duration(days: 1))) return 'Tomorrow';
+      return DateFormat('EEE').format(day);
+    }
     final commaIndex = raw.indexOf(',');
     return commaIndex == -1 ? raw : raw.substring(0, commaIndex);
   }
@@ -2606,7 +2603,9 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       );
       return;
     }
-    if (messageUserId == null) {
+    final profileId = BookingIdentity.contractor(widget.pro) ??
+        BookingIdentity.contractor(_displayPro);
+    if (messageUserId == null && profileId == null) {
       AppNotification.showInfo(
         context,
         'Chat is coming soon for this pro.',
@@ -2617,7 +2616,8 @@ class _ProProfileScreenState extends State<ProProfileScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => ChatScreen(
-          contractorId: messageUserId,
+          contractorId: messageUserId ?? '',
+          contractorProfileId: profileId,
           contractorName: _businessName,
         ),
       ),

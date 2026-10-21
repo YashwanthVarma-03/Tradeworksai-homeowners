@@ -4,6 +4,78 @@ import '../theme.dart';
 import '../ui/tw.dart';
 import '../utils/service_icon_assets.dart';
 
+/// Shared Home/Browse category tile. Keep the full name available to assistive
+/// technology even when a compact tile needs to wrap its visible label.
+class ServiceCategoryTile extends StatelessWidget {
+  const ServiceCategoryTile(
+      {super.key, required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: Tooltip(
+          message: label,
+          child: Material(
+            color: AppTheme.white,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: AppTheme.cardBorder),
+            ),
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: TwSpace.s4),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ServiceCategoryIcon(
+                        category: label,
+                        size: 26,
+                        fallbackIcon: Icons.home_repair_service_outlined,
+                        fallbackColor: AppTheme.navy),
+                    const SizedBox(height: 6),
+                    LayoutBuilder(builder: (context, constraints) {
+                      var style = TwType.caption(color: AppTheme.navy)
+                          .copyWith(fontWeight: FontWeight.w600, height: 1.2);
+                      var widestWord = 0.0;
+                      for (final word in label.split(' ')) {
+                        final painter = TextPainter(
+                          text: TextSpan(text: word, style: style),
+                          textDirection: Directionality.of(context),
+                          textScaler: MediaQuery.textScalerOf(context),
+                        )..layout();
+                        if (painter.width > widestWord) {
+                          widestWord = painter.width;
+                        }
+                        painter.dispose();
+                      }
+                      if (widestWord > constraints.maxWidth) {
+                        style = style.copyWith(
+                            fontSize: style.fontSize! *
+                                (constraints.maxWidth - 1) /
+                                widestWord);
+                      }
+                      return Text(label,
+                          textAlign: TextAlign.center,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: style);
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
 class SunriseBackground extends StatelessWidget {
   final Widget child;
   const SunriseBackground({super.key, required this.child});

@@ -2,7 +2,20 @@ import '../services/stream_service.dart';
 import 'work_order_labels.dart';
 
 /// Match explicit contractor user IDs only. Business names are not identities.
-bool isWorkOrderWithPro(Map<String, dynamic> job, String contractorUserId) {
+bool isWorkOrderWithPro(Map<String, dynamic> job, String contractorUserId,
+    {String? contractorProfileId}) {
+  if (contractorProfileId != null && contractorProfileId.trim().isNotEmpty) {
+    final pro = job['pro'];
+    final contractor = job['contractor'];
+    final ids = [
+      job['contractorId'],
+      job['contractor_id'],
+      if (pro is Map) pro['contractorId'],
+      if (contractor is Map) contractor['contractorId'],
+    ];
+    if (ids.any((id) => id != null && '$id' == contractorProfileId))
+      return true;
+  }
   if (contractorUserId.trim().isEmpty) return false;
   for (final node in [job['pro'], job['contractor']]) {
     if (node is Map &&
@@ -26,7 +39,8 @@ bool isWorkOrderWithPro(Map<String, dynamic> job, String contractorUserId) {
 }
 
 List<Map<String, dynamic>> chatWorkOrders(
-    Map<String, dynamic> data, String contractorUserId) {
+    Map<String, dynamic> data, String contractorUserId,
+    {String? contractorProfileId}) {
   final jobs = <Map<String, dynamic>>[];
   final seen = <int>{};
   final tabs = data['tabs'];
@@ -37,7 +51,8 @@ List<Map<String, dynamic>> chatWorkOrders(
       final id = workOrderDbId(job);
       if (id != null &&
           id > 0 &&
-          isWorkOrderWithPro(job, contractorUserId) &&
+          isWorkOrderWithPro(job, contractorUserId,
+              contractorProfileId: contractorProfileId) &&
           seen.add(id)) {
         jobs.add(job);
       }

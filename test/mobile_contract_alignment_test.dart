@@ -3,6 +3,16 @@ import 'package:homeowners_app/screens/inbox_tab.dart';
 import 'package:homeowners_app/utils/chat_work_order.dart';
 
 void main() {
+  test('profile identity matches work orders without confusing Stream user IDs',
+      () {
+    final job = {
+      'id': 42,
+      'pro': {'contractorId': 900}
+    };
+    expect(isWorkOrderWithPro(job, '', contractorProfileId: '900'), isTrue);
+    expect(isWorkOrderWithPro(job, '900'), isFalse);
+    expect(isWorkOrderWithPro(job, '', contractorProfileId: '901'), isFalse);
+  });
   test('mobile notification feed is title-only with optional job context', () {
     final item = ActivityItem.fromApi({
       'id': 1,

@@ -1,0 +1,146 @@
+--- a/backend/services/api/batch8_routes.py
++++ b/backend/services/api/batch8_routes.py
+@@ -155,6 +155,45 @@
+     return bool(rows)
+ 
+ 
++def _has_chat_pair(db, homeowner_uid, contractor_uid):
++    """An owned job or an existing server-created enquiry authorizes this pair."""
++    if _has_work_order_pair(db, homeowner_uid, contractor_uid):
++        return True
++    try:
++        result = _stream().channel(
++            "messaging", _channel_id(homeowner_uid, contractor_uid)).query()
++        channel = result.get("channel") or {}
++        members = channel.get("members") or result.get("members") or []
++        ids = {str((m.get("user") or {}).get("id") or m.get("user_id") or "")
++               for m in members if isinstance(m, dict)}
++        return (
++            str(channel.get("homeowner_user_id")) == str(homeowner_uid)
++            and str(channel.get("contractor_user_id")) == str(contractor_uid)
++            and str(channel.get("created_by_id") or
++                    (channel.get("created_by") or {}).get("id")) == str(homeowner_uid)
++            and {str(homeowner_uid), str(contractor_uid)}.issubset(ids)
++        )
++    except Exception:
++        return False
++
++
++def _provision_chat_participants(db, client, *user_ids):
++    # Channel creation fails if either participant has never opened Stream.
++    # Resolve both from the database; no client-provided names or member lists.
++    for user_id in user_ids:
++        rows = (db.table("user_login_agent_details")
++                .select("id,name,given_name,picture_url")
++                .eq("id", int(user_id)).limit(1).execute().data or [])
++        if not rows:
++            raise ValueError("chat_participant_not_found")
++        user = rows[0]
++        payload = {"id": str(user["id"]),
++                   "name": user.get("name") or user.get("given_name") or "User"}
++        if user.get("picture_url"):
++            payload["image"] = user["picture_url"]
++        client.upsert_user(payload)
++
++
+ def _channel_id(homeowner_uid, contractor_uid):
+     return f"tw-{int(homeowner_uid)}-{int(contractor_uid)}"
+ 
+@@ -172,7 +211,7 @@
+     profile = _profile_for_user(db, contractor_uid)
+     if not profile:
+         return None
+-    if not _has_work_order_pair(db, home_uid, contractor_uid):
++    if not _has_chat_pair(db, home_uid, contractor_uid):
+         return None
+     return home_uid, contractor_uid, profile
+ 
+@@ -642,7 +681,7 @@
+             channel = item.get("channel") or {}
+             pair = _pair_from_channel_id(channel.get("id"))
+             if (pair and uid in pair and
+-                    _has_work_order_pair(sb(), pair[0], pair[1])):
++                    _has_chat_pair(sb(), pair[0], pair[1])):
+                 channels.append({
+                     "channelId": channel["id"], "channelType": channel.get("type", "messaging"),
+                     "members": channel.get("members", []),
+@@ -677,24 +716,39 @@
+     else:
+         contractor_id = data.get("contractorId")
+         if work_order_id is None:
+-            return _err("work_order_required", 400)
+-        order = _work_order_pair(db, work_order_id)
+-        if not order or str(order.get("requester_user_id")) != str(uid):
+-            return _err("work_order_not_found", 404)
+-        if not order.get("assigned_contractor_user_id"):
+-            return _err("contractor_not_assigned", 409)
+-        contractor_uid = int(order["assigned_contractor_user_id"])
+-        if contractor_id is not None:
+-            profile = _profile_for_user(db, contractor_uid)
+-            if not profile or str(profile.get("id")) != str(contractor_id):
+-                return _err("work_order_contractor_mismatch", 409)
++            # Only homeowners initiate enquiries, and only to public profiles.
++            # A malformed supplied job reference must never become an enquiry.
++            if any(data.get(k) is not None for k in
++                   ("workOrderId", "work_order_id", "wo_number")):
++                return _err("invalid_work_order")
++            try:
++                profile_id = int(contractor_id)
++            except (ValueError, TypeError):
++                return _err("invalid_contractor")
++            profiles = (db.table("contractor_profiles")
++                        .select("id,user_id,is_public")
++                        .eq("id", profile_id).eq("is_public", True)
++                        .limit(1).execute().data or [])
++            if not profiles or not profiles[0].get("user_id"):
++                return _err("contractor_not_available", 404)
++            contractor_uid = int(profiles[0]["user_id"])
++        else:
++            order = _work_order_pair(db, work_order_id)
++            if not order or str(order.get("requester_user_id")) != str(uid):
++                return _err("work_order_not_found", 404)
++            if not order.get("assigned_contractor_user_id"):
++                return _err("contractor_not_assigned", 409)
++            contractor_uid = int(order["assigned_contractor_user_id"])
++            if contractor_id is not None:
++                profile = _profile_for_user(db, contractor_uid)
++                if not profile or str(profile.get("id")) != str(contractor_id):
++                    return _err("work_order_contractor_mismatch", 409)
+         home_uid = uid
+     if not home_uid or not contractor_uid or home_uid == contractor_uid:
+         return _err("invalid_chat_participants")
+-    if not _has_work_order_pair(db, home_uid, contractor_uid):
+-        return _err("work_order_required", 403)
+     cid = _channel_id(home_uid, contractor_uid)
+-    channel = _stream().channel("messaging", cid)
++    client = _stream()
++    channel = client.channel("messaging", cid)
+     if is_contractor:
+         try:
+             channel_data = _query_existing_member(channel, uid)
+@@ -705,6 +759,7 @@
+         return jsonify(success=True, channelId=cid, channelType="messaging",
+                        channel=channel_data, created=False)
+     try:
++        _provision_chat_participants(db, client, home_uid, contractor_uid)
+         result = channel.create(user_id=str(uid), data={
+             "members": [str(home_uid), str(contractor_uid)],
+             "created_by_id": str(home_uid), "homeowner_user_id": home_uid,
+@@ -734,7 +789,7 @@
+     if uid is None or not pair or uid not in pair:
+         return _err("chat_thread_not_found", 404)
+     try:
+-        if not _has_work_order_pair(sb(), pair[0], pair[1]):
++        if not _has_chat_pair(sb(), pair[0], pair[1]):
+             return _err("chat_thread_not_found", 404)
+         limit = min(max(int(request.args.get("limit", "30")), 1), 100)
+         offset = max(int(request.args.get("offset", "0")), 0)
+@@ -757,7 +812,7 @@
+     pair = _pair_from_channel_id(channel_id)
+     if uid is None or not pair or uid not in pair:
+         return _err("chat_thread_not_found", 404)
+-    if not _has_work_order_pair(sb(), pair[0], pair[1]):
++    if not _has_chat_pair(sb(), pair[0], pair[1]):
+         return _err("chat_thread_not_found", 404)
+     if not data:
+         return _err("invalid_payload")

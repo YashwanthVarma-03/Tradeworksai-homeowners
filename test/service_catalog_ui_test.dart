@@ -68,6 +68,13 @@ void main() {
     expect(find.text('Plumbing'), findsWidgets);
     expect(find.text('HVAC'), findsWidgets);
     expect(find.byType(SvgPicture), findsNWidgets(31));
+    expect(find.byType(ServiceCategoryTile), findsNWidgets(31));
+    final tiles = find.byType(ServiceCategoryTile);
+    final firstRowY = tester.getTopLeft(tiles.at(0)).dy;
+    for (var i = 1; i < 4; i++) {
+      expect(tester.getTopLeft(tiles.at(i)).dy, firstRowY);
+    }
+    expect(tester.getTopLeft(tiles.at(4)).dy, greaterThan(firstRowY));
     expect(
         tester
             .widgetList<ServiceCategoryIcon>(find.byType(ServiceCategoryIcon))
