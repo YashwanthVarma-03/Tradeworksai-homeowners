@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../theme.dart';
 import '../ui/tw.dart';
+import '../utils/service_icon_assets.dart';
 
 class SunriseBackground extends StatelessWidget {
   final Widget child;
@@ -232,6 +234,8 @@ class ServiceCategoryIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final asset = ServiceIconAssets.forCategory(category);
+    final fallback = Icon(fallbackIcon, color: fallbackColor, size: size);
     return Semantics(
       image: true,
       label: '$category service icon',
@@ -239,14 +243,16 @@ class ServiceCategoryIcon extends StatelessWidget {
         dimension: size,
         child: Center(
           child: ExcludeSemantics(
-            // The supplied legacy PNG artwork is too fine at mobile sizes.
-            // Render the app's Material glyphs instead: they stay crisp across
-            // densities and carry a consistent, stronger visual weight.
-            child: Icon(
-              fallbackIcon,
-              color: fallbackColor,
-              size: size,
-            ),
+            child: asset == null
+                ? fallback
+                : SvgPicture.asset(
+                    asset,
+                    width: size,
+                    height: size,
+                    excludeFromSemantics: true,
+                    placeholderBuilder: (_) => fallback,
+                    errorBuilder: (_, __, ___) => fallback,
+                  ),
           ),
         ),
       ),

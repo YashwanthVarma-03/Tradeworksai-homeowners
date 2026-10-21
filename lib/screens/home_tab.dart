@@ -884,13 +884,17 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        isAll
-                            ? Icons.grid_view_outlined
-                            : _homeCategoryIcons[label],
-                        size: 24,
-                        color: _inkStrong,
-                      ),
+                      if (isAll)
+                        const Icon(Icons.grid_view_outlined,
+                            size: 24, color: _inkStrong)
+                      else
+                        ServiceCategoryIcon(
+                          category: label,
+                          size: 26,
+                          fallbackIcon: _homeCategoryIcons[label] ??
+                              Icons.home_repair_service_outlined,
+                          fallbackColor: _inkStrong,
+                        ),
                       const SizedBox(height: 6),
                       Text(
                         label,

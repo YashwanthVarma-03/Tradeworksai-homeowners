@@ -2634,7 +2634,8 @@ class _AllServiceListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final token = TradeWorksCategoryTokens.forName(service.category);
+    final category = service.category.isEmpty ? service.name : service.category;
+    final token = TradeWorksCategoryTokens.forName(category);
     return Semantics(
       button: true,
       label: 'Browse ${service.name}',
@@ -2651,8 +2652,8 @@ class _AllServiceListRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(AppTheme.radius),
               ),
               child: ServiceCategoryIcon(
-                category: service.category,
-                size: 24,
+                category: category,
+                size: 26,
                 fallbackIcon: token.icon,
                 fallbackColor: AppTheme.navy,
               ),
@@ -2663,8 +2664,10 @@ class _AllServiceListRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(service.name, style: TwType.title()),
-                  const SizedBox(height: 2),
-                  Text(service.category, style: TwType.meta()),
+                  if (service.category.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(service.category, style: TwType.meta()),
+                  ],
                 ],
               ),
             ),

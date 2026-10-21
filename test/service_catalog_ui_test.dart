@@ -1,15 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:homeowners_app/screens/home_tab.dart';
 import 'package:homeowners_app/screens/search_tab.dart';
 import 'package:homeowners_app/services/service_catalog.dart';
 import 'package:homeowners_app/theme.dart';
+import 'package:homeowners_app/widgets/custom_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'support/catalog_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUpAll(loadCatalogFixture);
+  setUpAll(() async {
+    await loadCatalogFixture();
+    await Future.wait([
+      (FontLoader('MaterialIcons')
+            ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf')))
+          .load(),
+      (FontLoader('Inter')
+            ..addFont(rootBundle.load('assets/fonts/Inter-Regular.ttf'))
+            ..addFont(rootBundle.load('assets/fonts/Inter-Medium.ttf'))
+            ..addFont(rootBundle.load('assets/fonts/Inter-SemiBold.ttf'))
+            ..addFont(rootBundle.load('assets/fonts/Inter-Bold.ttf')))
+          .load(),
+      (FontLoader('Outfit')
+            ..addFont(rootBundle.load('assets/fonts/Outfit-SemiBold.ttf')))
+          .load(),
+    ]);
+  });
   setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets('Home and All services show the same backend service count',
       (tester) async {
@@ -34,6 +53,7 @@ void main() {
     expect(ServiceCatalog.mainServices, hasLength(31));
     expect(find.text('All 31'), findsOneWidget);
     expect(find.text('See all 31'), findsOneWidget);
+    expect(find.byType(SvgPicture), findsNWidgets(7));
     await tester.pumpWidget(MaterialApp(
         theme: AppTheme.lightTheme,
         home: Scaffold(
@@ -47,6 +67,20 @@ void main() {
     expect(find.text('AC Repair or Maintenance'), findsNothing);
     expect(find.text('Plumbing'), findsWidgets);
     expect(find.text('HVAC'), findsWidgets);
+    expect(find.byType(SvgPicture), findsNWidgets(31));
+    expect(
+        tester
+            .widgetList<ServiceCategoryIcon>(find.byType(ServiceCategoryIcon))
+            .every((icon) => icon.category.isNotEmpty),
+        isTrue);
+    expect(tester.takeException(), isNull);
+    await expectLater(find.byType(Scaffold),
+        matchesGoldenFile('goldens/browse-service-icons-390.png'));
+    tester.view.physicalSize = const Size(320, 640);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await expectLater(find.byType(Scaffold),
+        matchesGoldenFile('goldens/browse-service-icons-320.png'));
     await tester.pumpWidget(const SizedBox.shrink());
   });
   testWidgets('Home service count fits narrow screens with large text',
